@@ -30,7 +30,7 @@
     "animalTypes": ["cat", "dog", "fox", "bird"]
   },
   "markov": {
-    "enabled": false,
+    "enabled": true,
     "order": 2,
     "corpusFile": "default.txt",
     "draftMaxWords": 20
@@ -53,16 +53,10 @@
     "status": "online",
     "spotifyTracks": [
       {
-        "details": "めうめうぺったんたん！！",
-        "state": "芽兎めう",
-        "syncId": "3btKs4ln57kQ46ALWdsvYi",
-        "largeImage": "spotify:ab67706c0000da84abeeaae7c11c3455bc45d603"
-      },
-      {
-        "details": "地方創生☆チクワクティクス",
-        "state": "芽兎めう",
-        "syncId": "3btKs4ln57kQ46ALWdsvYi",
-        "largeImage": "spotify:ab67706c0000da84c0052dc7fb523a68affdb8f7"
+        "details": "キラピコ.exe",
+        "state": "放課後クライマックスガールズ",
+        "syncId": "6pw3NHEm4q0XYmj98ikWvX",
+        "largeImage": "spotify:ab67706c0000da84_PLACEHOLDER_ALBUM_ART_HASH"
       }
     ],
     "watching": {
