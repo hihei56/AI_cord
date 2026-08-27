@@ -29,6 +29,8 @@ discord-selfbot/
 │       ├── markovChain.js       # 口調再現用マルコフ連鎖（下書き生成、任意機能）
 │       ├── animalImage.js       # 動物画像取得
 │       └── logger.js            # ログ出力
+├── scripts/
+│   └── markov-demo.js          # マルコフ連鎖の学習・生成を単体で試せるデモスクリプト
 ├── .env.example
 ├── .gitignore
 ├── package.json
@@ -83,15 +85,12 @@ npm start
 
 `config/corpus/default.txt` は空のプレースホルダーです。**学習元テキストには、実在の第三者の発言が混ざらないよう本人が用意したものだけを使ってください。** 同意の取れていない他者の発言データを学習・生成に使うことは想定していません。
 
-## 主な機能
+Botを起動せずに単体で学習・生成結果を確認したい場合は、`scripts/markov-demo.js` を使う。
 
-- サーバー内の特定チャンネルでのメンション/リプライ/通常発言に確率的に返信（OpenAI互換API経由でLLM生成、デフォルトはGroq）
-- 直近の会話履歴を踏まえた返信生成、連投防止・クールダウン制御
-- 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像＋一言）
-- Spotify再生中/動画視聴中を模したPresence（RPC）のローテーション更新
-
-## 依存関係
-
-- [discord.js-selfbot-v13](https://www.npmjs.com/package/discord.js-selfbot-v13)
-- [dotenv](https://www.npmjs.com/package/dotenv)
-- [@sefinek/random-animals](https://www.npmjs.com/package/@sefinek/random-animals)
+```bash
+node scripts/markov-demo.js [corpusFile] [order] [count]
+# 例: config/corpus/default.txt を order=2 で学習し、5個生成
+node scripts/markov-demo.js default.txt 2 5
+# npm経由でも実行可能(corpusFile等は node scripts/markov-demo.js 直接呼び出しで指定)
+npm run markov:demo
+```

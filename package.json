@@ -4,7 +4,8 @@
   "description": "Discord selfbot with AI responses and human-like behavior (TomoriBot-style modular structure)",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "markov:demo": "node scripts/markov-demo.js"
   },
   "dependencies": {
     "discord.js-selfbot-v13": "^3.7.1",
