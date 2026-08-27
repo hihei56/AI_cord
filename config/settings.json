@@ -1,9 +1,9 @@
 {
-  "cooldownSeconds": 45,
+  "cooldownSeconds": 15,
   "replyChance": {
-    "mention": 0.7,
-    "reply": 0.6,
-    "normal": 0.15
+    "mention": 0.95,
+    "reply": 0.85,
+    "normal": 0.4
   },
   "nightMode": {
     "startHour": 1,
