@@ -1,5 +1,24 @@
 const config = require('./config');
 const logger = require('./logger');
+const { MarkovChain, loadCorpus } = require('./markovChain');
+
+let markovChain;
+
+function getMarkovDraft() {
+  if (!config.markov?.enabled) return null;
+
+  if (markovChain === undefined) {
+    const lines = loadCorpus(config.corpusPath);
+    if (lines.length === 0) {
+      markovChain = null;
+    } else {
+      markovChain = new MarkovChain(config.markov.order);
+      markovChain.train(lines);
+    }
+  }
+
+  return markovChain ? markovChain.generate(config.markov.draftMaxWords) : null;
+}
 
 async function callChatCompletion(messages, { temperature, maxTokens }) {
   const res = await fetch(`${config.env.aiBaseUrl}/chat/completions`, {
@@ -31,7 +50,12 @@ async function getAIResponse(userMsg, history = []) {
     .map((m) => `${m.author.username}: ${m.content}`)
     .join('\n');
 
-  const systemPrompt = `${config.persona}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
+  const draft = getMarkovDraft();
+  const draftSection = draft
+    ? `\n【口調の下書き(意味は無視して口調・言い回しだけ参考にすること)】\n${draft}`
+    : '';
+
+  const systemPrompt = `${config.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
 
   try {
     return await callChatCompletion(

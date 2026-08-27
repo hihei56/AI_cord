@@ -29,6 +29,12 @@
     "imageChance": 0.3,
     "animalTypes": ["cat", "dog", "fox", "bird"]
   },
+  "markov": {
+    "enabled": false,
+    "order": 2,
+    "corpusFile": "default.txt",
+    "draftMaxWords": 20
+  },
   "ai": {
     "model": "openai/gpt-oss-120b",
     "reply": {

@@ -20,10 +20,12 @@ const env = {
 
 const persona = readText(path.join('personas', `${env.personaName}.txt`));
 const selfTalkPrompt = readText(path.join('prompts', 'self_talk.txt'));
+const corpusPath = path.join(CONFIG_DIR, 'corpus', settings.markov?.corpusFile || 'default.txt');
 
 module.exports = {
   ...settings,
   env,
   persona,
-  selfTalkPrompt
+  selfTalkPrompt,
+  corpusPath
 };

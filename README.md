@@ -24,8 +24,9 @@ discord-selfbot/
 │   │   ├── selfTalkHandler.js   # 自発投稿（テキスト/画像）ロジック
 │   │   └── presenceHandler.js   # RPC（Spotify/視聴中ステータス）更新
 │   └── utils/
-│       ├── config.js            # settings.json + persona + prompt + .env の統合読み込み
+│       ├── config.js            # settings.json + persona + prompt + corpus + .env の統合読み込み
 │       ├── aiClient.js          # OpenAI互換Chat Completions API 呼び出し（返信生成・自発投稿生成）
+│       ├── markovChain.js       # 口調再現用マルコフ連鎖（下書き生成、任意機能）
 │       ├── animalImage.js       # 動物画像取得
 │       └── logger.js            # ログ出力
 ├── .env.example
@@ -71,6 +72,16 @@ npm start
 ### `config/prompts/self_talk.txt`
 
 一定間隔で自発的につぶやく際のプロンプトテンプレート。
+
+### マルコフ連鎖による口調の下書き(任意機能)
+
+`config/settings.json` の `markov.enabled` を `true` にすると、`config/corpus/<corpusFile>` (改行区切りのテキスト、1行1発言目安)からマルコフ連鎖モデルを構築し、返信生成のたびに短い「口調の下書き」を作ってGroq(等のLLM)へのプロンプトに添える。LLMには「意味は無視して口調・言い回しだけ参考にする」よう指示しており、下書き自体は文脈を無視した単語列でも構わない。
+
+- `order`: マルコフ連鎖のn-gram長(大きいほど元の言い回しに忠実、小さいほど崩れやすい。2〜3推奨)
+- `corpusFile`: `config/corpus/` 内のファイル名
+- `draftMaxWords`: 下書きの最大単語数
+
+`config/corpus/default.txt` は空のプレースホルダーです。**学習元テキストには、実在の第三者の発言が混ざらないよう本人が用意したものだけを使ってください。** 同意の取れていない他者の発言データを学習・生成に使うことは想定していません。
 
 ## 主な機能
 
