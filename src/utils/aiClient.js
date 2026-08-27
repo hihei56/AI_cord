@@ -35,7 +35,19 @@ async function callChatCompletion(messages, { temperature, maxTokens }) {
     })
   });
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || null;
+
+  if (!res.ok) {
+    logger.error('AI', `HTTP ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+    return null;
+  }
+
+  const content = data.choices?.[0]?.message?.content?.trim();
+  if (!content) {
+    logger.error('AI', `unexpected response shape: ${JSON.stringify(data)}`);
+    return null;
+  }
+
+  return content;
 }
 
 async function getAIResponse(userMsg, history = []) {
