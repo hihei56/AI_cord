@@ -1,23 +1,34 @@
 const config = require('./config');
 const logger = require('./logger');
-const { MarkovChain, loadCorpus } = require('./markovChain');
+const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 
-let markovChain;
+let markovChain = null;
 
-function getMarkovDraft(contextText = '') {
-  if (!config.markov?.enabled) return null;
+// bot起動時に一度だけ呼ぶ。kuromojiの辞書読み込み+全行のトークン化は
+// 数百ms〜数秒かかることがあるため、実際のチャット応答の妨げにならないよう
+// 事前に済ませておく。
+async function initMarkov() {
+  if (!config.markov?.enabled) return;
 
-  if (markovChain === undefined) {
-    const lines = loadCorpus(config.corpusPath);
-    if (lines.length === 0) {
-      markovChain = null;
-    } else {
-      markovChain = new MarkovChain(config.markov.order);
-      markovChain.train(lines);
-    }
+  const lines = loadCorpus(config.corpusPath);
+  if (lines.length === 0) {
+    logger.log('MARKOV', 'コーパスが空のため無効化');
+    return;
   }
 
-  return markovChain ? markovChain.generate(config.markov.draftMaxWords, contextText) : null;
+  try {
+    const tokenizer = await buildTokenizer();
+    markovChain = new MarkovChain(config.markov.order, tokenizer);
+    markovChain.train(lines);
+    logger.log('MARKOV', `学習完了 (行数: ${lines.length}, キー数: ${markovChain.chain.size})`);
+  } catch (err) {
+    logger.error('MARKOV', err);
+  }
+}
+
+function getMarkovDraft(contextText = '') {
+  if (!config.markov?.enabled || !markovChain) return null;
+  return markovChain.generate(config.markov.draftMaxWords, contextText);
 }
 
 async function callChatCompletion(messages, { temperature, maxTokens }) {
@@ -104,4 +115,4 @@ async function generateSelfTalk() {
   }
 }
 
-module.exports = { getAIResponse, generateSelfTalk };
+module.exports = { getAIResponse, generateSelfTalk, initMarkov };

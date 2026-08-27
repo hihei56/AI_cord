@@ -13,7 +13,7 @@
  */
 
 const path = require('path');
-const { MarkovChain, loadCorpus } = require('../src/utils/markovChain');
+const { MarkovChain, loadCorpus, buildTokenizer } = require('../src/utils/markovChain');
 
 const corpusFile = process.argv[2] || 'default.txt';
 const order = parseInt(process.argv[3], 10) || 2;
@@ -22,28 +22,34 @@ const contextText = process.argv[5] || '';
 
 const corpusPath = path.join(__dirname, '..', 'config', 'corpus', corpusFile);
 
-const lines = loadCorpus(corpusPath);
+async function main() {
+  const lines = loadCorpus(corpusPath);
 
-if (lines.length === 0) {
-  console.log(`[markov-demo] ${corpusPath} が空か存在しません。`);
-  console.log('config/corpus/ にテキストファイルを置いて、1行1発言の形式で書いてください。');
-  process.exit(1);
+  if (lines.length === 0) {
+    console.log(`[markov-demo] ${corpusPath} が空か存在しません。`);
+    console.log('config/corpus/ にテキストファイルを置いて、1行1発言の形式で書いてください。');
+    process.exit(1);
+  }
+
+  console.log(`[markov-demo] corpus: ${corpusPath}`);
+  console.log(`[markov-demo] 学習データ行数: ${lines.length}`);
+  console.log(`[markov-demo] order (n-gram長): ${order}`);
+  if (contextText) console.log(`[markov-demo] context: ${contextText}`);
+  console.log('[markov-demo] kuromoji辞書を読み込み中...');
+  console.log('');
+
+  const tokenizer = await buildTokenizer();
+  const chain = new MarkovChain(order, tokenizer);
+  chain.train(lines);
+
+  console.log(`[markov-demo] 学習済みキー数: ${chain.chain.size}`);
+  console.log('');
+  console.log(`--- 生成サンプル(${count}個) ---`);
+
+  for (let i = 0; i < count; i++) {
+    const result = chain.generate(20, contextText);
+    console.log(`${i + 1}: ${result ?? '(生成失敗。学習データが少なすぎる可能性)'}`);
+  }
 }
 
-console.log(`[markov-demo] corpus: ${corpusPath}`);
-console.log(`[markov-demo] 学習データ行数: ${lines.length}`);
-console.log(`[markov-demo] order (n-gram長): ${order}`);
-if (contextText) console.log(`[markov-demo] context: ${contextText}`);
-console.log('');
-
-const chain = new MarkovChain(order);
-chain.train(lines);
-
-console.log(`[markov-demo] 学習済みキー数: ${chain.chain.size}`);
-console.log('');
-console.log(`--- 生成サンプル(${count}個) ---`);
-
-for (let i = 0; i < count; i++) {
-  const result = chain.generate(20, contextText);
-  console.log(`${i + 1}: ${result ?? '(生成失敗。学習データが少なすぎる可能性)'}`);
-}
+main();
