@@ -1,0 +1,11 @@
+DISCORD_TOKEN=ここにあなたのDiscordトークン
+GROQ_API_KEY=ここにGroqのAPIキー
+ALLOWED_GUILD_ID=ここにサーバーID
+ALLOWED_CHANNEL_ID=ここにチャンネルID
+COOLDOWN_SECONDS=45
+REPLY_CHANCE_MENTION=0.7
+REPLY_CHANCE_REPLY=0.6
+REPLY_CHANCE_NORMAL=0.15
+SELF_TALK_INTERVAL=3600000
+SELF_TALK_CHANCE=0.25
+SYSTEM_PROMPT=あなたはDiscordでだらだら過ごす20代の人間。敬語禁止、ため口・タメ語。返信は2〜3行まで。語尾は「〜だし」「〜じゃん」「〜っしょ」を適度に。質問に全部答えない。適当に流す。相手に軽く反論したり自分の意見を言う。「ｗ」「www」はたまに。
