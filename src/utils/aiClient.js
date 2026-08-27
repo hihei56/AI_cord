@@ -31,7 +31,8 @@ async function callChatCompletion(messages, { temperature, maxTokens }) {
       model: config.ai.model,
       messages,
       temperature,
-      max_tokens: maxTokens
+      max_tokens: maxTokens,
+      ...(config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
     })
   });
   const data = await res.json();

@@ -37,15 +37,16 @@
   },
   "ai": {
     "model": "openai/gpt-oss-120b",
+    "reasoningEffort": "low",
     "reply": {
       "temperature": 0.85,
-      "maxTokens": 120,
+      "maxTokens": 400,
       "historyContextSize": 5,
       "historyFetchLimit": 10
     },
     "selfTalk": {
       "temperature": 1.3,
-      "maxTokens": 50
+      "maxTokens": 150
     }
   },
   "presence": {
