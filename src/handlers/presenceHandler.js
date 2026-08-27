@@ -35,7 +35,11 @@ function buildActivities(client) {
       application_id: watching.applicationId,
       details: watching.details,
       state: watching.state,
-      assets: { large_image: watching.largeImage },
+      assets: {
+        large_image: watching.largeImage,
+        ...(watching.smallImage ? { small_image: watching.smallImage } : {}),
+        ...(watching.largeText ? { large_text: watching.largeText } : {})
+      },
       timestamps: {
         start: now - watching.elapsedMs,
         end: now - watching.elapsedMs + watching.durationMs
