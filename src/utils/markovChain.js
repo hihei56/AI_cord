@@ -21,11 +21,11 @@ class MarkovChain {
     }
   }
 
-  generate(maxWords = 20) {
+  generate(maxWords = 20, contextText = '') {
     if (this.chain.size === 0) return null;
 
     const keys = [...this.chain.keys()];
-    let key = keys[Math.floor(Math.random() * keys.length)];
+    let key = this.pickStartKey(keys, contextText);
     const result = key.split(' ');
 
     for (let i = 0; i < maxWords; i++) {
@@ -37,6 +37,17 @@ class MarkovChain {
     }
 
     return result.join(' ');
+  }
+
+  // 文脈に含まれる単語と重なるキーがあればそこから開始し、
+  // なければ従来通りランダムに開始する
+  pickStartKey(keys, contextText) {
+    const contextWords = new Set(contextText.trim().split(/\s+/).filter(Boolean));
+    if (contextWords.size > 0) {
+      const matchingKeys = keys.filter((key) => key.split(' ').some((word) => contextWords.has(word)));
+      if (matchingKeys.length > 0) return matchingKeys[Math.floor(Math.random() * matchingKeys.length)];
+    }
+    return keys[Math.floor(Math.random() * keys.length)];
   }
 }
 

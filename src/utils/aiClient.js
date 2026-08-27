@@ -4,7 +4,7 @@ const { MarkovChain, loadCorpus } = require('./markovChain');
 
 let markovChain;
 
-function getMarkovDraft() {
+function getMarkovDraft(contextText = '') {
   if (!config.markov?.enabled) return null;
 
   if (markovChain === undefined) {
@@ -17,7 +17,7 @@ function getMarkovDraft() {
     }
   }
 
-  return markovChain ? markovChain.generate(config.markov.draftMaxWords) : null;
+  return markovChain ? markovChain.generate(config.markov.draftMaxWords, contextText) : null;
 }
 
 async function callChatCompletion(messages, { temperature, maxTokens }) {
@@ -63,7 +63,7 @@ async function getAIResponse(userMsg, history = []) {
     .map((m) => `${m.author.username}: ${m.content}`)
     .join('\n');
 
-  const draft = getMarkovDraft();
+  const draft = getMarkovDraft(`${ctx}\n${userMsg}`);
   const draftSection = draft
     ? `\n【口調の下書き(意味は無視して口調・言い回しだけ参考にすること)】\n${draft}`
     : '';
