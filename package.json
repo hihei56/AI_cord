@@ -8,8 +8,9 @@
     "markov:demo": "node scripts/markov-demo.js"
   },
   "dependencies": {
+    "@sefinek/random-animals": "^2.0.6",
     "discord.js-selfbot-v13": "^3.7.1",
     "dotenv": "^17.4.2",
-    "@sefinek/random-animals": "^2.0.6"
+    "kuromoji": "^0.1.2"
   }
 }

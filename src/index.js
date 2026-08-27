@@ -6,6 +6,7 @@ const logger = require('./utils/logger');
 const { registerMessageHandler } = require('./handlers/messageHandler');
 const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
+const { initMarkov } = require('./utils/aiClient');
 
 const client = createClient();
 
@@ -17,4 +18,4 @@ client.once('ready', () => {
   registerPresenceHandler(client);
 });
 
-client.login(config.env.discordToken);
+initMarkov().finally(() => client.login(config.env.discordToken));
