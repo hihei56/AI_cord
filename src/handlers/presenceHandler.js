@@ -6,7 +6,7 @@ function pickSpotifyTrack() {
   return tracks[Math.floor(Math.random() * tracks.length)];
 }
 
-function buildActivities() {
+function buildActivities(client) {
   const track = pickSpotifyTrack();
   const watching = config.presence.watching;
   const now = Date.now();
@@ -19,7 +19,15 @@ function buildActivities() {
       details: track.details,
       state: track.state,
       sync_id: track.syncId,
-      assets: { large_image: track.largeImage }
+      ...(track.albumId
+        ? { metadata: { album_id: track.albumId, context_uri: `spotify:album:${track.albumId}` } }
+        : {}),
+      assets: {
+        large_image: track.largeImage,
+        ...(track.smallImage ? { small_image: track.smallImage } : {}),
+        large_text: track.details
+      },
+      party: { id: `spotify:${client.user.id}` }
     },
     {
       name: watching.name,
@@ -39,7 +47,7 @@ function buildActivities() {
 async function updatePresence(client) {
   try {
     await client.user.setPresence({
-      activities: buildActivities(),
+      activities: buildActivities(client),
       status: config.presence.status
     });
   } catch (err) {
