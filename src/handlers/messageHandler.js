@@ -64,7 +64,14 @@ function registerMessageHandler(client) {
       const { perCharMs, capMs, jitterMs } = config.replyDelay;
       await new Promise((r) => setTimeout(r, Math.min(reply.length * perCharMs, capMs) + Math.random() * jitterMs));
 
-      await msg.reply(reply);
+      try {
+        await msg.reply(reply);
+      } catch (err) {
+        // 返信遅延の間に元メッセージが消えている(Unknown message)などの場合は
+        // 通常メッセージとして送り直す
+        logger.error('REPLY-AS-REPLY', err);
+        await msg.channel.send(reply);
+      }
       lastReplyTime = Date.now();
       logger.log('REPLY', reply.slice(0, 50));
     } catch (err) {
