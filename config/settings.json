@@ -1,0 +1,72 @@
+{
+  "cooldownSeconds": 45,
+  "replyChance": {
+    "mention": 0.7,
+    "reply": 0.6,
+    "normal": 0.15
+  },
+  "nightMode": {
+    "startHour": 1,
+    "endHour": 5,
+    "multiplier": 0.2
+  },
+  "recentDuplicateGuard": {
+    "fetchLimit": 3,
+    "minGapMs": 2000
+  },
+  "typingDelay": {
+    "minMs": 1000,
+    "maxMs": 2000
+  },
+  "replyDelay": {
+    "perCharMs": 20,
+    "capMs": 3000,
+    "jitterMs": 1000
+  },
+  "selfTalk": {
+    "intervalMs": 3600000,
+    "chance": 0.25,
+    "imageChance": 0.3,
+    "animalTypes": ["cat", "dog", "fox", "bird"]
+  },
+  "ai": {
+    "model": "llama3-70b-8192",
+    "reply": {
+      "temperature": 0.85,
+      "maxTokens": 120,
+      "historyContextSize": 5,
+      "historyFetchLimit": 10
+    },
+    "selfTalk": {
+      "temperature": 1.3,
+      "maxTokens": 50
+    }
+  },
+  "presence": {
+    "updateIntervalMs": 30000,
+    "status": "online",
+    "spotifyTracks": [
+      {
+        "details": "めうめうぺったんたん！！",
+        "state": "芽兎めう",
+        "syncId": "3btKs4ln57kQ46ALWdsvYi",
+        "largeImage": "spotify:ab67706c0000da84abeeaae7c11c3455bc45d603"
+      },
+      {
+        "details": "地方創生☆チクワクティクス",
+        "state": "芽兎めう",
+        "syncId": "3btKs4ln57kQ46ALWdsvYi",
+        "largeImage": "spotify:ab67706c0000da84c0052dc7fb523a68affdb8f7"
+      }
+    ],
+    "watching": {
+      "name": "U-NEXT",
+      "applicationId": "1447891267336802400",
+      "details": "ひきこまり吸血鬼の悶々 第1話",
+      "state": "烈核解放",
+      "largeImage": "1457346793753804925",
+      "durationMs": 1500000,
+      "elapsedMs": 300000
+    }
+  }
+}
