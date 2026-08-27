@@ -1,43 +1,52 @@
-# discord-selfbot
+# AI_cord
 
-Groq (Llama3) を使って人間っぽく雑談・自発投稿する Discord セルフボット。
-[TomoriBot](https://github.com/) のような `config/` `src/` `handlers/` `utils/` に分割したモジュール構成にリファクタリング済み。
+Groq(またはOpenAI互換API)を使って人間っぽく雑談・自発投稿するDiscordセルフボット。[TomoriBot](https://github.com/) のような `config/` `src/` `handlers/` `utils/` に分割したモジュール構成。
 
-> **注意**: セルフボット（ユーザーアカウントの自動化）は Discord の利用規約で禁止されています。
-> 利用は自己責任で、アカウント停止のリスクを理解した上で行ってください。
+> **注意**: セルフボット(ユーザーアカウントの自動化)はDiscordの利用規約で禁止されています。利用は自己責任で、アカウント停止のリスクを理解した上で行ってください。
+
+## 目次
+
+- [ディレクトリ構成](#ディレクトリ構成)
+- [ローカルでのセットアップ](#ローカルでのセットアップ)
+- [設定](#設定)
+- [主な機能](#主な機能)
+- [Oracle Cloudへのデプロイ](#oracle-cloudへのデプロイ)
+- [依存関係](#依存関係)
 
 ## ディレクトリ構成
 
 ```
-discord-selfbot/
+AI_cord/
 ├── config/
-│   ├── settings.json          # 動作設定（クールダウン、返信確率、AIパラメータ、Presence など）
+│   ├── settings.json          # 動作設定(クールダウン、返信確率、AI/Markovパラメータ、Presenceなど)
 │   ├── personas/
-│   │   └── default.txt        # 人格プロンプト（システムプロンプト）
-│   └── prompts/
-│       └── self_talk.txt      # 自発投稿用プロンプト
+│   │   └── default.txt        # 人格プロンプト(システムプロンプト)
+│   ├── prompts/
+│   │   └── self_talk.txt      # 自発投稿用プロンプト
+│   └── corpus/
+│       └── default.txt        # Markov連鎖の学習元テキスト(任意機能、1行1発言)
 ├── src/
 │   ├── index.js                # エントリーポイント
 │   ├── client.js                # discord.js-selfbot-v13 クライアント生成
 │   ├── handlers/
 │   │   ├── messageHandler.js    # メッセージ受信・返信ロジック
-│   │   ├── selfTalkHandler.js   # 自発投稿（テキスト/画像）ロジック
-│   │   └── presenceHandler.js   # RPC（Spotify/視聴中ステータス）更新
+│   │   ├── selfTalkHandler.js   # 自発投稿(テキスト/画像)ロジック
+│   │   └── presenceHandler.js   # RPC(Spotify/視聴中ステータス)更新
 │   └── utils/
 │       ├── config.js            # settings.json + persona + prompt + corpus + .env の統合読み込み
-│       ├── aiClient.js          # OpenAI互換Chat Completions API 呼び出し（返信生成・自発投稿生成）
-│       ├── markovChain.js       # 口調再現用マルコフ連鎖（下書き生成、任意機能）
+│       ├── aiClient.js          # OpenAI互換Chat Completions API 呼び出し(返信生成・自発投稿生成)
+│       ├── markovChain.js       # 口調再現用マルコフ連鎖(下書き生成、任意機能)
 │       ├── animalImage.js       # 動物画像取得
 │       └── logger.js            # ログ出力
 ├── scripts/
-│   └── markov-demo.js          # マルコフ連鎖の学習・生成を単体で試せるデモスクリプト
+│   └── markov-demo.js          # マルコフ連鎖の学習・生成を単体で試すデモスクリプト
 ├── .env.example
 ├── .gitignore
 ├── package.json
 └── README.md
 ```
 
-## セットアップ
+## ローカルでのセットアップ
 
 ```bash
 npm install
@@ -48,7 +57,7 @@ npm start
 
 ## 設定
 
-### `.env`（機密情報・環境依存値）
+### `.env`(機密情報・環境依存値)
 
 | 変数 | 内容 |
 |---|---|
@@ -57,15 +66,25 @@ npm start
 | `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
 | `ALLOWED_GUILD_ID` | 動作させるサーバーID |
 | `ALLOWED_CHANNEL_ID` | 動作させるチャンネルID |
-| `PERSONA` | `config/personas/` 内で使用する人格ファイル名（拡張子なし、省略時 `default`） |
+| `PERSONA` | `config/personas/` 内で使用する人格ファイル名(拡張子なし、省略時 `default`) |
 
 ### AIバックエンドの切り替え
 
-`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叛く汎用実装になっている。`AI_BASE_URL` / `AI_API_KEY` を変更するだけで、Groq以外(自前ホストのvLLM・Ollama・text-generation-inferenceなど、OpenAI互換API公開しているもの全般)に差し替え可能。モデル名は `config/settings.json` の `ai.model` で指定する。`messageHandler.js` / `selfTalkHandler.js` / persona 周りはバックエンドに依存しないため変更不要。
+`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叛く汎用実装。`AI_BASE_URL` / `AI_API_KEY` を変更するだけで、Groq以外(自前ホストのvLLM・Ollama・text-generation-inferenceなど、OpenAI互換API公開しているもの全般)に差し替え可能。モデル名は `config/settings.json` の `ai.model` で指定する。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
 
-### `config/settings.json`（動作パラメータ）
+### `config/settings.json`(動作パラメータ)
 
-クールダウン秒数、返信確率（メンション/リプライ/通常）、深夜帯の抑制、自発投稿の間隔・確率・画像混在率、AIモデル名や温度、Presence（Spotify/視聴中ステータス）のローテーションなどをここで調整する。
+| セクション | 内容 |
+|---|---|
+| `cooldownSeconds` | 返信後の最短間隔(秒) |
+| `replyChance` | メンション/リプライ/通常発言それぞれの返信確率 |
+| `nightMode` | 指定時間帯(デフォルト1〜5時)の返信確率抑制倍率 |
+| `recentDuplicateGuard` | 連投・自己連続投稿の抑制設定 |
+| `typingDelay` / `replyDelay` | typing表示や返信送信までの擬似的な遅延 |
+| `selfTalk` | 自発投稿の間隔・確率・画像混在率・対象動物 |
+| `markov` | マルコフ連鎖の口調下書き機能の設定(後述) |
+| `ai` | モデル名、温度、履歴参照件数など |
+| `presence` | Spotify/視聴中ステータス(RPC)のローテーション内容 |
 
 ### `config/personas/default.txt`
 
@@ -77,20 +96,103 @@ npm start
 
 ### マルコフ連鎖による口調の下書き(任意機能)
 
-`config/settings.json` の `markov.enabled` を `true` にすると、`config/corpus/<corpusFile>` (改行区切りのテキスト、1行1発言目安)からマルコフ連鎖モデルを構築し、返信生成のたびに短い「口調の下書き」を作ってGroq(等のLLM)へのプロンプトに添える。LLMには「意味は無視して口調・言い回しだけ参考にする」よう指示しており、下書き自体は文脈を無視した単語列でも構わない。
+`config/settings.json` の `markov.enabled` を `true` にすると、`config/corpus/<corpusFile>` (改行区切りのテキスト、1行1発言目安)からマルコフ連鎖モデルを構築し、返信生成のたびに短い「口調の下書き」を作ってLLMへのプロンプトに添える。LLMには「意味は無視して口調・言い回しだけ参考にする」よう指示している。
 
 - `order`: マルコフ連鎖のn-gram長(大きいほど元の言い回しに忠実、小さいほど崩れやすい。2〜3推奨)
 - `corpusFile`: `config/corpus/` 内のファイル名
 - `draftMaxWords`: 下書きの最大単語数
 
-`config/corpus/default.txt` は空のプレースホルダーです。**学習元テキストには、実在の第三者の発言が混ざらないよう本人が用意したものだけを使ってください。** 同意の取れていない他者の発言データを学習・生成に使うことは想定していません。
-
-Botを起動せずに単体で学習・生成結果を確認したい場合は、`scripts/markov-demo.js` を使う。
+Botを起動せずに単体で学習・生成結果を確認したい場合は `scripts/markov-demo.js` を使う。
 
 ```bash
 node scripts/markov-demo.js [corpusFile] [order] [count]
 # 例: config/corpus/default.txt を order=2 で学習し、5個生成
 node scripts/markov-demo.js default.txt 2 5
-# npm経由でも実行可能(corpusFile等は node scripts/markov-demo.js 直接呼び出しで指定)
 npm run markov:demo
 ```
+
+## 主な機能
+
+- サーバー内の特定チャンネルでのメンション/リプライ/通常発言に確率的に返信(OpenAI互換API経由でLLM生成、デフォルトはGroq)
+- 直近の会話履歴を踏まえた返信生成、連投防止・クールダウン制御
+- 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像+一言)
+- Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
+- (任意)マルコフ連鎖による口調の下書き生成
+
+## Oracle Cloudへのデプロイ
+
+インスタンスへのSSH接続ができる状態から、Botを常駅させるまでの手順。GPUは不要(推論は外部APIまたは自前ホストのAPIに任せる構成のため)。
+
+### 1. Node.jsのインストール
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo bash -
+sudo apt-get install -y nodejs git
+node -v
+```
+
+### 2. リポジトリのクローン
+
+```bash
+git clone https://github.com/hihei56/AI_cord.git
+cd AI_cord
+npm install
+```
+
+### 3. `.env` の設定
+
+```bash
+cp .env.example .env
+nano .env
+# DISCORD_TOKEN / AI_API_KEY / ALLOWED_GUILD_ID / ALLOWED_CHANNEL_ID を設定
+```
+
+### 4. 動作確認
+
+```bash
+npm start
+# [READY] ユーザー名#0000 のようなログが出ればOK。Ctrl+Cで停止
+```
+
+### 5. pm2で常駅化
+
+```bash
+sudo npm install -g pm2
+pm2 start src/index.js --name ai_cord
+pm2 save
+pm2 startup
+# 表示されたコマンド(sudo env PATH=... pm2 startup systemd -u ... など)をそのまま実行するとOS起動時にも自動起動する
+```
+
+運用コマンド:
+
+```bash
+pm2 logs ai_cord      # ログ確認
+pm2 restart ai_cord   # 再起動(.env や config/ 変更後など)
+pm2 stop ai_cord      # 停止
+```
+
+### 6. ネットワーク/ファイアウォールについて
+
+このBotはDiscordとAI APIへ**アウトバウンド接続するだけ**で、外部からインスタンスへの**インバウンド接続を一切必要としない**。そのためOracle CloudのSecurity List/NSGで新たにポートを開放する必要はない(SSH用8番ポートのみで足りる)。
+
+自前ホストのAI(Ollama/vLLMなど、別マシンで動かしている場合)を `AI_BASE_URL` で参照する構成にするときは、そのAPIサーバー側の到達性(Tailscale/Cloudflare Tunnelなど)を別途用意する。
+
+### 7. 更新の反映
+
+```bash
+cd AI_cord
+git pull
+npm install   # 依存関係が変わっていた場合のみ
+pm2 restart ai_cord
+```
+
+### 8. Always Free枠のインスタンス回収について
+
+**課金インスタンスの場合はこの節は無関係。** Always Free枠のインスタンスを使う場合のみ、7日間のCPU使用率(95パーセンタイル)が20%を下回ると回収対象になりうる。このBotは待機中ほとんどCPUを使わないため、Always Free枠を使う場合は軽いcronのヘルスチェックなどを仕込んでおくと安全。
+
+## 依存関係
+
+- [discord.js-selfbot-v13](https://www.npmjs.com/package/discord.js-selfbot-v13)
+- [dotenv](https://www.npmjs.com/package/dotenv)
+- [@sefinek/random-animals](https://www.npmjs.com/package/@sefinek/random-animals)
