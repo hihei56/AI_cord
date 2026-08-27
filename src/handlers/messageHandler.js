@@ -55,7 +55,7 @@ function registerMessageHandler(client) {
     await new Promise((r) => setTimeout(r, Math.random() * (maxMs - minMs) + minMs));
 
     const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
-    const ctxMsgs = history.filter((m) => !m.author.bot).reverse();
+    const ctxMsgs = [...history.filter((m) => !m.author.bot).reverse().values()];
     const reply = await getAIResponse(msg.content, ctxMsgs);
     if (!reply) return;
 
