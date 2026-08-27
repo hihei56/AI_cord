@@ -1,13 +1,11 @@
 const config = require('./config');
 const logger = require('./logger');
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-
-async function callGroq(messages, { temperature, maxTokens }) {
-  const res = await fetch(GROQ_ENDPOINT, {
+async function callChatCompletion(messages, { temperature, maxTokens }) {
+  const res = await fetch(`${config.env.aiBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${config.env.groqApiKey}`,
+      Authorization: `Bearer ${config.env.aiApiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -36,7 +34,7 @@ async function getAIResponse(userMsg, history = []) {
   const systemPrompt = `${config.persona}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
 
   try {
-    return await callGroq(
+    return await callChatCompletion(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg }
@@ -51,7 +49,7 @@ async function getAIResponse(userMsg, history = []) {
 
 async function generateSelfTalk() {
   try {
-    const text = await callGroq(
+    const text = await callChatCompletion(
       [
         { role: 'system', content: 'あなたは適当な人間です。深く考えずに雑談します。' },
         { role: 'user', content: config.selfTalkPrompt }

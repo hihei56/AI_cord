@@ -11,7 +11,8 @@ const settings = JSON.parse(readText('settings.json'));
 
 const env = {
   discordToken: process.env.DISCORD_TOKEN,
-  groqApiKey: process.env.GROQ_API_KEY,
+  aiBaseUrl: process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
+  aiApiKey: process.env.AI_API_KEY || process.env.GROQ_API_KEY,
   allowedGuildId: process.env.ALLOWED_GUILD_ID,
   allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
   personaName: process.env.PERSONA || 'default'

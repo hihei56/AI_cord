@@ -25,7 +25,7 @@ discord-selfbot/
 │   │   └── presenceHandler.js   # RPC（Spotify/視聴中ステータス）更新
 │   └── utils/
 │       ├── config.js            # settings.json + persona + prompt + .env の統合読み込み
-│       ├── aiClient.js          # Groq API 呼び出し（返信生成・自発投稿生成）
+│       ├── aiClient.js          # OpenAI互換Chat Completions API 呼び出し（返信生成・自発投稿生成）
 │       ├── animalImage.js       # 動物画像取得
 │       └── logger.js            # ログ出力
 ├── .env.example
@@ -50,14 +50,19 @@ npm start
 | 変数 | 内容 |
 |---|---|
 | `DISCORD_TOKEN` | Discordアカウントのトークン |
-| `GROQ_API_KEY` | Groq APIキー |
+| `AI_BASE_URL` | Chat Completions APIのベースURL(OpenAI互換なら何でも可。省略時Groq) |
+| `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
 | `ALLOWED_GUILD_ID` | 動作させるサーバーID |
 | `ALLOWED_CHANNEL_ID` | 動作させるチャンネルID |
 | `PERSONA` | `config/personas/` 内で使用する人格ファイル名（拡張子なし、省略時 `default`） |
 
+### AIバックエンドの切り替え
+
+`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叛く汎用実装になっている。`AI_BASE_URL` / `AI_API_KEY` を変更するだけで、Groq以外(自前ホストのvLLM・Ollama・text-generation-inferenceなど、OpenAI互換API公開しているもの全般)に差し替え可能。モデル名は `config/settings.json` の `ai.model` で指定する。`messageHandler.js` / `selfTalkHandler.js` / persona 周りはバックエンドに依存しないため変更不要。
+
 ### `config/settings.json`（動作パラメータ）
 
-クールダウン秒数、返信確率（メンション/リプライ/通常）、深夜帯の抑制、自発投稿の間隔・確率・画像混在率、Groqモデル名や温度、Presence（Spotify/視聴中ステータス）のローテーションなどをここで調整する。
+クールダウン秒数、返信確率（メンション/リプライ/通常）、深夜帯の抑制、自発投稿の間隔・確率・画像混在率、AIモデル名や温度、Presence（Spotify/視聴中ステータス）のローテーションなどをここで調整する。
 
 ### `config/personas/default.txt`
 
@@ -69,7 +74,7 @@ npm start
 
 ## 主な機能
 
-- サーバー内の特定チャンネルでのメンション/リプライ/通常発言に確率的に返信（Groq Llama3で生成）
+- サーバー内の特定チャンネルでのメンション/リプライ/通常発言に確率的に返信（OpenAI互換API経由でLLM生成、デフォルトはGroq）
 - 直近の会話履歴を踏まえた返信生成、連投防止・クールダウン制御
 - 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像＋一言）
 - Spotify再生中/動画視聴中を模したPresence（RPC）のローテーション更新
