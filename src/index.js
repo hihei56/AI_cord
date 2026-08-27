@@ -8,6 +8,9 @@ const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
 const { initMarkov } = require('./utils/aiClient');
 
+process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
+process.on('uncaughtException', (err) => logger.error('UNCAUGHT', err));
+
 const client = createClient();
 
 registerMessageHandler(client);

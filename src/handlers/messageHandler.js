@@ -49,22 +49,27 @@ function registerMessageHandler(client) {
     if (Math.random() > chance) return;
 
     logger.log('TRIG', `${msg.author.username}: ${msg.content.slice(0, 30)}`);
-    await msg.channel.sendTyping();
 
-    const { minMs, maxMs } = config.typingDelay;
-    await new Promise((r) => setTimeout(r, Math.random() * (maxMs - minMs) + minMs));
+    try {
+      await msg.channel.sendTyping();
 
-    const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
-    const ctxMsgs = [...history.filter((m) => !m.author.bot).reverse().values()];
-    const reply = await getAIResponse(msg.content, ctxMsgs);
-    if (!reply) return;
+      const { minMs, maxMs } = config.typingDelay;
+      await new Promise((r) => setTimeout(r, Math.random() * (maxMs - minMs) + minMs));
 
-    const { perCharMs, capMs, jitterMs } = config.replyDelay;
-    await new Promise((r) => setTimeout(r, Math.min(reply.length * perCharMs, capMs) + Math.random() * jitterMs));
+      const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
+      const ctxMsgs = [...history.filter((m) => !m.author.bot).reverse().values()];
+      const reply = await getAIResponse(msg.content, ctxMsgs);
+      if (!reply) return;
 
-    await msg.reply(reply);
-    lastReplyTime = Date.now();
-    logger.log('REPLY', reply.slice(0, 50));
+      const { perCharMs, capMs, jitterMs } = config.replyDelay;
+      await new Promise((r) => setTimeout(r, Math.min(reply.length * perCharMs, capMs) + Math.random() * jitterMs));
+
+      await msg.reply(reply);
+      lastReplyTime = Date.now();
+      logger.log('REPLY', reply.slice(0, 50));
+    } catch (err) {
+      logger.error('MESSAGE', err);
+    }
   });
 }
 
