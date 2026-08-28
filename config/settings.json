@@ -48,6 +48,11 @@
     "selfTalk": {
       "temperature": 1.3,
       "maxTokens": 150
+    },
+    "vision": {
+      "enabled": true,
+      "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "maxTokens": 200
     }
   },
   "presenceFile": "default.json"
