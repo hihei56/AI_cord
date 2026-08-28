@@ -65,8 +65,34 @@ npm start
 | `AI_BASE_URL` | Chat Completions APIのベースURL(OpenAI互換なら何でも可。省略時Groq) |
 | `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
 | `ALLOWED_GUILD_ID` | 動作させるサーバーID |
-| `ALLOWED_CHANNEL_ID` | 動作させるチャンネルID |
+| `ALLOWED_CHANNEL_ID` | 初回起動時の初期応答チャンネルID(以降は`!channel`コマンドで動的に追加/削除可能) |
 | `PERSONA` | `config/personas/` 内で使用する人格ファイル名(拡張子なし、省略時 `default`) |
+| `CORPUS_FILE` | `config/corpus/` 内で使用するコーパスファイル名(省略時 `config/settings.json`の`markov.corpusFile`) |
+
+### 複数アカウントの同時運用
+
+1プロセスで複数のDiscordアカウントを同時に動かせる。`DISCORD_TOKEN`(無印)が1つ目のアカウントで、2つ目以降は`_2`, `_3`...を付けた変数名で追加する。
+
+```
+DISCORD_TOKEN_2=...
+ALLOWED_GUILD_ID_2=...
+ALLOWED_CHANNEL_ID_2=...
+PERSONA_2=別の人格ファイル名
+CORPUS_FILE_2=別のコーパスファイル名
+```
+
+アカウントごとに応答チャンネル一覧・ロックダウン状態・マルコフ連鎖・人格は完全に独立している(`src/account.js`でアカウントごとの実行時状態をまとめている)。AIバックエンド(`AI_BASE_URL`/`AI_API_KEY`)と`config/settings.json`の挙動設定(返信確率・遅延・モデルなど)は全アカウント共通。
+
+### コマンド
+
+アカウント本人(そのDiscordアカウント自身)が送ったメッセージだけがコマンドとして処理される。プレフィックスは`config/settings.json`の`commandPrefix`(デフォルト`!`)。
+
+| コマンド | 内容 |
+|---|---|
+| `!channel add\|remove\|list [channelId]` | 応答チャンネルの追加/削除/一覧(省略時は今いるチャンネル) |
+| `!lockdown` | 自動応答・自発投稿を緊急停止/再開するトグル |
+| `!train [件数] [@ユーザー]` | チャンネルの発言を集めてコーパスに追加し即再学習(省略時は自分自身、直近200件) |
+| `!help` | コマンド一覧を表示 |
 
 ### AIバックエンドの切り替え
 

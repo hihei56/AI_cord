@@ -2,33 +2,33 @@ const config = require('./config');
 const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 
-let markovChain = null;
-
-// bot起動時に一度だけ呼ぶ。kuromojiの辞書読み込み+全行のトークン化は
+// アカウント起動時に一度だけ呼ぶ。kuromojiの辞書読み込み+全行のトークン化は
 // 数百ms〜数秒かかることがあるため、実際のチャット応答の妨げにならないよう
-// 事前に済ませておく。
-async function initMarkov() {
+// 事前に済ませておく。学習結果はaccountStateに直接格納するので、
+// 複数アカウントで呼んでも互いのマルコフ連鎖は混ざらない。
+async function initMarkov(accountState) {
   if (!config.markov?.enabled) return;
 
-  const lines = loadCorpus(config.corpusPath);
+  const lines = loadCorpus(accountState.corpusPath);
   if (lines.length === 0) {
-    logger.log('MARKOV', 'コーパスが空のため無効化');
+    logger.log('MARKOV', `[${accountState.id}] コーパスが空のため無効化`);
     return;
   }
 
   try {
     const tokenizer = await buildTokenizer();
-    markovChain = new MarkovChain(config.markov.order, tokenizer);
-    markovChain.train(lines);
-    logger.log('MARKOV', `学習完了 (行数: ${lines.length}, キー数: ${markovChain.chain.size})`);
+    const chain = new MarkovChain(config.markov.order, tokenizer);
+    chain.train(lines);
+    accountState.markovChain = chain;
+    logger.log('MARKOV', `[${accountState.id}] 学習完了 (行数: ${lines.length}, キー数: ${chain.chain.size})`);
   } catch (err) {
     logger.error('MARKOV', err);
   }
 }
 
-function getMarkovDraft(contextText = '') {
-  if (!config.markov?.enabled || !markovChain) return null;
-  return markovChain.generate(config.markov.draftMaxWords, contextText);
+function getMarkovDraft(accountState, contextText = '') {
+  if (!config.markov?.enabled || !accountState.markovChain) return null;
+  return accountState.markovChain.generate(config.markov.draftMaxWords, contextText);
 }
 
 async function callChatCompletion(messages, { temperature, maxTokens }) {
@@ -62,7 +62,7 @@ async function callChatCompletion(messages, { temperature, maxTokens }) {
   return content;
 }
 
-async function getAIResponse(userMsg, history = []) {
+async function getAIResponse(accountState, userMsg, history = []) {
   const { historyContextSize, temperature, maxTokens } = {
     historyContextSize: config.ai.reply.historyContextSize,
     temperature: config.ai.reply.temperature,
@@ -74,12 +74,12 @@ async function getAIResponse(userMsg, history = []) {
     .map((m) => `${m.author.username}: ${m.content}`)
     .join('\n');
 
-  const draft = getMarkovDraft(`${ctx}\n${userMsg}`);
+  const draft = getMarkovDraft(accountState, `${ctx}\n${userMsg}`);
   const draftSection = draft
     ? `\n【口調の下書き(意味は無視して口調・言い回しだけ参考にすること)】\n${draft}`
     : '';
 
-  const systemPrompt = `${config.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
 
   try {
     return await callChatCompletion(

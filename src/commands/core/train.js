@@ -1,5 +1,4 @@
 const fs = require('fs');
-const config = require('../../utils/config');
 const logger = require('../../utils/logger');
 const { loadCorpus } = require('../../utils/markovChain');
 const { initMarkov } = require('../../utils/aiClient');
@@ -10,7 +9,8 @@ module.exports = {
   name: 'train',
   aliases: ['学習'],
   description: 'チャンネルの発言をコーパスに追加して再学習。!train [件数] [@ユーザー] (省略時は自分自身、直近200件)',
-  async execute(msg, args) {
+  async execute(msg, args, client) {
+    const state = client.accountState;
     const countArg = parseInt(args[0], 10);
     const limit = Number.isFinite(countArg) ? Math.min(countArg, MAX_FETCH) : 200;
     const targetUser = msg.mentions.users.first() || msg.author;
@@ -34,12 +34,12 @@ module.exports = {
       return;
     }
 
-    const existing = loadCorpus(config.corpusPath);
+    const existing = loadCorpus(state.corpusPath);
     const merged = [...new Set([...existing, ...collected])];
-    fs.writeFileSync(config.corpusPath, `${merged.join('\n')}\n`);
+    fs.writeFileSync(state.corpusPath, `${merged.join('\n')}\n`);
 
-    await initMarkov();
-    logger.log('TRAIN', `${targetUser.username}: ${collected.length}件追加 (計${merged.length}行)`);
+    await initMarkov(state);
+    logger.log('TRAIN', `[${state.id}] ${targetUser.username}: ${collected.length}件追加 (計${merged.length}行)`);
     await msg.channel.send(`✅ ${collected.length}件追加(重複除去後 計${merged.length}行) → 再学習完了`);
   }
 };

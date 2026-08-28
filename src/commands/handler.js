@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { isLockedDown } = require('../utils/lockdown');
 
 const CORE_DIR = path.join(__dirname, 'core');
 const commands = new Map();
@@ -22,8 +21,10 @@ function loadCommands() {
   logger.log('COMMANDS', `${files.length}個のコマンドファイルを読み込み (${commands.size}エントリ)`);
 }
 
+// コマンド定義自体はアカウント間で共有(内容はアカウント非依存)なので、
+// 複数アカウント分呼ばれても読み込みは最初の1回だけでよい。
 function registerCommandHandler(client) {
-  loadCommands();
+  if (commands.size === 0) loadCommands();
 
   client.on('messageCreate', async (msg) => {
     // 本人(アカウント所有者)のメッセージのみコマンドとして扱う
@@ -36,8 +37,9 @@ function registerCommandHandler(client) {
     const commandName = args.shift()?.toLowerCase();
     if (!commandName) return;
 
+    const state = client.accountState;
     // ロックダウン中は解除コマンド以外を受け付けない
-    if (isLockedDown() && commandName !== 'lockdown') return;
+    if (state.lockedDown && commandName !== 'lockdown') return;
 
     const cmd = commands.get(commandName);
     if (!cmd) return;

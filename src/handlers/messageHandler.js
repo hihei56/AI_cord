@@ -1,10 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { getAIResponse } = require('../utils/aiClient');
-const { isAllowedChannel } = require('../utils/channelStore');
-const { isLockedDown } = require('../utils/lockdown');
-
-let lastReplyTime = 0;
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -36,15 +32,17 @@ function resolveChance(msg, client) {
 }
 
 function registerMessageHandler(client) {
+  const state = client.accountState;
+
   client.on('messageCreate', async (msg) => {
     if (msg.author.id === client.user.id) return;
-    if (isLockedDown()) return;
-    if (msg.guild?.id !== config.env.allowedGuildId) return;
-    if (!isAllowedChannel(msg.channel.id)) return;
+    if (state.lockedDown) return;
+    if (msg.guild?.id !== state.allowedGuildId) return;
+    if (!state.channelStore.isAllowedChannel(msg.channel.id)) return;
     if (!isRealUser(msg)) return;
 
     const now = Date.now();
-    if (now - lastReplyTime < config.cooldownSeconds * 1000) return;
+    if (now - state.lastReplyTime < config.cooldownSeconds * 1000) return;
 
     try {
       const recent = await msg.channel.messages.fetch({ limit: config.recentDuplicateGuard.fetchLimit });
@@ -58,7 +56,7 @@ function registerMessageHandler(client) {
     const chance = resolveChance(msg, client);
     if (Math.random() > chance) return;
 
-    logger.log('TRIG', `${msg.author.username}: ${msg.content.slice(0, 30)}`);
+    logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);
 
     try {
       await msg.channel.sendTyping();
@@ -68,7 +66,7 @@ function registerMessageHandler(client) {
 
       const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
       const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
-      const reply = await getAIResponse(msg.content, ctxMsgs);
+      const reply = await getAIResponse(state, msg.content, ctxMsgs);
       if (!reply) return;
 
       const { perCharMs, capMs, jitterMs } = config.replyDelay;
@@ -82,8 +80,8 @@ function registerMessageHandler(client) {
         logger.error('REPLY-AS-REPLY', err);
         await msg.channel.send(reply);
       }
-      lastReplyTime = Date.now();
-      logger.log('REPLY', reply.slice(0, 50));
+      state.lastReplyTime = Date.now();
+      logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
     } catch (err) {
       logger.error('MESSAGE', err);
     }

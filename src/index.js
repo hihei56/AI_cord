@@ -1,7 +1,6 @@
 require('dotenv').config();
 
-const { createClient } = require('./client');
-const config = require('./utils/config');
+const { createClients } = require('./client');
 const logger = require('./utils/logger');
 const { registerMessageHandler } = require('./handlers/messageHandler');
 const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
@@ -12,15 +11,37 @@ const { initMarkov } = require('./utils/aiClient');
 process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
 process.on('uncaughtException', (err) => logger.error('UNCAUGHT', err));
 
-const client = createClient();
+const clients = createClients();
 
-registerMessageHandler(client);
-registerSelfTalkHandler(client);
-registerCommandHandler(client);
+if (clients.length === 0) {
+  logger.error('FATAL', 'DISCORD_TOKENが1つも設定されていません(.envを確認してください)');
+  process.exit(1);
+}
 
-client.once('ready', () => {
-  logger.log('READY', client.user.tag);
-  registerPresenceHandler(client);
-});
+async function start() {
+  await Promise.all(clients.map((client) => initMarkov(client.accountState)));
 
-initMarkov().finally(() => client.login(config.env.discordToken));
+  for (const client of clients) {
+    registerMessageHandler(client);
+    registerSelfTalkHandler(client);
+    registerCommandHandler(client);
+    client.once('ready', () => {
+      logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
+      registerPresenceHandler(client);
+    });
+  }
+
+  const results = await Promise.allSettled(
+    clients.map((client) => client.login(client.accountState.discordToken))
+  );
+
+  const failures = results.filter((r) => r.status === 'rejected');
+  failures.forEach((f) => logger.error('LOGIN', f.reason));
+
+  if (failures.length === clients.length) {
+    logger.error('FATAL', '全アカウントのログインに失敗しました');
+    process.exit(1);
+  }
+}
+
+start();
