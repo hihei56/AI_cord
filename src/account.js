@@ -15,6 +15,8 @@ function buildAccountState(account) {
     persona: config.readPersona(account.personaName),
     corpusPath: config.corpusPathFor(account.corpusFile),
     presence: config.presenceFor(account.presenceFile),
+    cooldownSeconds: account.cooldownSeconds,
+    replyChanceMultiplier: account.replyChanceMultiplier,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     lastReplyTime: 0,

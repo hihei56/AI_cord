@@ -16,7 +16,7 @@ function isDuplicateBurst(sorted) {
   return false;
 }
 
-function resolveChance(msg, client) {
+function resolveChance(msg, client, state) {
   const isMention = msg.mentions.has(client.user.id);
   const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
 
@@ -28,7 +28,7 @@ function resolveChance(msg, client) {
   const { startHour, endHour, multiplier } = config.nightMode;
   if (hour >= startHour && hour <= endHour) chance *= multiplier;
 
-  return chance;
+  return chance * (state.replyChanceMultiplier ?? 1);
 }
 
 function registerMessageHandler(client) {
@@ -42,7 +42,8 @@ function registerMessageHandler(client) {
     if (!isRealUser(msg)) return;
 
     const now = Date.now();
-    if (now - state.lastReplyTime < config.cooldownSeconds * 1000) return;
+    const cooldownSeconds = state.cooldownSeconds ?? config.cooldownSeconds;
+    if (now - state.lastReplyTime < cooldownSeconds * 1000) return;
 
     try {
       const recent = await msg.channel.messages.fetch({ limit: config.recentDuplicateGuard.fetchLimit });
@@ -53,7 +54,7 @@ function registerMessageHandler(client) {
       // ignore fetch failures, fall through to reply attempt
     }
 
-    const chance = resolveChance(msg, client);
+    const chance = resolveChance(msg, client, state);
     if (Math.random() > chance) return;
 
     logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);

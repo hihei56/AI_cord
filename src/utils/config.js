@@ -22,6 +22,10 @@ function presenceFor(presenceFile) {
   return JSON.parse(readText(path.join('presence', presenceFile || settings.presenceFile || 'default.json')));
 }
 
+function numEnv(name) {
+  return process.env[name] !== undefined ? Number(process.env[name]) : undefined;
+}
+
 // アカウントは .env の DISCORD_TOKEN(無印、後方互換用) と
 // DISCORD_TOKEN_2, DISCORD_TOKEN_3... (2つ目以降)から読み込む。
 // 無印だけならこれまで通り単一アカウントとして動く。
@@ -36,7 +40,9 @@ function loadAccounts() {
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
       personaName: process.env.PERSONA || 'default',
       corpusFile: process.env.CORPUS_FILE,
-      presenceFile: process.env.PRESENCE_FILE
+      presenceFile: process.env.PRESENCE_FILE,
+      cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
+      replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER')
     });
   }
 
@@ -49,12 +55,21 @@ function loadAccounts() {
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
       personaName: process.env[`PERSONA_${i}`] || 'default',
       corpusFile: process.env[`CORPUS_FILE_${i}`],
-      presenceFile: process.env[`PRESENCE_FILE_${i}`]
+      presenceFile: process.env[`PRESENCE_FILE_${i}`],
+      cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
+      replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`)
     });
     i++;
   }
 
-  return accounts;
+  // アカウントごとに少しずつ挙動をずらす(明示的に指定されていれば手動の値を優先)。
+  // 全アカウントが全く同じタイミング・確率で動くと機械的に見えるため、
+  // 何も設定しなくてもインデックスに応じて自動でクールダウンと返信確率をずらす。
+  return accounts.map((acc, index) => ({
+    ...acc,
+    cooldownSeconds: acc.cooldownSecondsOverride ?? settings.cooldownSeconds + index * 15,
+    replyChanceMultiplier: acc.replyChanceMultiplierOverride ?? 1 - index * 0.1
+  }));
 }
 
 const env = {
