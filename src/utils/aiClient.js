@@ -1,6 +1,7 @@
 const config = require('./config');
 const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
+const { resolveDisplayName } = require('./nicknames');
 
 // アカウント起動時に一度だけ呼ぶ。kuromojiの辞書読み込み+全行のトークン化は
 // 数百ms〜数秒かかることがあるため、実際のチャット応答の妨げにならないよう
@@ -103,7 +104,7 @@ async function describeImage(imageUrl) {
   }
 }
 
-async function getAIResponse(accountState, userMsg, history = []) {
+async function getAIResponse(accountState, userMsg, history = [], speaker = null) {
   const { historyContextSize, temperature, maxTokens } = {
     historyContextSize: config.ai.reply.historyContextSize,
     temperature: config.ai.reply.temperature,
@@ -112,7 +113,7 @@ async function getAIResponse(accountState, userMsg, history = []) {
 
   const ctx = history
     .slice(-historyContextSize)
-    .map((m) => `${m.author.username}: ${m.content}`)
+    .map((m) => `${resolveDisplayName(m.author)}: ${m.content}`)
     .join('\n');
 
   const draft = getMarkovDraft(accountState, `${ctx}\n${userMsg}`);
@@ -120,7 +121,11 @@ async function getAIResponse(accountState, userMsg, history = []) {
     ? `\n【口調の下書き(意味は無視して口調・言い回しだけ参考にすること)】\n${draft}`
     : '';
 
-  const systemPrompt = `${accountState.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
+  // speakerが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonに個別登録が
+  // あればそれ、無ければ通常のusername)で今の発言を表示し、AIがその名前で呼びかけられるようにする
+  const speakerLabel = speaker ? resolveDisplayName(speaker) : 'ユーザー';
+
+  const systemPrompt = `${accountState.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(

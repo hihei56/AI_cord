@@ -26,6 +26,16 @@ function numEnv(name) {
   return process.env[name] !== undefined ? Number(process.env[name]) : undefined;
 }
 
+// 特別な呼び方をしたい相手だけ config/nicknames.json に { "ユーザーID": "呼び名" }
+// で個別登録する。登録が無いユーザーは今まで通りDiscordのusernameで呼ぶ
+function loadNicknames() {
+  try {
+    return JSON.parse(readText('nicknames.json'));
+  } catch {
+    return {};
+  }
+}
+
 // アカウントは .env の DISCORD_TOKEN(無印、後方互換用) と
 // DISCORD_TOKEN_2, DISCORD_TOKEN_3... (2つ目以降)から読み込む。
 // 無印だけならこれまで通り単一アカウントとして動く。
@@ -42,7 +52,8 @@ function loadAccounts() {
       corpusFile: process.env.CORPUS_FILE,
       presenceFile: process.env.PRESENCE_FILE,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
-      replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER')
+      replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER'),
+      commandRoleId: process.env.ALLOWED_COMMAND_ROLE_ID
     });
   }
 
@@ -57,7 +68,8 @@ function loadAccounts() {
       corpusFile: process.env[`CORPUS_FILE_${i}`],
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
-      replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`)
+      replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`),
+      commandRoleId: process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`]
     });
     i++;
   }
@@ -87,5 +99,6 @@ module.exports = {
   readPersona,
   corpusPathFor,
   presenceFor,
+  nicknames: loadNicknames(),
   accounts: loadAccounts()
 };

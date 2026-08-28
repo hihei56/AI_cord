@@ -21,14 +21,21 @@ function loadCommands() {
   logger.log('COMMANDS', `${files.length}個のコマンドファイルを読み込み (${commands.size}エントリ)`);
 }
 
+// 本人(アカウント所有者)、または.envのALLOWED_COMMAND_ROLE_ID[_N]で
+// 指定したロールを持つメンバーだけコマンドを実行できる
+function canRunCommands(msg, client, state) {
+  if (msg.author.id === client.user.id) return true;
+  if (state.commandRoleId && msg.member?.roles?.cache?.has(state.commandRoleId)) return true;
+  return false;
+}
+
 // コマンド定義自体はアカウント間で共有(内容はアカウント非依存)なので、
 // 複数アカウント分呼ばれても読み込みは最初の1回だけでよい。
 function registerCommandHandler(client) {
   if (commands.size === 0) loadCommands();
 
   client.on('messageCreate', async (msg) => {
-    // 本人(アカウント所有者)のメッセージのみコマンドとして扱う
-    if (msg.author.id !== client.user.id) return;
+    if (!canRunCommands(msg, client, client.accountState)) return;
 
     const prefix = config.commandPrefix || '!';
     if (!msg.content.startsWith(prefix)) return;
