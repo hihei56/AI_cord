@@ -82,13 +82,16 @@ async function getAIResponse(accountState, userMsg, history = []) {
   const systemPrompt = `${accountState.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
 
   try {
-    return await callChatCompletion(
+    const reply = await callChatCompletion(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg }
       ],
       { temperature, maxTokens }
     );
+    // ペルソナで句読点を使わないよう指示しているが、モデルが無視することがあるので
+    // 念のため確実に除去する
+    return reply ? reply.replace(/[、。]/g, '') : reply;
   } catch (err) {
     logger.error('AI', err);
     return null;
