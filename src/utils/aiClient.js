@@ -62,6 +62,47 @@ async function callChatCompletion(messages, { temperature, maxTokens }) {
   return content;
 }
 
+// 画像添付があった時だけ呼ぶ。普段の会話モデルとは別に、
+// vision対応モデル(VISION_API_BASE_URL/VISION_API_KEY、未設定ならAI_*を使い回す)
+// に投げて内容を説明させる。会話自体はテキストのみのモデルのまま。
+async function describeImage(imageUrl) {
+  if (!config.ai.vision?.enabled) return null;
+
+  try {
+    const res = await fetch(`${config.env.visionBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.env.visionApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: config.ai.vision.model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'この画像に何が写っているか、日本語で1〜2文で簡潔に説明して' },
+              { type: 'image_url', image_url: { url: imageUrl } }
+            ]
+          }
+        ],
+        max_tokens: config.ai.vision.maxTokens || 200
+      })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      logger.error('VISION', `HTTP ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+      return null;
+    }
+
+    return data.choices?.[0]?.message?.content?.trim() || null;
+  } catch (err) {
+    logger.error('VISION', err);
+    return null;
+  }
+}
+
 async function getAIResponse(accountState, userMsg, history = []) {
   const { historyContextSize, temperature, maxTokens } = {
     historyContextSize: config.ai.reply.historyContextSize,
@@ -118,4 +159,4 @@ async function generateSelfTalk() {
   }
 }
 
-module.exports = { getAIResponse, generateSelfTalk, initMarkov };
+module.exports = { getAIResponse, generateSelfTalk, initMarkov, describeImage };

@@ -74,7 +74,10 @@ function loadAccounts() {
 
 const env = {
   aiBaseUrl: process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
-  aiApiKey: process.env.AI_API_KEY || process.env.GROQ_API_KEY
+  aiApiKey: process.env.AI_API_KEY || process.env.GROQ_API_KEY,
+  // 画像解析だけ別のAPI/モデルに投げたい場合用。未設定なら通常のAI接続先を使い回す
+  visionBaseUrl: process.env.VISION_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
+  visionApiKey: process.env.VISION_API_KEY || process.env.AI_API_KEY || process.env.GROQ_API_KEY
 };
 
 module.exports = {

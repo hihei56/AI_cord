@@ -1,6 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { getAIResponse } = require('../utils/aiClient');
+const { getAIResponse, describeImage } = require('../utils/aiClient');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -98,7 +98,15 @@ function registerMessageHandler(client) {
 
       const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
       const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
-      const reply = await getAIResponse(state, msg.content, ctxMsgs);
+
+      let userMsg = msg.content;
+      const image = [...msg.attachments.values()].find((a) => a.contentType?.startsWith('image/'));
+      if (image) {
+        const description = await describeImage(image.url);
+        if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
+      }
+
+      const reply = await getAIResponse(state, userMsg, ctxMsgs);
       if (!reply) return;
 
       const { minMs: replyMinMs, perCharMs, capMs, jitterMs } = config.replyDelay;
