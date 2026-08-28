@@ -104,7 +104,7 @@ async function describeImage(imageUrl) {
   }
 }
 
-async function getAIResponse(accountState, userMsg, history = [], speaker = null) {
+async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null) {
   const { historyContextSize, temperature, maxTokens } = {
     historyContextSize: config.ai.reply.historyContextSize,
     temperature: config.ai.reply.temperature,
@@ -113,7 +113,7 @@ async function getAIResponse(accountState, userMsg, history = [], speaker = null
 
   const ctx = history
     .slice(-historyContextSize)
-    .map((m) => `${resolveDisplayName(m.author)}: ${m.content}`)
+    .map((m) => `${resolveDisplayName(m.author, m.member)}: ${m.content}`)
     .join('\n');
 
   const draft = getMarkovDraft(accountState, `${ctx}\n${userMsg}`);
@@ -121,9 +121,9 @@ async function getAIResponse(accountState, userMsg, history = [], speaker = null
     ? `\n【口調の下書き(意味は無視して口調・言い回しだけ参考にすること)】\n${draft}`
     : '';
 
-  // speakerが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonに個別登録が
-  // あればそれ、無ければ通常のusername)で今の発言を表示し、AIがその名前で呼びかけられるようにする
-  const speakerLabel = speaker ? resolveDisplayName(speaker) : 'ユーザー';
+  // speakerMsgが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonの個別登録 >
+  // サーバーニックネーム > username の優先順)で今の発言を表示し、AIがその名前で呼びかけられるようにする
+  const speakerLabel = speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー';
 
   const systemPrompt = `${accountState.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 

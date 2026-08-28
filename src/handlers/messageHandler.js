@@ -106,7 +106,7 @@ function registerMessageHandler(client) {
         if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
       }
 
-      const reply = await getAIResponse(state, userMsg, ctxMsgs, msg.author);
+      const reply = await getAIResponse(state, userMsg, ctxMsgs, msg);
       if (!reply) return;
 
       const { minMs: replyMinMs, perCharMs, capMs, jitterMs } = config.replyDelay;

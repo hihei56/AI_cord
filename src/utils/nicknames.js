@@ -1,8 +1,26 @@
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 
-// config/nicknames.json に登録があればそれを使い、無ければ通常のDiscord usernameのまま
-function resolveDisplayName(user) {
-  return config.nicknames?.[user.id] || user.username;
+const NICKNAMES_PATH = path.join(__dirname, '..', '..', 'config', 'nicknames.json');
+
+// 優先順位: config/nicknames.json の個別登録 > サーバーのニックネーム(member.displayName) > Discordのusername
+function resolveDisplayName(user, member) {
+  return config.nicknames?.[user.id] || member?.displayName || user.username;
 }
 
-module.exports = { resolveDisplayName };
+function persistNicknames() {
+  fs.writeFileSync(NICKNAMES_PATH, `${JSON.stringify(config.nicknames, null, 2)}\n`, 'utf-8');
+}
+
+function setNickname(userId, name) {
+  config.nicknames[userId] = name;
+  persistNicknames();
+}
+
+function removeNickname(userId) {
+  delete config.nicknames[userId];
+  persistNicknames();
+}
+
+module.exports = { resolveDisplayName, setNickname, removeNickname };
