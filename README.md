@@ -104,7 +104,8 @@ CORPUS_FILE_2=別のコーパスファイル名
 |---|---|
 | `cooldownSeconds` | 返信後の最短間隔(秒) |
 | `replyChance` | メンション/リプライ/通常発言それぞれの返信確率 |
-| `nightMode` | 指定時間帯(デフォルト1〜5時)の返信確率抑制倍率 |
+| `activityRhythm` | 時間帯ごとの返信確率倍率(深夜は低活動、夜がピーク)。アカウントごとにoffset/energyで個体差あり |
+| `crowdGuard` | 直近に発言者が多い(盛り上がっている)時に返信確率をそっと下げる設定 |
 | `recentDuplicateGuard` | 連投・自己連続投稿の抑制設定 |
 | `typingDelay` / `replyDelay` | typing表示や返信送信までの擬似的な遅延 |
 | `selfTalk` | 自発投稿の間隔・確率・画像混在率・対象動物 |

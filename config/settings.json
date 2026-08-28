@@ -6,23 +6,30 @@
     "reply": 0.85,
     "normal": 0.35
   },
-  "nightMode": {
-    "startHour": 1,
-    "endHour": 5,
-    "multiplier": 0.2
+  "activityRhythm": {
+    "hourlyMultipliers": [0.05, 0.03, 0.02, 0.02, 0.03, 0.08, 0.2, 0.35, 0.4, 0.5, 0.55, 0.6, 0.75, 0.6, 0.5, 0.5, 0.55, 0.6, 0.75, 0.85, 1.0, 1.0, 0.9, 0.5],
+    "offsetJitterHours": 1.5,
+    "energyRange": [0.85, 1.15]
+  },
+  "crowdGuard": {
+    "fetchLimit": 20,
+    "windowMs": 120000,
+    "minDistinctUsers": 4,
+    "backoffMultiplier": 0.15
   },
   "recentDuplicateGuard": {
     "fetchLimit": 3,
     "minGapMs": 2000
   },
   "typingDelay": {
-    "minMs": 1000,
-    "maxMs": 2000
+    "minMs": 1500,
+    "maxMs": 4000
   },
   "replyDelay": {
-    "perCharMs": 20,
-    "capMs": 3000,
-    "jitterMs": 1000
+    "minMs": 1500,
+    "perCharMs": 40,
+    "capMs": 8000,
+    "jitterMs": 2000
   },
   "selfTalk": {
     "intervalMs": 3600000,
