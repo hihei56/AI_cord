@@ -4,6 +4,13 @@ const { getAIResponse } = require('../utils/aiClient');
 
 let lastReplyTime = 0;
 
+// Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
+// webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
+// (webhookIdを持たない)とは区別し、実際の発言として扱う。
+function isRealUser(message) {
+  return !message.author.bot || Boolean(message.webhookId);
+}
+
 function isDuplicateBurst(sorted) {
   const { minGapMs } = config.recentDuplicateGuard;
   if (sorted.size < 2) return false;
@@ -31,14 +38,14 @@ function registerMessageHandler(client) {
     if (msg.author.id === client.user.id) return;
     if (msg.guild?.id !== config.env.allowedGuildId) return;
     if (msg.channel.id !== config.env.allowedChannelId) return;
-    if (msg.author.bot) return;
+    if (!isRealUser(msg)) return;
 
     const now = Date.now();
     if (now - lastReplyTime < config.cooldownSeconds * 1000) return;
 
     try {
       const recent = await msg.channel.messages.fetch({ limit: config.recentDuplicateGuard.fetchLimit });
-      const sorted = recent.filter((m) => !m.author.bot).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+      const sorted = recent.filter(isRealUser).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
       if (isDuplicateBurst(sorted)) return;
       if (sorted.size >= 2 && sorted.at(0).author.id === client.user.id) return;
     } catch {
@@ -57,7 +64,7 @@ function registerMessageHandler(client) {
       await new Promise((r) => setTimeout(r, Math.random() * (maxMs - minMs) + minMs));
 
       const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
-      const ctxMsgs = [...history.filter((m) => !m.author.bot).reverse().values()];
+      const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
       const reply = await getAIResponse(msg.content, ctxMsgs);
       if (!reply) return;
 
