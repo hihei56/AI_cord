@@ -6,6 +6,7 @@ const { registerMessageHandler } = require('./handlers/messageHandler');
 const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
 const { registerCommandHandler } = require('./commands/handler');
+const { registerReminderScheduler } = require('./reminderScheduler');
 const { initMarkov } = require('./utils/aiClient');
 
 process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
@@ -28,6 +29,7 @@ async function start() {
     client.once('ready', () => {
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
       registerPresenceHandler(client);
+      registerReminderScheduler(client);
     });
   }
 
