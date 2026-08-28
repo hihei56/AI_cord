@@ -18,6 +18,10 @@ function corpusPathFor(corpusFile) {
   return path.join(CONFIG_DIR, 'corpus', corpusFile || settings.markov?.corpusFile || 'default.txt');
 }
 
+function presenceFor(presenceFile) {
+  return JSON.parse(readText(path.join('presence', presenceFile || settings.presenceFile || 'default.json')));
+}
+
 // アカウントは .env の DISCORD_TOKEN(無印、後方互換用) と
 // DISCORD_TOKEN_2, DISCORD_TOKEN_3... (2つ目以降)から読み込む。
 // 無印だけならこれまで通り単一アカウントとして動く。
@@ -31,7 +35,8 @@ function loadAccounts() {
       allowedGuildId: process.env.ALLOWED_GUILD_ID,
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
       personaName: process.env.PERSONA || 'default',
-      corpusFile: process.env.CORPUS_FILE
+      corpusFile: process.env.CORPUS_FILE,
+      presenceFile: process.env.PRESENCE_FILE
     });
   }
 
@@ -43,7 +48,8 @@ function loadAccounts() {
       allowedGuildId: process.env[`ALLOWED_GUILD_ID_${i}`],
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
       personaName: process.env[`PERSONA_${i}`] || 'default',
-      corpusFile: process.env[`CORPUS_FILE_${i}`]
+      corpusFile: process.env[`CORPUS_FILE_${i}`],
+      presenceFile: process.env[`PRESENCE_FILE_${i}`]
     });
     i++;
   }
@@ -62,5 +68,6 @@ module.exports = {
   selfTalkPrompt,
   readPersona,
   corpusPathFor,
+  presenceFor,
   accounts: loadAccounts()
 };

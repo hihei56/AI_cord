@@ -1,18 +1,18 @@
-const config = require('../utils/config');
 const logger = require('../utils/logger');
 
-function pickSpotifyTrack() {
-  const tracks = config.presence.spotifyTracks;
+function pickSpotifyTrack(presence) {
+  const tracks = presence.spotifyTracks;
+  if (!tracks?.length) return null;
   return tracks[Math.floor(Math.random() * tracks.length)];
 }
 
-function buildActivities(client) {
-  const track = pickSpotifyTrack();
-  const watching = config.presence.watching;
+function buildActivities(client, presence) {
+  const activities = [];
   const now = Date.now();
 
-  return [
-    {
+  const track = pickSpotifyTrack(presence);
+  if (track) {
+    activities.push({
       name: 'Spotify',
       type: 2,
       flags: 48,
@@ -28,8 +28,12 @@ function buildActivities(client) {
         large_text: track.details
       },
       party: { id: `spotify:${client.user.id}` }
-    },
-    {
+    });
+  }
+
+  const watching = presence.watching;
+  if (watching) {
+    activities.push({
       name: watching.name,
       type: 3,
       application_id: watching.applicationId,
@@ -44,15 +48,18 @@ function buildActivities(client) {
         start: now - watching.elapsedMs,
         end: now - watching.elapsedMs + watching.durationMs
       }
-    }
-  ];
+    });
+  }
+
+  return activities;
 }
 
 async function updatePresence(client) {
+  const { presence } = client.accountState;
   try {
     await client.user.setPresence({
-      activities: buildActivities(client),
-      status: config.presence.status
+      activities: buildActivities(client, presence),
+      status: presence.status
     });
   } catch (err) {
     logger.error('RPC', err);
@@ -61,7 +68,7 @@ async function updatePresence(client) {
 
 function registerPresenceHandler(client) {
   updatePresence(client);
-  setInterval(() => updatePresence(client), config.presence.updateIntervalMs);
+  setInterval(() => updatePresence(client), client.accountState.presence.updateIntervalMs);
 }
 
 module.exports = { registerPresenceHandler, updatePresence };

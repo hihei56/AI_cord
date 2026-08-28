@@ -50,30 +50,5 @@
       "maxTokens": 150
     }
   },
-  "presence": {
-    "updateIntervalMs": 30000,
-    "status": "online",
-    "spotifyTracks": [
-      {
-        "details": "キラピコ.exe",
-        "state": "放課後クライマックスガールズ",
-        "syncId": "6pw3NHEm4q0XYmj98ikWvX",
-        "albumId": "5D8XL4PWEuwBy7RjzgQdl6",
-        "artistIds": ["6jzOa0jOXV9zU12rSjRnX5"],
-        "largeImage": "spotify:ab67616d0000b273b48ecf9292bd42c0b88d246e",
-        "smallImage": "spotify:ab6761610000f178049d8aeae802c96c8208f3b7"
-      }
-    ],
-    "watching": {
-      "name": "U-NEXT",
-      "applicationId": "1447891267336802400",
-      "details": "ひきこまり吸血鬼の悶々 第1話",
-      "state": "烈核解放",
-      "largeImage": "1457346793753804925",
-      "smallImage": "1457346948989321384",
-      "largeText": "烈核解放中",
-      "durationMs": 1500000,
-      "elapsedMs": 300000
-    }
-  }
+  "presenceFile": "default.json"
 }
