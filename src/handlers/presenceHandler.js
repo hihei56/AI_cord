@@ -57,10 +57,15 @@ function buildActivities(client, presence) {
 async function updatePresence(client) {
   const { presence } = client.accountState;
   try {
+    const activities = buildActivities(client, presence);
     await client.user.setPresence({
-      activities: buildActivities(client, presence),
+      activities,
       status: presence.status
     });
+    logger.log(
+      'RPC',
+      `[${client.accountState.id}] 更新: ${activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)'}`
+    );
   } catch (err) {
     logger.error('RPC', err);
   }
