@@ -3,6 +3,8 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
+const { listChannels } = require('../utils/channelStore');
+const { isLockedDown } = require('../utils/lockdown');
 
 async function selfPost(channel) {
   if (!channel) return;
@@ -38,7 +40,11 @@ async function selfPost(channel) {
 
 function registerSelfTalkHandler(client) {
   setInterval(async () => {
-    const channel = client.channels.cache.get(config.env.allowedChannelId);
+    if (isLockedDown()) return;
+    const ids = listChannels();
+    if (ids.length === 0) return;
+    const channelId = ids[Math.floor(Math.random() * ids.length)];
+    const channel = client.channels.cache.get(channelId);
     await selfPost(channel);
   }, config.selfTalk.intervalMs);
 }

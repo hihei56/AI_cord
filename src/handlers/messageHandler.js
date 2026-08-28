@@ -1,6 +1,8 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { getAIResponse } = require('../utils/aiClient');
+const { isAllowedChannel } = require('../utils/channelStore');
+const { isLockedDown } = require('../utils/lockdown');
 
 let lastReplyTime = 0;
 
@@ -36,8 +38,9 @@ function resolveChance(msg, client) {
 function registerMessageHandler(client) {
   client.on('messageCreate', async (msg) => {
     if (msg.author.id === client.user.id) return;
+    if (isLockedDown()) return;
     if (msg.guild?.id !== config.env.allowedGuildId) return;
-    if (msg.channel.id !== config.env.allowedChannelId) return;
+    if (!isAllowedChannel(msg.channel.id)) return;
     if (!isRealUser(msg)) return;
 
     const now = Date.now();

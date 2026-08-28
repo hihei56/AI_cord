@@ -1,4 +1,5 @@
 {
+  "commandPrefix": "!",
   "cooldownSeconds": 45,
   "replyChance": {
     "mention":0.7,

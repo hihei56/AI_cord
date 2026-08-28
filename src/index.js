@@ -6,6 +6,7 @@ const logger = require('./utils/logger');
 const { registerMessageHandler } = require('./handlers/messageHandler');
 const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
+const { registerCommandHandler } = require('./commands/handler');
 const { initMarkov } = require('./utils/aiClient');
 
 process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
@@ -15,6 +16,7 @@ const client = createClient();
 
 registerMessageHandler(client);
 registerSelfTalkHandler(client);
+registerCommandHandler(client);
 
 client.once('ready', () => {
   logger.log('READY', client.user.tag);
