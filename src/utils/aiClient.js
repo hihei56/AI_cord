@@ -82,13 +82,20 @@ async function getAIResponse(userMsg, history = []) {
   const systemPrompt = `${config.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【ユーザー】\n${userMsg}\n【返信】`;
 
   try {
-    return await callChatCompletion(
+    let reply = await callChatCompletion(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg }
       ],
       { temperature, maxTokens }
     );
+    
+    if (!reply) return null;
+    
+    // 句読点（、。）を削除
+    reply = reply.replace(/[、。]/g, '');
+    
+    return reply;
   } catch (err) {
     logger.error('AI', err);
     return null;
