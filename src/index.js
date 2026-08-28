@@ -7,6 +7,8 @@ const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
 const { registerCommandHandler } = require('./commands/handler');
 const { registerReminderScheduler } = require('./reminderScheduler');
+const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
+const { registerOwnAccount } = require('./utils/ownAccounts');
 const { initMarkov } = require('./utils/aiClient');
 
 process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
@@ -28,10 +30,13 @@ async function start() {
     registerCommandHandler(client);
     client.once('ready', () => {
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
+      registerOwnAccount(client.user.id);
       registerPresenceHandler(client);
       registerReminderScheduler(client);
     });
   }
+
+  registerConversationSeedHandler(clients);
 
   const results = await Promise.allSettled(
     clients.map((client) => client.login(client.accountState.discordToken))
