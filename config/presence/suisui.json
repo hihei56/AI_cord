@@ -33,15 +33,5 @@
       "largeImage": "spotify:ab67616d0000b2733a2e5ec15ee327a3c82d057e"
     }
   ],
-  "watching": {
-    "name": "U-NEXT",
-    "applicationId": "1447891267336802400",
-    "details": "ひきこまり吸血鬼の悶々 第1話",
-    "state": "烈核解放",
-    "largeImage": "1457346793753804925",
-    "smallImage": "1457346948989321384",
-    "largeText": "烈核解放中",
-    "durationMs": 1500000,
-    "elapsedMs": 300000
-  }
+  "watching": null
 }
