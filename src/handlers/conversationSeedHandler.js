@@ -32,7 +32,7 @@ async function seedConversation(clientA, clientB, channelId) {
   const channelB = clientB.channels.cache.get(channelId);
   if (!channelA || !channelB) return;
 
-  const opener = await generateSelfTalk();
+  const opener = await generateSelfTalk(clientA.accountState);
   if (!opener) return;
 
   await channelA.send(opener);

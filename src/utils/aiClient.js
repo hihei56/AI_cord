@@ -162,11 +162,18 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   }
 }
 
-async function generateSelfTalk() {
+async function generateSelfTalk(accountState = null) {
   try {
+    // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
+    // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
+    // 呼び出し側は必ずaccountStateを渡すこと
+    const systemPrompt = accountState?.persona
+      ? `${accountState.persona}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
+      : 'あなたは適当な人間です。深く考えずに雑談します。';
+
     const text = await callChatCompletion(
       [
-        { role: 'system', content: 'あなたは適当な人間です。深く考えずに雑談します。' },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: config.selfTalkPrompt }
       ],
       {

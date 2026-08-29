@@ -4,7 +4,7 @@ const logger = require('../utils/logger');
 const { generateSelfTalk } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
 
-async function selfPost(channel) {
+async function selfPost(channel, accountState) {
   if (!channel) return;
   if (Math.random() > config.selfTalk.chance) return;
 
@@ -16,7 +16,7 @@ async function selfPost(channel) {
       const query = animalTypes[Math.floor(Math.random() * animalTypes.length)];
       const img = await getAnimalImage(query);
       if (img) {
-        const caption = await generateSelfTalk();
+        const caption = await generateSelfTalk(accountState);
         await channel.send({
           content: caption || '（画像）',
           files: [new MessageAttachment(img)]
@@ -26,7 +26,7 @@ async function selfPost(channel) {
       }
     }
 
-    const text = await generateSelfTalk();
+    const text = await generateSelfTalk(accountState);
     if (text) {
       await channel.send(text);
       logger.log('SELF', text);
@@ -44,7 +44,7 @@ function registerSelfTalkHandler(client) {
     if (ids.length === 0) return;
     const channelId = ids[Math.floor(Math.random() * ids.length)];
     const channel = client.channels.cache.get(channelId);
-    await selfPost(channel);
+    await selfPost(channel, state);
   }, config.selfTalk.intervalMs);
 }
 
