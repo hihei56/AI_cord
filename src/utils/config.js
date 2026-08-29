@@ -36,6 +36,12 @@ function resolveCommandRoleIds(envVal) {
   return envVal.split(',').map((id) => id.trim()).filter(Boolean);
 }
 
+// 起動時点のAIモード。!set mode で切り替えても再起動でmarkovに戻ってしまうので、
+// finetuneモードを常用したいアカウントは AI_MODE[_N]=finetune を設定しておく
+function resolveAiMode(envVal) {
+  return envVal === 'finetune' ? 'finetune' : 'markov';
+}
+
 // アカウントごとにコマンドprefixを分ける(同じ!だとどのアカウント宛てか紛らわしいため)。
 // .envで COMMAND_PREFIX[_N] を設定すれば上書きできる
 const DEFAULT_COMMAND_PREFIXES = { 1: 'toku!', 2: 'sui!' };
@@ -71,7 +77,8 @@ function loadAccounts() {
       commandPrefix: process.env.COMMAND_PREFIX || DEFAULT_COMMAND_PREFIXES[1] || settings.commandPrefix || '!',
       finetuneBaseUrl: process.env.FINETUNE_BASE_URL,
       finetuneApiKey: process.env.FINETUNE_API_KEY,
-      finetuneModel: process.env.FINETUNE_MODEL
+      finetuneModel: process.env.FINETUNE_MODEL,
+      aiMode: resolveAiMode(process.env.AI_MODE)
     });
   }
 
@@ -91,7 +98,8 @@ function loadAccounts() {
       commandPrefix: process.env[`COMMAND_PREFIX_${i}`] || DEFAULT_COMMAND_PREFIXES[i] || settings.commandPrefix || '!',
       finetuneBaseUrl: process.env[`FINETUNE_BASE_URL_${i}`],
       finetuneApiKey: process.env[`FINETUNE_API_KEY_${i}`],
-      finetuneModel: process.env[`FINETUNE_MODEL_${i}`]
+      finetuneModel: process.env[`FINETUNE_MODEL_${i}`],
+      aiMode: resolveAiMode(process.env[`AI_MODE_${i}`])
     });
     i++;
   }

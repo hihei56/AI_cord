@@ -31,9 +31,10 @@ function buildAccountState(account) {
     replyChanceMultiplier: account.replyChanceMultiplier,
     commandPrefix: account.commandPrefix,
     commandRoleIds: account.commandRoleIds,
-    // !set mode で切り替える。markov: 今まで通りマルコフ下書き+Groq補正。
-    // finetune: ファインチューニング済みモデルに直接投げる(下書き・ペルソナ文書は使わない)
-    aiMode: 'markov',
+    // !set mode で実行中に切り替えられる。markov: 今まで通りマルコフ下書き+Groq補正。
+    // finetune: ファインチューニング済みモデルに直接投げる(下書き・ペルソナ文書は使わない)。
+    // 起動時点の初期値は .env の AI_MODE[_N] で指定できる(未設定ならmarkov)
+    aiMode: account.aiMode,
     finetuneBaseUrl: account.finetuneBaseUrl,
     finetuneApiKey: account.finetuneApiKey,
     finetuneModel: account.finetuneModel,
