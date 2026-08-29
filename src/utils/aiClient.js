@@ -126,21 +126,24 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
     return draft.replace(/[、。]/g, '');
   }
 
-  const draftSection = draft
-    ? `\n【口調の下書き(この語彙・言い回し・テンポをできるだけそのまま取り入れて返信を組み立てること。意味は無視してよい)】\n${draft}`
-    : '';
-
   // speakerMsgが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonの個別登録 >
   // サーバーニックネーム > username の優先順)で今の発言を表示し、AIがその名前で呼びかけられるようにする
   const speakerLabel = speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー';
 
-  // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
-  // 「これは避けて」として明示的に渡す
-  const antiRepeatSection = accountState.recentReplies?.length
-    ? `\n【直近の自分の発言(この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
-    : '';
-
-  const systemPrompt = `${accountState.persona}${draftSection}${antiRepeatSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  let systemPrompt;
+  if (draft) {
+    // ペルソナの細かい指示を全部乗せると下書きの口調がLLMの言い換えでかき消されるので、
+    // 下書きがある時はキャラの核(ペルソナ1行目)だけ残し、文脈に合わせる最小限の調整だけ指示する
+    const personaCore = accountState.persona.split('\n')[0];
+    systemPrompt = `${personaCore}\n【下書き】\n${draft}\n【会話の流れ】\n${ctx || 'なし'}\n${speakerLabel}: ${userMsg}\n上の下書きの言葉遣いをほぼそのまま使い、会話の流れに不自然にならない範囲で最小限だけ調整して返信すること。新しい話題や説明を付け足さない。`;
+  } else {
+    // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
+    // 下書きが無い(=ペルソナだけで生成する)時は「これは避けて」を明示的に渡す
+    const antiRepeatSection = accountState.recentReplies?.length
+      ? `\n【直近の自分の発言(この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
+      : '';
+    systemPrompt = `${accountState.persona}${antiRepeatSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  }
 
   try {
     const reply = await callChatCompletion(
