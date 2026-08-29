@@ -85,7 +85,7 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 ### コマンド
 
-デフォルトはアカウント本人(そのDiscordアカウント自身)が送ったメッセージだけがコマンドとして処理される。`.env`で`ALLOWED_COMMAND_ROLE_ID`(2つ目以降は`_2`など)にロールIDを指定すると、そのロールを持つサーバーメンバーも本人と同じようにコマンドを実行できるようになる(未設定なら従来通り本人限定)。プレフィックスは`config/settings.json`の`commandPrefix`(デフォルト`!`)。
+アカウント本人(そのDiscordアカウント自身)に加えて、`src/utils/config.js`の`DEFAULT_COMMAND_ROLE_ID`で指定したロールを持つサーバーメンバーもコマンドを実行できる。別のロールに変えたい/アカウントごとに分けたい場合は`.env`で`ALLOWED_COMMAND_ROLE_ID`(2つ目以降は`_2`など)を指定すれば上書きされる。プレフィックスは`config/settings.json`の`commandPrefix`(デフォルト`!`)。
 
 | コマンド | 内容 |
 |---|---|

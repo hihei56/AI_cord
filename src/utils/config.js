@@ -26,6 +26,10 @@ function numEnv(name) {
   return process.env[name] !== undefined ? Number(process.env[name]) : undefined;
 }
 
+// !pause/!set channel等をロール経由で実行できる既定のロールID。ロールIDは秘密情報では
+// ないのでハードコードしてよく、.envで ALLOWED_COMMAND_ROLE_ID[_N] を設定すれば上書きできる
+const DEFAULT_COMMAND_ROLE_ID = '1495971497016164492';
+
 // 特別な呼び方をしたい相手だけ config/nicknames.json に { "ユーザーID": "呼び名" }
 // で個別登録する。登録が無いユーザーは今まで通りDiscordのusernameで呼ぶ
 function loadNicknames() {
@@ -53,7 +57,7 @@ function loadAccounts() {
       presenceFile: process.env.PRESENCE_FILE,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
       replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER'),
-      commandRoleId: process.env.ALLOWED_COMMAND_ROLE_ID
+      commandRoleId: process.env.ALLOWED_COMMAND_ROLE_ID || DEFAULT_COMMAND_ROLE_ID
     });
   }
 
@@ -69,7 +73,7 @@ function loadAccounts() {
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
       replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`),
-      commandRoleId: process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`]
+      commandRoleId: process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`] || DEFAULT_COMMAND_ROLE_ID
     });
     i++;
   }
