@@ -42,7 +42,7 @@
     "order": 2,
     "corpusFile": "default.txt",
     "draftMaxWords": 24,
-    "directReplyChance": 0.3,
+    "directReplyChance": 0,
     "directReplyMinLength": 3
   },
   "ai": {
