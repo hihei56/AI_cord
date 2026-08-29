@@ -104,7 +104,7 @@ async function describeImage(imageUrl) {
   }
 }
 
-async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null) {
+async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null, { allowMarkovDirect = true } = {}) {
   const { historyContextSize, temperature, maxTokens } = {
     historyContextSize: config.ai.reply.historyContextSize,
     temperature: config.ai.reply.temperature,
@@ -117,8 +117,17 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
     .join('\n');
 
   const draft = getMarkovDraft(accountState, `${ctx}\n${userMsg}`);
+
+  // メンション/リプライで直接呼ばれた時以外は、たまにLLMを介さずマルコフ連鎖の
+  // 生成結果をそのまま返信にする(コーパスの口調がLLMの言い換えで薄まるのを防ぐ)
+  const { directReplyChance = 0, directReplyMinLength = 0 } = config.markov || {};
+  if (allowMarkovDirect && draft && draft.length >= directReplyMinLength && Math.random() < directReplyChance) {
+    logger.log('MARKOV', `[${accountState.id}] 下書きをそのまま採用: ${draft}`);
+    return draft.replace(/[、。]/g, '');
+  }
+
   const draftSection = draft
-    ? `\n【口調の下書き(意味は無視して口調・言い回しだけ参考にすること)】\n${draft}`
+    ? `\n【口調の下書き(この語彙・言い回し・テンポをできるだけそのまま取り入れて返信を組み立てること。意味は無視してよい)】\n${draft}`
     : '';
 
   // speakerMsgが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonの個別登録 >

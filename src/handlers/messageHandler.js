@@ -109,7 +109,10 @@ function registerMessageHandler(client) {
         if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
       }
 
-      const reply = await getAIResponse(state, userMsg, ctxMsgs, msg);
+      // メンション/リプライで直接呼ばれた時はマルコフ直接採用を避け、ちゃんと文脈に沿った返信にする
+      const isMention = msg.mentions.has(client.user.id);
+      const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
+      const reply = await getAIResponse(state, userMsg, ctxMsgs, msg, { allowMarkovDirect: !isMention && !isReply });
       if (!reply) return;
 
       const { minMs: replyMinMs, perCharMs, capMs, jitterMs } = config.replyDelay;

@@ -41,7 +41,9 @@
     "enabled": true,
     "order": 2,
     "corpusFile": "default.txt",
-    "draftMaxWords": 20
+    "draftMaxWords": 24,
+    "directReplyChance": 0.3,
+    "directReplyMinLength": 3
   },
   "ai": {
     "model": "openai/gpt-oss-120b",
