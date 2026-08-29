@@ -1,6 +1,7 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { getAIResponse, describeImage } = require('../utils/aiClient');
+const { isOwnAccount } = require('../utils/ownAccounts');
 
 // bot臭さ対策: 直近何件分の自分の発言をプロンプトの「これは避けて」に渡すか
 const RECENT_REPLIES_MAX = 4;
@@ -68,6 +69,10 @@ function registerMessageHandler(client) {
 
   client.on('messageCreate', async (msg) => {
     if (msg.author.id === client.user.id) return;
+    // 兄弟アカウント(他の自分のアカウント)の発言には通常の確率ロジックで
+    // 反応しない。両アカウントが互いに際限なく返信し続けるのを防ぐため。
+    // 意図的な掛け合いは conversationSeedHandler が専用ルートで行う。
+    if (isOwnAccount(msg.author.id)) return;
     if (state.lockedDown) return;
     if (msg.guild?.id !== state.allowedGuildId) return;
     if (!state.channelStore.isAllowedChannel(msg.channel.id)) return;
