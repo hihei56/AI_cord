@@ -131,14 +131,9 @@ function registerMessageHandler(client) {
       const typingMs = Math.max(replyMinMs, Math.min(reply.length * perCharMs, capMs));
       await new Promise((r) => setTimeout(r, typingMs + Math.random() * jitterMs));
 
-      try {
-        await msg.reply(reply);
-      } catch (err) {
-        // 返信遅延の間に元メッセージが消えている(Unknown message)などの場合は
-        // 通常メッセージとして送り直す
-        logger.error('REPLY-AS-REPLY', err);
-        await msg.channel.send(reply);
-      }
+      // msg.reply()だと相手にメンション通知が飛ぶ「リプライ」表示になり、それが毎回だと
+      // いかにもbotっぽいので、普通のメッセージとして送る(会話履歴で文脈は伝わる)
+      await msg.channel.send(reply);
       state.lastReplyTime = Date.now();
       state.recentReplies.push(reply);
       if (state.recentReplies.length > RECENT_REPLIES_MAX) state.recentReplies.shift();
