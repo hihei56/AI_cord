@@ -22,11 +22,20 @@ function loadCommands() {
 }
 
 // 本人(アカウント所有者)、または.envのALLOWED_COMMAND_ROLE_ID[_N]で
-// 指定したロールを持つメンバーだけコマンドを実行できる
-function canRunCommands(msg, client, state) {
+// 指定したロールを持つメンバーだけコマンドを実行できる。
+// msg.memberはギルドのメンバーキャッシュ頼みで、selfbotはメンバーキャッシュが薄いことが
+// 多く(全メンバーキャッシュは重すぎるため)、キャッシュに無いと本当はロールを持っていても
+// nullになってしまう。そのためキャッシュに無ければ明示的にfetchして確実に判定する
+async function canRunCommands(msg, client, state) {
   if (msg.author.id === client.user.id) return true;
-  if (state.commandRoleId && msg.member?.roles?.cache?.has(state.commandRoleId)) return true;
-  return false;
+  if (!state.commandRoleId || !msg.guild) return false;
+
+  try {
+    const member = msg.member ?? (await msg.guild.members.fetch(msg.author.id));
+    return member.roles.cache.has(state.commandRoleId);
+  } catch {
+    return false;
+  }
 }
 
 // コマンド定義自体はアカウント間で共有(内容はアカウント非依存)なので、
@@ -35,10 +44,12 @@ function registerCommandHandler(client) {
   if (commands.size === 0) loadCommands();
 
   client.on('messageCreate', async (msg) => {
-    if (!canRunCommands(msg, client, client.accountState)) return;
-
     const prefix = client.accountState.commandPrefix || config.commandPrefix || '!';
     if (!msg.content.startsWith(prefix)) return;
+
+    // プレフィックス一致した(=コマンドの可能性がある)メッセージだけ権限チェックする。
+    // 全メッセージに対してやるとメンバーfetchが無駄に飛んでしまう
+    if (!(await canRunCommands(msg, client, client.accountState))) return;
 
     const args = msg.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
