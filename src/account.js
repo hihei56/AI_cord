@@ -29,6 +29,7 @@ function buildAccountState(account) {
     presence: config.presenceFor(account.presenceFile),
     cooldownSeconds: account.cooldownSeconds,
     replyChanceMultiplier: account.replyChanceMultiplier,
+    commandPrefix: account.commandPrefix,
     // 「人によって朝型/夜型が違う」を再現するための個体差。IDから決定的に算出するので
     // 再起動しても同じアカウントは同じ生活リズムを保つ
     activityOffsetHours: (seededFraction(`${account.id}-offset`) - 0.5) * 2 * maxOffset,

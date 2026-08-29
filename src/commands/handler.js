@@ -37,7 +37,7 @@ function registerCommandHandler(client) {
   client.on('messageCreate', async (msg) => {
     if (!canRunCommands(msg, client, client.accountState)) return;
 
-    const prefix = config.commandPrefix || '!';
+    const prefix = client.accountState.commandPrefix || config.commandPrefix || '!';
     if (!msg.content.startsWith(prefix)) return;
 
     const args = msg.content.slice(prefix.length).trim().split(/\s+/);
@@ -45,8 +45,8 @@ function registerCommandHandler(client) {
     if (!commandName) return;
 
     const state = client.accountState;
-    // ロックダウン中は解除コマンド以外を受け付けない
-    if (state.lockedDown && commandName !== 'lockdown') return;
+    // ロックダウン中は解除コマンド(lockdown/pause)以外を受け付けない
+    if (state.lockedDown && commandName !== 'lockdown' && commandName !== 'pause') return;
 
     const cmd = commands.get(commandName);
     if (!cmd) return;

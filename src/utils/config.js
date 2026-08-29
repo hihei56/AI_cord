@@ -30,6 +30,10 @@ function numEnv(name) {
 // ないのでハードコードしてよく、.envで ALLOWED_COMMAND_ROLE_ID[_N] を設定すれば上書きできる
 const DEFAULT_COMMAND_ROLE_ID = '1495971497016164492';
 
+// アカウントごとにコマンドprefixを分ける(同じ!だとどのアカウント宛てか紛らわしいため)。
+// .envで COMMAND_PREFIX[_N] を設定すれば上書きできる
+const DEFAULT_COMMAND_PREFIXES = { 1: 'toku!', 2: 'sui!' };
+
 // 特別な呼び方をしたい相手だけ config/nicknames.json に { "ユーザーID": "呼び名" }
 // で個別登録する。登録が無いユーザーは今まで通りDiscordのusernameで呼ぶ
 function loadNicknames() {
@@ -57,7 +61,8 @@ function loadAccounts() {
       presenceFile: process.env.PRESENCE_FILE,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
       replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER'),
-      commandRoleId: process.env.ALLOWED_COMMAND_ROLE_ID || DEFAULT_COMMAND_ROLE_ID
+      commandRoleId: process.env.ALLOWED_COMMAND_ROLE_ID || DEFAULT_COMMAND_ROLE_ID,
+      commandPrefix: process.env.COMMAND_PREFIX || DEFAULT_COMMAND_PREFIXES[1] || settings.commandPrefix || '!'
     });
   }
 
@@ -73,7 +78,8 @@ function loadAccounts() {
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
       replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`),
-      commandRoleId: process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`] || DEFAULT_COMMAND_ROLE_ID
+      commandRoleId: process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`] || DEFAULT_COMMAND_ROLE_ID,
+      commandPrefix: process.env[`COMMAND_PREFIX_${i}`] || DEFAULT_COMMAND_PREFIXES[i] || settings.commandPrefix || '!'
     });
     i++;
   }
