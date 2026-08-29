@@ -49,7 +49,11 @@ function registerCommandHandler(client) {
 
     // プレフィックス一致した(=コマンドの可能性がある)メッセージだけ権限チェックする。
     // 全メッセージに対してやるとメンバーfetchが無駄に飛んでしまう
-    if (!(await canRunCommands(msg, client, client.accountState))) return;
+    const allowed = await canRunCommands(msg, client, client.accountState);
+    if (!allowed) {
+      logger.log('COMMAND', `[${client.accountState.id}] ${msg.author.username}のコマンドを権限なしで拒否: ${msg.content.slice(0, 50)}`);
+      return;
+    }
 
     const args = msg.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
@@ -60,10 +64,14 @@ function registerCommandHandler(client) {
     if (state.lockedDown && commandName !== 'lockdown' && commandName !== 'pause') return;
 
     const cmd = commands.get(commandName);
-    if (!cmd) return;
+    if (!cmd) {
+      logger.log('COMMAND', `[${client.accountState.id}] 未知のコマンド: ${commandName}`);
+      return;
+    }
 
     try {
       await cmd.execute(msg, args, client);
+      logger.log('COMMAND', `[${client.accountState.id}] ${msg.author.username}が実行: ${commandName}`);
     } catch (err) {
       logger.error('COMMAND', err);
     }
