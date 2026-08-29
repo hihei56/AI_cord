@@ -27,14 +27,21 @@ function loadCommands() {
 // 多く(全メンバーキャッシュは重すぎるため)、キャッシュに無いと本当はロールを持っていても
 // nullになってしまう。そのためキャッシュに無ければ明示的にfetchして確実に判定する
 async function canRunCommands(msg, client, state) {
-  if (msg.author.id === client.user.id) return true;
-  if (!state.commandRoleId || !msg.guild) return false;
+  if (msg.author.id === client.user.id) return { allowed: true };
+  if (!state.commandRoleId) return { allowed: false, reason: 'commandRoleId未設定' };
+  if (!msg.guild) return { allowed: false, reason: 'DM(サーバー外)' };
 
   try {
     const member = msg.member ?? (await msg.guild.members.fetch(msg.author.id));
-    return member.roles.cache.has(state.commandRoleId);
-  } catch {
-    return false;
+    const allowed = member.roles.cache.has(state.commandRoleId);
+    return {
+      allowed,
+      reason: allowed
+        ? undefined
+        : `guild=${msg.guild.id} 期待するroleId=${state.commandRoleId} 実際のroleId一覧=[${[...member.roles.cache.keys()].join(',')}]`
+    };
+  } catch (err) {
+    return { allowed: false, reason: `member取得失敗: ${err.message}` };
   }
 }
 
@@ -49,9 +56,12 @@ function registerCommandHandler(client) {
 
     // プレフィックス一致した(=コマンドの可能性がある)メッセージだけ権限チェックする。
     // 全メッセージに対してやるとメンバーfetchが無駄に飛んでしまう
-    const allowed = await canRunCommands(msg, client, client.accountState);
-    if (!allowed) {
-      logger.log('COMMAND', `[${client.accountState.id}] ${msg.author.username}のコマンドを権限なしで拒否: ${msg.content.slice(0, 50)}`);
+    const permission = await canRunCommands(msg, client, client.accountState);
+    if (!permission.allowed) {
+      logger.log(
+        'COMMAND',
+        `[${client.accountState.id}] ${msg.author.username}のコマンドを権限なしで拒否 (${permission.reason}): ${msg.content.slice(0, 50)}`
+      );
       return;
     }
 
