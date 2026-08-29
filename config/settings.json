@@ -1,6 +1,6 @@
 {
   "commandPrefix": "!",
-  "cooldownSeconds": 45,
+  "cooldownSeconds": 90,
   "replyChance": {
     "mention": 0.95,
     "reply": 0.85,
@@ -22,18 +22,18 @@
     "minGapMs": 2000
   },
   "typingDelay": {
-    "minMs": 1500,
-    "maxMs": 4000
+    "minMs": 3000,
+    "maxMs": 7000
   },
   "replyDelay": {
-    "minMs": 1500,
+    "minMs": 2500,
     "perCharMs": 40,
-    "capMs": 8000,
-    "jitterMs": 2000
+    "capMs": 12000,
+    "jitterMs": 3000
   },
   "selfTalk": {
     "intervalMs": 3600000,
-    "chance": 0.25,
+    "chance": 0.15,
     "imageChance": 0.3,
     "animalTypes": ["cat", "dog", "fox", "bird"]
   },
