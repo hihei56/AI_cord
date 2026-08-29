@@ -1,4 +1,4 @@
-const { AttachmentBuilder } = require('discord.js-selfbot-v13');
+const { MessageAttachment } = require('discord.js-selfbot-v13');
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk } = require('../utils/aiClient');
@@ -19,7 +19,7 @@ async function selfPost(channel) {
         const caption = await generateSelfTalk();
         await channel.send({
           content: caption || '（画像）',
-          files: [new AttachmentBuilder(img)]
+          files: [new MessageAttachment(img)]
         });
         logger.log('SELF', `${caption || '画像のみ'} (画像)`);
         return;

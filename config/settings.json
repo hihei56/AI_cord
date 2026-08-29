@@ -56,7 +56,7 @@
     },
     "selfTalk": {
       "temperature": 1.3,
-      "maxTokens": 150
+      "maxTokens": 400
     },
     "vision": {
       "enabled": true,
