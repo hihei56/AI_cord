@@ -2,6 +2,9 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { getAIResponse, describeImage } = require('../utils/aiClient');
 
+// bot臭さ対策: 直近何件分の自分の発言をプロンプトの「これは避けて」に渡すか
+const RECENT_REPLIES_MAX = 4;
+
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
 // (webhookIdを持たない)とは区別し、実際の発言として扱う。
@@ -122,6 +125,8 @@ function registerMessageHandler(client) {
         await msg.channel.send(reply);
       }
       state.lastReplyTime = Date.now();
+      state.recentReplies.push(reply);
+      if (state.recentReplies.length > RECENT_REPLIES_MAX) state.recentReplies.shift();
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
     } catch (err) {
       logger.error('MESSAGE', err);

@@ -125,7 +125,13 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   // サーバーニックネーム > username の優先順)で今の発言を表示し、AIがその名前で呼びかけられるようにする
   const speakerLabel = speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー';
 
-  const systemPrompt = `${accountState.persona}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
+  // 「これは避けて」として明示的に渡す
+  const antiRepeatSection = accountState.recentReplies?.length
+    ? `\n【直近の自分の発言(この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
+    : '';
+
+  const systemPrompt = `${accountState.persona}${draftSection}${antiRepeatSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(

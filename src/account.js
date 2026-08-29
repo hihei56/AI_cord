@@ -37,7 +37,10 @@ function buildAccountState(account) {
     reminderStore: createReminderStore(account.id),
     lastReplyTime: 0,
     lockedDown: false,
-    markovChain: null
+    markovChain: null,
+    // 直近の自分の発言を数件保持し、同じ感嘆詞・絵文字の組み合わせを連発しないよう
+    // プロンプトに「これは避けて」として渡す(bot臭さ対策)
+    recentReplies: []
   };
 }
 
