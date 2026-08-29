@@ -130,22 +130,20 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   // サーバーニックネーム > username の優先順)で今の発言を表示し、AIがその名前で呼びかけられるようにする
   const speakerLabel = speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー';
 
-  let systemPrompt;
-  if (draft) {
-    // ペルソナの細かい指示を全部乗せると下書きの口調がLLMの言い換えでかき消されるので、
-    // 下書きがある時はキャラの核(ペルソナ1行目)だけ残す。ただし下書きはマルコフ連鎖の
-    // 生成物なので文法が崩れていたり意味が通らないことも多く、そのまま出すとおかしいので
-    // 「言い回し・語彙は活かしつつ、自然で意味の通る日本語に補正する」ことは明示的に指示する
-    const personaCore = accountState.persona.split('\n')[0];
-    systemPrompt = `${personaCore}\n【下書き(マルコフ連鎖生成、文法が崩れていることがある)】\n${draft}\n【会話の流れ】\n${ctx || 'なし'}\n${speakerLabel}: ${userMsg}\n上の下書きの語彙・言い回しを活かしつつ、文法的に破綻せず意味の通る自然な日本語に補正して返信すること。会話の流れにも合わせる。新しい話題や説明は付け足さない。`;
-  } else {
-    // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
-    // 下書きが無い(=ペルソナだけで生成する)時は「これは避けて」を明示的に渡す
-    const antiRepeatSection = accountState.recentReplies?.length
-      ? `\n【直近の自分の発言(この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
-      : '';
-    systemPrompt = `${accountState.persona}${antiRepeatSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
-  }
+  // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
+  // 「これは避けて」を明示的に渡す
+  const antiRepeatSection = accountState.recentReplies?.length
+    ? `\n【直近の自分の発言(この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
+    : '';
+
+  // 下書きはマルコフ連鎖の生成物なので文法が崩れていたり意味が通らないことも多い。
+  // ペルソナ全文を渡した上で「下書きの語彙は活かしつつ、あなたのキャラとして自然な
+  // 日本語に補正する」と明示することで、下書きの丸写しにも、ペルソナ無視にもならないようにする
+  const draftSection = draft
+    ? `\n【下書き(マルコフ連鎖生成、文法が崩れていることがある)】\n${draft}\n上の下書きの語彙・言い回しを活かしつつ、あなた自身のキャラクターとして文法的に破綻しない自然な日本語に補正して返信を作ること。新しい話題や説明は付け足さない。`
+    : '';
+
+  const systemPrompt = `${accountState.persona}${draftSection}${antiRepeatSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
