@@ -62,10 +62,14 @@ async function updatePresence(client) {
       activities,
       status: presence.status
     });
-    logger.log(
-      'RPC',
-      `[${client.accountState.id}] 更新: ${activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)'}`
-    );
+
+    // 更新間隔が短い(既定30秒)ため、選ばれた内容が前回と同じ時まで毎回ログすると
+    // 他のログが埋もれてしまう。実際に表示内容が変わった時だけログする
+    const signature = activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)';
+    if (signature !== client.accountState.lastRpcSignature) {
+      client.accountState.lastRpcSignature = signature;
+      logger.log('RPC', `[${client.accountState.id}] 更新: ${signature}`);
+    }
   } catch (err) {
     logger.error('RPC', err);
   }
