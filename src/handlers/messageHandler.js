@@ -20,14 +20,21 @@ function isDuplicateBurst(sorted) {
   return false;
 }
 
+// サーバーのシステムタイムゾーンに関係なく日本時間で判定したいので、
+// new Date().getHours()(サーバーのローカル時刻、大抵UTC)ではなくUTCから明示的に計算する
+function currentJstFractionalHour() {
+  const now = new Date();
+  const jstMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 9 * 60) % (24 * 60);
+  return jstMinutes / 60;
+}
+
 // 日本人らしい生活リズム(深夜は寝てる、昼は控えめ、夜は活発)を時間帯ごとの
 // 倍率テーブルで再現する。アカウントごとのoffset/energyで個体差もつける。
 function activityMultiplier(state) {
   const { hourlyMultipliers } = config.activityRhythm || {};
   if (!hourlyMultipliers?.length) return 1;
 
-  const now = new Date();
-  const fractionalHour = now.getHours() + now.getMinutes() / 60 + (state.activityOffsetHours ?? 0);
+  const fractionalHour = currentJstFractionalHour() + (state.activityOffsetHours ?? 0);
   const hour = ((Math.round(fractionalHour) % 24) + 24) % 24;
 
   return hourlyMultipliers[hour] * (state.activityEnergy ?? 1);
