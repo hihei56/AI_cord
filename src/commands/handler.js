@@ -21,24 +21,24 @@ function loadCommands() {
   logger.log('COMMANDS', `${files.length}個のコマンドファイルを読み込み (${commands.size}エントリ)`);
 }
 
-// 本人(アカウント所有者)、または.envのALLOWED_COMMAND_ROLE_ID[_N]で
-// 指定したロールを持つメンバーだけコマンドを実行できる。
+// 本人(アカウント所有者)、または.envのALLOWED_COMMAND_ROLE_ID[_N](カンマ区切りで複数可)で
+// 指定したロールのどれかを持つメンバーだけコマンドを実行できる。
 // msg.memberはギルドのメンバーキャッシュ頼みで、selfbotはメンバーキャッシュが薄いことが
 // 多く(全メンバーキャッシュは重すぎるため)、キャッシュに無いと本当はロールを持っていても
 // nullになってしまう。そのためキャッシュに無ければ明示的にfetchして確実に判定する
 async function canRunCommands(msg, client, state) {
   if (msg.author.id === client.user.id) return { allowed: true };
-  if (!state.commandRoleId) return { allowed: false, reason: 'commandRoleId未設定' };
+  if (!state.commandRoleIds?.length) return { allowed: false, reason: 'commandRoleIds未設定' };
   if (!msg.guild) return { allowed: false, reason: 'DM(サーバー外)' };
 
   try {
     const member = msg.member ?? (await msg.guild.members.fetch(msg.author.id));
-    const allowed = member.roles.cache.has(state.commandRoleId);
+    const allowed = state.commandRoleIds.some((id) => member.roles.cache.has(id));
     return {
       allowed,
       reason: allowed
         ? undefined
-        : `guild=${msg.guild.id} 期待するroleId=${state.commandRoleId} 実際のroleId一覧=[${[...member.roles.cache.keys()].join(',')}]`
+        : `guild=${msg.guild.id} 期待するroleId一覧=[${state.commandRoleIds.join(',')}] 実際のroleId一覧=[${[...member.roles.cache.keys()].join(',')}]`
     };
   } catch (err) {
     return { allowed: false, reason: `member取得失敗: ${err.message}` };

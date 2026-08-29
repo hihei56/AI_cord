@@ -26,9 +26,15 @@ function numEnv(name) {
   return process.env[name] !== undefined ? Number(process.env[name]) : undefined;
 }
 
-// !pause/!set channel等をロール経由で実行できる既定のロールID。ロールIDは秘密情報では
-// ないのでハードコードしてよく、.envで ALLOWED_COMMAND_ROLE_ID[_N] を設定すれば上書きできる
-const DEFAULT_COMMAND_ROLE_ID = '1495971497016164492';
+// !pause/!set channel等をロール経由で実行できる既定のロールID。サーバーによって
+// 持ってるロールが違うので複数許可する。ロールIDは秘密情報ではないのでハードコードしてよく、
+// .envで ALLOWED_COMMAND_ROLE_ID[_N] にカンマ区切りで指定すれば上書きできる
+const DEFAULT_COMMAND_ROLE_IDS = ['1495971497016164492', '1543226849788825620'];
+
+function resolveCommandRoleIds(envVal) {
+  if (!envVal) return DEFAULT_COMMAND_ROLE_IDS;
+  return envVal.split(',').map((id) => id.trim()).filter(Boolean);
+}
 
 // アカウントごとにコマンドprefixを分ける(同じ!だとどのアカウント宛てか紛らわしいため)。
 // .envで COMMAND_PREFIX[_N] を設定すれば上書きできる
@@ -61,7 +67,7 @@ function loadAccounts() {
       presenceFile: process.env.PRESENCE_FILE,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
       replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER'),
-      commandRoleId: process.env.ALLOWED_COMMAND_ROLE_ID || DEFAULT_COMMAND_ROLE_ID,
+      commandRoleIds: resolveCommandRoleIds(process.env.ALLOWED_COMMAND_ROLE_ID),
       commandPrefix: process.env.COMMAND_PREFIX || DEFAULT_COMMAND_PREFIXES[1] || settings.commandPrefix || '!'
     });
   }
@@ -78,7 +84,7 @@ function loadAccounts() {
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
       replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`),
-      commandRoleId: process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`] || DEFAULT_COMMAND_ROLE_ID,
+      commandRoleIds: resolveCommandRoleIds(process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`]),
       commandPrefix: process.env[`COMMAND_PREFIX_${i}`] || DEFAULT_COMMAND_PREFIXES[i] || settings.commandPrefix || '!'
     });
     i++;
