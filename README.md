@@ -94,6 +94,7 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!channel add\|remove\|list [channelId]` | 応答チャンネルの追加/削除/一覧(省略時は今いるチャンネル) |
 | `!lockdown` / `!pause [@account]` | 自動応答・自発投稿を緊急停止/再開するトグル。ロール経由(本人以外)で実行する時は`@account`で対象アカウントの指定が必須(未指定だと全アカウント一斉停止になってしまうため) |
 | `!set channel @account #channel` | 指定アカウントに応答チャンネルを追加。複数アカウント運用中にロール経由でどれか1つだけ操作したい時用 |
+| `!set mode @account markov\|finetune` | 返信生成方式の切り替え(後述) |
 | `!train [件数] [@ユーザー]` | チャンネルの発言を集めてコーパスに追加し即再学習(省略時は自分自身、直近200件) |
 | `!nickname learn @user [件数]` | 会話履歴からその人への呼びかけ方の候補を探索して提示(省略時は直近300件) |
 | `!nickname set @user 名前` | 呼び名を個別登録 |
@@ -111,6 +112,12 @@ CORPUS_FILE_2=別のコーパスファイル名
 ### AIバックエンドの切り替え
 
 `src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叛く汎用実装。`AI_BASE_URL` / `AI_API_KEY` を変更するだけで、Groq以外(自前ホストのvLLM・Ollama・text-generation-inferenceなど、OpenAI互換API公開しているもの全般)に差し替え可能。モデル名は `config/settings.json` の `ai.model` で指定する。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
+
+### アカウント単位でのファインチューニングモデル切り替え
+
+`AI_BASE_URL`は全アカウント共通だが、特定のアカウントだけ別のファインチューニング済みモデルを使いたい場合(例: PC側でOllama/vLLM等を立てて動かす3体目)は、そのアカウント番号で`FINETUNE_BASE_URL_N` / `FINETUNE_API_KEY_N` / `FINETUNE_MODEL_N`を`.env`に設定した上で、`!set mode @account finetune`で切り替える。
+
+finetuneモードでは、そのアカウントの返信はペルソナ文書・マルコフ下書きを一切使わず、会話の流れをそのままファインチューニング済みモデルに投げるだけになる(ペルソナはモデル自体に学習済みという前提)。`!set mode @account markov`でいつでも今まで通りの方式(マルコフ下書き+Groq等での補正)に戻せる。`FINETUNE_BASE_URL_N`が未設定のアカウントでfinetuneモードに切り替えようとすると拒否される。
 
 ### `config/settings.json`(動作パラメータ)
 

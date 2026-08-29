@@ -3,7 +3,8 @@ const { parseUserMention, parseChannelMention } = require('../mentionUtils');
 module.exports = {
   name: 'set',
   aliases: [],
-  description: 'アカウント別の設定変更。!set channel @account #channel で指定アカウントの応答チャンネルを追加',
+  description:
+    'アカウント別の設定変更。!set channel @account #channel で応答チャンネル追加、!set mode @account markov|finetune で返信生成方式を切り替え',
   async execute(msg, args, client) {
     const sub = args.shift();
 
@@ -21,6 +22,23 @@ module.exports = {
       );
     }
 
-    return msg.channel.send('使い方: !set channel @account #channel');
+    if (sub === 'mode') {
+      const targetUserId = parseUserMention(args[0]);
+      if (!targetUserId) return msg.channel.send('対象アカウントを@メンションで指定して(例: !set mode @account finetune)');
+      if (targetUserId !== client.user.id) return;
+
+      const mode = args[1]?.toLowerCase();
+      if (mode !== 'markov' && mode !== 'finetune') {
+        return msg.channel.send('使い方: !set mode @account markov|finetune');
+      }
+      if (mode === 'finetune' && !client.accountState.finetuneBaseUrl) {
+        return msg.channel.send('⚠️ finetuneモードにはFINETUNE_BASE_URL(.env)の設定が必要です。未設定のため切り替えません');
+      }
+
+      client.accountState.aiMode = mode;
+      return msg.channel.send(`✅ ${client.user.username} の返信生成方式を ${mode} に切り替えました`);
+    }
+
+    return msg.channel.send('使い方: !set channel @account #channel / !set mode @account markov|finetune');
   }
 };

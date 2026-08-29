@@ -31,6 +31,12 @@ function buildAccountState(account) {
     replyChanceMultiplier: account.replyChanceMultiplier,
     commandPrefix: account.commandPrefix,
     commandRoleIds: account.commandRoleIds,
+    // !set mode で切り替える。markov: 今まで通りマルコフ下書き+Groq補正。
+    // finetune: ファインチューニング済みモデルに直接投げる(下書き・ペルソナ文書は使わない)
+    aiMode: 'markov',
+    finetuneBaseUrl: account.finetuneBaseUrl,
+    finetuneApiKey: account.finetuneApiKey,
+    finetuneModel: account.finetuneModel,
     // 「人によって朝型/夜型が違う」を再現するための個体差。IDから決定的に算出するので
     // 再起動しても同じアカウントは同じ生活リズムを保つ
     activityOffsetHours: (seededFraction(`${account.id}-offset`) - 0.5) * 2 * maxOffset,

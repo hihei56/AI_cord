@@ -32,31 +32,31 @@ function getMarkovDraft(accountState, contextText = '') {
   return accountState.markovChain.generate(config.markov.draftMaxWords, contextText);
 }
 
-async function callChatCompletion(messages, { temperature, maxTokens }) {
-  const res = await fetch(`${config.env.aiBaseUrl}/chat/completions`, {
+async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI' } = {}) {
+  const res = await fetch(`${baseUrl ?? config.env.aiBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${config.env.aiApiKey}`,
+      Authorization: `Bearer ${apiKey ?? config.env.aiApiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: config.ai.model,
+      model: model ?? config.ai.model,
       messages,
       temperature,
       max_tokens: maxTokens,
-      ...(config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
+      ...(!baseUrl && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
     })
   });
   const data = await res.json();
 
   if (!res.ok) {
-    logger.error('AI', `HTTP ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+    logger.error(logTag, `HTTP ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
     return null;
   }
 
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) {
-    logger.error('AI', `unexpected response shape: ${JSON.stringify(data)}`);
+    logger.error(logTag, `unexpected response shape: ${JSON.stringify(data)}`);
     return null;
   }
 
@@ -104,7 +104,46 @@ async function describeImage(imageUrl) {
   }
 }
 
+// ファインチューニング済みモデルに直接投げる経路。ペルソナは学習済みモデル側に
+// 織り込まれている前提なので、ペルソナ文書もマルコフ下書きも使わず会話の流れだけ渡す。
+// !set mode @account finetune で有効化する
+async function getFinetuneResponse(accountState, userMsg, history, speakerMsg) {
+  const { historyContextSize, temperature, maxTokens } = config.ai.reply;
+
+  const ctx = history
+    .slice(-historyContextSize)
+    .map((m) => `${resolveDisplayName(m.author, m.member)}: ${m.content}`)
+    .join('\n');
+  const speakerLabel = speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー';
+
+  try {
+    const reply = await callChatCompletion(
+      [{ role: 'user', content: `${ctx ? `${ctx}\n` : ''}${speakerLabel}: ${userMsg}` }],
+      {
+        temperature,
+        maxTokens,
+        baseUrl: accountState.finetuneBaseUrl,
+        apiKey: accountState.finetuneApiKey,
+        model: accountState.finetuneModel,
+        logTag: 'AI-FINETUNE'
+      }
+    );
+    return reply ? reply.replace(/[、。]/g, '') : reply;
+  } catch (err) {
+    logger.error('AI-FINETUNE', err);
+    return null;
+  }
+}
+
 async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null, { allowMarkovDirect = true } = {}) {
+  if (accountState.aiMode === 'finetune') {
+    if (!accountState.finetuneBaseUrl) {
+      logger.error('AI-FINETUNE', `[${accountState.id}] finetuneモード有効だがFINETUNE_BASE_URLが未設定`);
+      return null;
+    }
+    return getFinetuneResponse(accountState, userMsg, history, speakerMsg);
+  }
+
   const { historyContextSize, temperature, maxTokens } = {
     historyContextSize: config.ai.reply.historyContextSize,
     temperature: config.ai.reply.temperature,
