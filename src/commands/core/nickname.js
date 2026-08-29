@@ -1,13 +1,7 @@
 const config = require('../../utils/config');
 const { setNickname, removeNickname } = require('../../utils/nicknames');
 const { learnNicknames } = require('../../utils/nicknameLearner');
-
-function parseUserId(str) {
-  if (!str) return null;
-  const mention = str.match(/^<@!?(\d+)>$/);
-  if (mention) return mention[1];
-  return /^\d{15,20}$/.test(str) ? str : null;
-}
+const { parseUserMention: parseUserId } = require('../mentionUtils');
 
 module.exports = {
   name: 'nickname',
