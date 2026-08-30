@@ -62,6 +62,21 @@ def main():
     # Modelfileが使うテンプレートと一致するので、学習・本番で入力の型がずれなくなる
     tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
 
+    # 一部バージョンのUnslothはget_chat_template()適用後もtokenizer.eos_tokenを
+    # 未解決のプレースホルダー文字列("<EOS_TOKEN>"というリテラル、語彙に存在しない)
+    # のままにしてしまうバグがある。QwenのChatMLは実際には<|im_end|>で会話ターンを
+    # 終えるので、プレースホルダーのままなら本物のトークンに直接セットし直す
+    if tokenizer.eos_token not in tokenizer.get_vocab():
+        real_eos_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if real_eos_id is not None and real_eos_id != tokenizer.unk_token_id:
+            print(f"[finetune] tokenizer.eos_tokenが不正('{tokenizer.eos_token}')だったため<|im_end|>に補正")
+            tokenizer.eos_token = "<|im_end|>"
+        else:
+            raise RuntimeError(
+                "tokenizer.eos_tokenが不正で、かつ<|im_end|>も語彙に見つからない。"
+                "モデル/チャットテンプレートの組み合わせを確認してください。"
+            )
+
     # LoRAアダプタを追加。rank16は口調模写くらいの軽いタスクなら十分
     model = FastLanguageModel.get_peft_model(
         model,
