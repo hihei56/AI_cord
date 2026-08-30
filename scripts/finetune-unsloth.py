@@ -27,6 +27,8 @@ Ollama/vLLM等のサービング側がChatMLテンプレート(<|im_start|>user.
      FINETUNE_MODEL_3=gatts を設定
 """
 
+import inspect
+
 import torch
 from datasets import load_dataset
 from trl import SFTConfig, SFTTrainer
@@ -78,10 +80,12 @@ def main():
         batched=True,
     )
 
-    # 新しめのtrl(0.12+)ではSFTTrainerの引数が変わっていて、tokenizerは
-    # processing_class、dataset_text_field/max_seq_length/dataset_num_proc/packingは
-    # TrainingArgumentsではなくSFTConfig側で渡す必要がある
-    training_args = SFTConfig(
+    # trlのバージョンによってSFTConfigが受け付ける引数名がよく変わる
+    # (例: max_seq_length → max_length)。バージョン差異で毎回落ちるのを避けるため、
+    # 実際にインストールされているSFTConfigのシグネチャを見て、対応してる名前だけ渡す
+    sft_config_params = set(inspect.signature(SFTConfig.__init__).parameters)
+
+    config_kwargs = dict(
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         warmup_steps=10,
@@ -96,16 +100,26 @@ def main():
         seed=3407,
         output_dir="outputs/checkpoints",
         dataset_text_field="text",
-        max_seq_length=MAX_SEQ_LENGTH,
         dataset_num_proc=2,
         packing=False,
     )
 
+    # max_seq_lengthは新しいtrlではmax_lengthにリネームされている
+    seq_len_key = "max_seq_length" if "max_seq_length" in sft_config_params else "max_length"
+    config_kwargs[seq_len_key] = MAX_SEQ_LENGTH
+
+    training_args = SFTConfig(**{k: v for k, v in config_kwargs.items() if k in sft_config_params})
+
+    # processing_classという引数名も比較的新しいtrlでの名称(以前はtokenizer)なので、
+    # ここも実際のシグネチャを見て合わせる
+    sft_trainer_params = set(inspect.signature(SFTTrainer.__init__).parameters)
+    tokenizer_kwarg = "processing_class" if "processing_class" in sft_trainer_params else "tokenizer"
+
     trainer = SFTTrainer(
         model=model,
-        processing_class=tokenizer,
         train_dataset=dataset,
         args=training_args,
+        **{tokenizer_kwarg: tokenizer},
     )
 
     trainer.train()
