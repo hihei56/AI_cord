@@ -1,6 +1,12 @@
 """
-Unslothでgatts_sft.jsonl(Alpaca形式)をQwen2.5-7B-InstructにQLoRAで学習させ、
-Ollamaでそのまま使えるGGUFまで書き出すスクリプト。RTX 3060 12GB想定。
+Unslothでgatts_chatml.jsonl(system/user/assistantのmessages形式)をQwen2.5-7B-Instructに
+QLoRAで学習させ、Ollamaでそのまま使えるGGUFまで書き出すスクリプト。RTX 3060 12GB想定。
+
+Alpaca形式(instruction/input/output の素のテキスト)ではなくChatML形式で学習するのは、
+Ollama/vLLM等のサービング側がChatMLテンプレート(<|im_start|>user...)を使うため。
+学習と本番で入力の「型」を揃えないと、スタイルがうまく転写されない
+(語彙だけ拾って意味不明なループに陥る、などの症状が出た)。
+データセットは scripts/build-chatml-dataset.js で作る。
 
 事前準備:
   pip install unsloth
@@ -9,8 +15,9 @@ Ollamaでそのまま使えるGGUFまで書き出すスクリプト。RTX 3060 1
   のインストール手順を確認する)
 
 使い方:
+  node scripts/build-chatml-dataset.js gatts gatts 2
   python scripts/finetune-unsloth.py
-  (config/corpus/gatts_sft.jsonl を読み、outputs/gatts_lora と outputs/gatts_gguf に書き出す)
+  (config/corpus/gatts_chatml.jsonl を読み、outputs/gatts_lora と outputs/gatts_gguf に書き出す)
 
 学習後、Ollamaで使う場合:
   1. outputs/gatts_gguf/ にできたModelfileを使って:
@@ -25,28 +32,19 @@ from datasets import load_dataset
 from transformers import TrainingArguments
 from trl import SFTTrainer
 from unsloth import FastLanguageModel
+from unsloth.chat_templates import get_chat_template
 
 MAX_SEQ_LENGTH = 1024
-DATASET_PATH = "config/corpus/gatts_sft.jsonl"
+DATASET_PATH = "config/corpus/gatts_chatml.jsonl"
 LORA_OUT = "outputs/gatts_lora"
 GGUF_OUT = "outputs/gatts_gguf"
 
-ALPACA_PROMPT = """以下はガッツというキャラクターとしての振る舞いを指示する内容と、直前の会話の流れです。指示に従って、ガッツらしい応答を書いてください。
 
-### 指示:
-{}
-
-### 会話の流れ:
-{}
-
-### ガッツの応答:
-{}"""
-
-
-def formatting_prompts_func(examples, eos_token):
-    texts = []
-    for instruction, input_, output in zip(examples["instruction"], examples["input"], examples["output"]):
-        texts.append(ALPACA_PROMPT.format(instruction, input_, output) + eos_token)
+def formatting_prompts_func(examples, tokenizer):
+    texts = [
+        tokenizer.apply_chat_template(convo, tokenize=False, add_generation_prompt=False)
+        for convo in examples["messages"]
+    ]
     return {"text": texts}
 
 
@@ -58,6 +56,10 @@ def main():
         dtype=None,  # 自動判定(RTX 3060はAmpereなのでbf16が使える)
         load_in_4bit=True,
     )
+
+    # QwenのChatMLテンプレート(<|im_start|>...)を明示的に適用する。これがOllama側の
+    # Modelfileが使うテンプレートと一致するので、学習・本番で入力の型がずれなくなる
+    tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
 
     # LoRAアダプタを追加。rank16は口調模写くらいの軽いタスクなら十分
     model = FastLanguageModel.get_peft_model(
@@ -73,7 +75,7 @@ def main():
 
     dataset = load_dataset("json", data_files=DATASET_PATH, split="train")
     dataset = dataset.map(
-        lambda examples: formatting_prompts_func(examples, tokenizer.eos_token),
+        lambda examples: formatting_prompts_func(examples, tokenizer),
         batched=True,
     )
 
