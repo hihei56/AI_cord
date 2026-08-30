@@ -31,6 +31,16 @@
     "capMs": 12000,
     "jitterMs": 3000
   },
+  "conversationSeed": {
+    "checkIntervalMs": 600000,
+    "quietThresholdMs": 1200000,
+    "triggerChance": 0.3,
+    "minTurns": 3,
+    "maxTurns": 6,
+    "continueChance": 0.65,
+    "turnDelayMinMs": 3000,
+    "turnDelayMaxMs": 8000
+  },
   "selfTalk": {
     "intervalMs": 3600000,
     "chance": 0.15,
