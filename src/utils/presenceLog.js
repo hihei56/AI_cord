@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-// 直近5日分だけ残す(それより古い記録は読み書きのたびに切り捨てる)
-const RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
+// 直近3か月分だけ残す(それより古い記録は読み書きのたびに切り捨てる)
+const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const TRACKED_FILE = path.join(DATA_DIR, 'tracked-presence-users.json');
 

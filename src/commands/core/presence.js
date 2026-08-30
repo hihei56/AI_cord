@@ -17,7 +17,7 @@ module.exports = {
   name: 'presence',
   aliases: ['status'],
   description:
-    '特定ユーザーのオンラインステータス(直近5日分)を記録・確認。' +
+    '特定ユーザーのオンラインステータス(直近3か月分)を記録・確認。' +
     '!presence watch @user / !presence unwatch @user / !presence log @user / !presence list',
   async execute(msg, args, client) {
     const sub = args.shift();
@@ -52,14 +52,16 @@ module.exports = {
       if (entries.length === 0) {
         return msg.channel.send(
           presenceLog.isTracked(userId)
-            ? `<@${userId}> はまだ記録がありません(直近5日以内に状態変化なし)`
+            ? `<@${userId}> はまだ記録がありません(直近3か月以内に状態変化なし)`
             : `<@${userId}> は記録対象になっていません。先に !presence watch @${msg.author.username} で登録して`
         );
       }
 
       // Discordの1メッセージ上限に収まるよう、直近分を優先して詰めるだけ詰める
-      const lines = entries.slice(-30).map(formatEntry);
-      return msg.channel.send(`<@${userId}> の直近ステータス変化:\n${lines.join('\n')}`);
+      const lines = entries.slice(-50).map(formatEntry);
+      const omitted = entries.length - lines.length;
+      const header = omitted > 0 ? `<@${userId}> の直近ステータス変化(最新${lines.length}件、他${omitted}件は省略):` : `<@${userId}> の直近ステータス変化:`;
+      return msg.channel.send(`${header}\n${lines.join('\n')}`);
     }
 
     return msg.channel.send('使い方: !presence watch @user / !presence unwatch @user / !presence log @user / !presence list');
