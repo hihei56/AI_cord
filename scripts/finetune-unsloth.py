@@ -108,13 +108,14 @@ def main():
     seq_len_key = "max_seq_length" if "max_seq_length" in sft_config_params else "max_length"
     config_kwargs[seq_len_key] = MAX_SEQ_LENGTH
 
-    # UnslothがSFTConfigのeos_tokenに未解決のプレースホルダー("<EOS_TOKEN>"という
-    # 文字列そのもの)を埋め込んでしまうことがあり、それだとtrlの語彙チェックで
-    # 弾かれる。ChatMLテンプレート適用後の実際のeos_token(Qwenなら<|im_end|>)を
-    # 明示的に渡して上書きする
-    config_kwargs["eos_token"] = tokenizer.eos_token
-
     training_args = SFTConfig(**{k: v for k, v in config_kwargs.items() if k in sft_config_params})
+
+    # UnslothがSFTConfigのeos_tokenを未解決のプレースホルダー("<EOS_TOKEN>"という
+    # 文字列そのもの)のままにしてしまうバグがあり、それだとtrlの語彙チェックで
+    # 弾かれる。コンストラクタ引数として渡しても__post_init__で上書きされる
+    # ケースがあるため、SFTConfig生成後に属性として直接強制上書きする
+    if hasattr(training_args, "eos_token"):
+        training_args.eos_token = tokenizer.eos_token
 
     # processing_classという引数名も比較的新しいtrlでの名称(以前はtokenizer)なので、
     # ここも実際のシグネチャを見て合わせる
