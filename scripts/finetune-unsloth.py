@@ -29,8 +29,7 @@ Ollama/vLLM等のサービング側がChatMLテンプレート(<|im_start|>user.
 
 import torch
 from datasets import load_dataset
-from transformers import TrainingArguments
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel
 from unsloth.chat_templates import get_chat_template
 
@@ -79,29 +78,34 @@ def main():
         batched=True,
     )
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=dataset,
+    # 新しめのtrl(0.12+)ではSFTTrainerの引数が変わっていて、tokenizerは
+    # processing_class、dataset_text_field/max_seq_length/dataset_num_proc/packingは
+    # TrainingArgumentsではなくSFTConfig側で渡す必要がある
+    training_args = SFTConfig(
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        warmup_steps=10,
+        num_train_epochs=3,
+        learning_rate=2e-4,
+        fp16=not torch.cuda.is_bf16_supported(),
+        bf16=torch.cuda.is_bf16_supported(),
+        logging_steps=10,
+        optim="adamw_8bit",
+        weight_decay=0.01,
+        lr_scheduler_type="linear",
+        seed=3407,
+        output_dir="outputs/checkpoints",
         dataset_text_field="text",
         max_seq_length=MAX_SEQ_LENGTH,
         dataset_num_proc=2,
         packing=False,
-        args=TrainingArguments(
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=4,
-            warmup_steps=10,
-            num_train_epochs=3,
-            learning_rate=2e-4,
-            fp16=not torch.cuda.is_bf16_supported(),
-            bf16=torch.cuda.is_bf16_supported(),
-            logging_steps=10,
-            optim="adamw_8bit",
-            weight_decay=0.01,
-            lr_scheduler_type="linear",
-            seed=3407,
-            output_dir="outputs/checkpoints",
-        ),
+    )
+
+    trainer = SFTTrainer(
+        model=model,
+        processing_class=tokenizer,
+        train_dataset=dataset,
+        args=training_args,
     )
 
     trainer.train()
