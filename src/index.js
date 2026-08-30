@@ -5,6 +5,7 @@ const logger = require('./utils/logger');
 const { registerMessageHandler } = require('./handlers/messageHandler');
 const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
+const { registerPresenceTrackerHandler } = require('./handlers/presenceTrackerHandler');
 const { registerCommandHandler } = require('./commands/handler');
 const { registerReminderScheduler } = require('./reminderScheduler');
 const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
@@ -28,6 +29,7 @@ async function start() {
     registerMessageHandler(client);
     registerSelfTalkHandler(client);
     registerCommandHandler(client);
+    registerPresenceTrackerHandler(client);
     client.once('ready', () => {
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
       registerOwnAccount(client.user.id);
