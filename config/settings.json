@@ -9,7 +9,7 @@
   "crowdGuard": {
     "fetchLimit": 20,
     "windowMs": 120000,
-    "minDistinctUsers": 2,
+    "minDistinctUsers": 4,
     "backoffMultiplier": 0.1
   },
   "recentDuplicateGuard": {
