@@ -33,7 +33,7 @@
   "conversationSeed": {
     "checkIntervalMs": 600000,
     "checkIntervalJitter": 0.4,
-    "alwaysOn": false,
+    "alwaysOn": true,
     "alwaysOnIntervalMs": 30000,
     "quietThresholdMs": 600000,
     "triggerChance": 0.3,
