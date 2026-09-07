@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
@@ -61,9 +63,27 @@ async function withSimilarityRetry(accountState, logTag, generate) {
 async function initMarkov(accountState) {
   if (!config.markov?.enabled) return;
 
+  // 「ファイルが見つからない(CORPUS_FILE[_N]のファイル名の誤字・拡張子の有無・
+  // 大文字小文字の不一致など)」と「ファイルはあるが中身が空」を区別してログに出す。
+  // 前者を"コーパスが空"とだけ表示すると設定ミスに気付きにくいため
+  if (!fs.existsSync(accountState.corpusPath)) {
+    let available = [];
+    try {
+      available = fs.readdirSync(path.dirname(accountState.corpusPath));
+    } catch {
+      // ignore
+    }
+    logger.error(
+      'MARKOV',
+      `[${accountState.id}] コーパスファイルが見つかりません: ${accountState.corpusPath}\n` +
+        `  config/corpus/ 内の候補(大文字小文字も一致させること): ${available.join(', ') || '(取得失敗)'}`
+    );
+    return;
+  }
+
   const lines = loadCorpus(accountState.corpusPath);
   if (lines.length === 0) {
-    logger.log('MARKOV', `[${accountState.id}] コーパスが空のため無効化`);
+    logger.log('MARKOV', `[${accountState.id}] コーパスファイルの中身が空(または改行のみ)のため無効化: ${accountState.corpusPath}`);
     return;
   }
 
