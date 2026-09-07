@@ -2,6 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const kuromoji = require('kuromoji');
 
+// 文脈マッチング(pickStartKey)で使うと危険な、あまりに一般的・高頻度な単語。
+// 「今日」のような語は大半のコーパスに含まれるため、一度誰かが使うと次のAIも
+// 同じ単語にマッチしたキーから生成を始め、それがまた次のAIに伝染して
+// 「今日は〇〇だし」のような同じパターンの投稿が自己増殖するループになる
+// (実際に発生した問題)。こうした語は文脈マッチングの対象から除外する
+const CONTEXT_MATCH_STOPWORDS = new Set([
+  '今日', '明日', '昨日', '今', 'それ', 'あれ', 'これ', 'ここ', 'そこ',
+  'まあ', 'けど', 'でも', 'だから', 'てか', 'そう', 'うん', 'まじ',
+  'なんか', 'やっぱ', 'たぶん', 'ちょっと', 'なんとなく'
+]);
+
+// 助詞・助動詞などの1文字語(「は」「が」「を」など)はほぼ無意味なので除外したいが、
+// 「猫」「雨」のような単漢字の内容語まで一緒に弾いてしまうと文脈マッチングが弱くなりすぎる。
+// そのため「1文字かつ漢字ではない」場合のみ短すぎる語として除外する
+const KANJI_RE = /^[一-鿿]$/;
+function isTooShortForContextMatch(word) {
+  return word.length < 2 && !KANJI_RE.test(word);
+}
+
 // kuromojiは形態素(表層形)単位でトークン化する。日本語には空白を含まない発言が
 // ほとんどのため、これがないと大半のコーパス行が学習に使われず捨てられてしまう。
 function buildTokenizer() {
@@ -70,9 +89,12 @@ class MarkovChain {
   }
 
   // 文脈に含まれる単語と重なるキーがあればそこから開始し、
-  // なければ従来通りランダムに開始する
+  // なければ従来通りランダムに開始する。ただし1文字の語や汎用的すぎる語は
+  // 除外する(自己増殖ループの原因になるため。上のCONTEXT_MATCH_STOPWORDS参照)
   pickStartKey(keys, contextText) {
-    const contextWords = new Set(this.tokenize(contextText));
+    const contextWords = new Set(
+      this.tokenize(contextText).filter((w) => !isTooShortForContextMatch(w) && !CONTEXT_MATCH_STOPWORDS.has(w))
+    );
     if (contextWords.size > 0) {
       const matchingKeys = keys.filter((key) => key.split(' ').some((word) => contextWords.has(word)));
       if (matchingKeys.length > 0) return matchingKeys[Math.floor(Math.random() * matchingKeys.length)];
