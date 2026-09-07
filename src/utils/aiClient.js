@@ -94,7 +94,9 @@ async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, a
       messages,
       temperature,
       max_tokens: maxTokens,
-      ...(!baseUrl && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
+      // reasoning_effortはGroq固有パラメータ。Gemini等の他プロバイダに送るとエラーになりうるため、
+      // baseUrl未指定(=通常の会話用接続先)かつプロバイダがgroqの時だけ付与する
+      ...(!baseUrl && config.env.aiProvider === 'groq' && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
     })
   });
   const data = await res.json();

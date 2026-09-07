@@ -123,16 +123,59 @@ function loadAccounts() {
   }));
 }
 
+// AIバックエンドをGROQ_API_KEY/GEMINI_API_KEYを両方.envに入れておいた上で
+// AI_PROVIDER(groq|gemini)で切り替えられるようにする。AI_BASE_URL/AI_API_KEYを
+// 明示指定した場合は今まで通りそちらが最優先(自前ホストのvLLM/Ollama等向け)。
+const PROVIDER_DEFAULTS = {
+  groq: {
+    baseUrl: 'https://api.groq.com/openai/v1',
+    apiKey: process.env.GROQ_API_KEY,
+    model: 'openai/gpt-oss-120b',
+    visionModel: 'meta-llama/llama-4-scout-17b-16e-instruct'
+  },
+  gemini: {
+    // GeminiのOpenAI互換エンドポイント。aiClient.js側で `${baseUrl}/chat/completions`
+    // と連結するため、末尾スラッシュは付けない
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    apiKey: process.env.GEMINI_API_KEY,
+    model: 'gemini-2.5-flash',
+    visionModel: 'gemini-2.5-flash'
+  }
+};
+
+function resolveProviderName(envVal) {
+  const key = (envVal || 'groq').toLowerCase();
+  return PROVIDER_DEFAULTS[key] ? key : 'groq';
+}
+
+const aiProvider = resolveProviderName(process.env.AI_PROVIDER);
+const providerDefaults = PROVIDER_DEFAULTS[aiProvider];
+
+// vision(画像解析)だけ別プロバイダを使いたい場合はVISION_AI_PROVIDERで個別指定できる。
+// 未指定なら通常の会話用プロバイダをそのまま使い回す
+const visionProvider = resolveProviderName(process.env.VISION_AI_PROVIDER || process.env.AI_PROVIDER);
+const visionProviderDefaults = PROVIDER_DEFAULTS[visionProvider];
+
 const env = {
-  aiBaseUrl: process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
-  aiApiKey: process.env.AI_API_KEY || process.env.GROQ_API_KEY,
+  aiProvider,
+  aiBaseUrl: process.env.AI_BASE_URL || providerDefaults.baseUrl,
+  aiApiKey: process.env.AI_API_KEY || providerDefaults.apiKey || process.env.GROQ_API_KEY,
   // 画像解析だけ別のAPI/モデルに投げたい場合用。未設定なら通常のAI接続先を使い回す
-  visionBaseUrl: process.env.VISION_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
-  visionApiKey: process.env.VISION_API_KEY || process.env.AI_API_KEY || process.env.GROQ_API_KEY
+  visionBaseUrl: process.env.VISION_API_BASE_URL || process.env.AI_BASE_URL || visionProviderDefaults.baseUrl,
+  visionApiKey: process.env.VISION_API_KEY || process.env.AI_API_KEY || visionProviderDefaults.apiKey || process.env.GROQ_API_KEY
 };
 
 module.exports = {
   ...settings,
+  ai: {
+    ...settings.ai,
+    // モデル名: .envのAI_MODEL(明示指定) > 選択したプロバイダの既定モデル > settings.jsonの値
+    model: process.env.AI_MODEL || providerDefaults.model || settings.ai.model,
+    vision: {
+      ...settings.ai.vision,
+      model: process.env.VISION_MODEL || visionProviderDefaults.visionModel || settings.ai.vision?.model
+    }
+  },
   env,
   selfTalkPrompt,
   readPersona,

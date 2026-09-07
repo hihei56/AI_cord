@@ -119,9 +119,13 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 `!nickname learn @user`は、そのユーザー宛てのメンション/リプライの中から「文頭付近の名前+敬称(〜ちゃん/くん/さん等)」というパターンをヒューリスティックに拾って集計するだけで、自動では登録しない(誤爆した呼び名をAIが覚えると気まずいため)。出てきた候補を見て、正しそうなものだけ`!nickname set`で確定させる運用。
 
-### AIバックエンドの切り替え
+### AIバックエンドの切り替え(Groq / Gemini)
 
-`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叛く汎用実装。`AI_BASE_URL` / `AI_API_KEY` を変更するだけで、Groq以外(自前ホストのvLLM・Ollama・text-generation-inferenceなど、OpenAI互換API公開しているもの全般)に差し替え可能。モデル名は `config/settings.json` の `ai.model` で指定する。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
+`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叩く汎用実装。`.env`に`GROQ_API_KEY`と`GEMINI_API_KEY`を両方入れておいた上で、`AI_PROVIDER`(`groq` / `gemini`、省略時`groq`)で使う方を切り替えられる。切り替えると接続先URL・APIキー・モデル名(既定: groq=`openai/gpt-oss-120b`、gemini=`gemini-2.5-flash`)が自動で対応するものになる。特定のモデルを使いたい場合は`.env`の`AI_MODEL`で明示指定すれば常にそちらが優先される。
+
+画像解析(vision)も同じ仕組みで、未指定なら会話用と同じプロバイダを使い回す。会話はGroq、画像解析だけGeminiのように分けたい場合は`VISION_AI_PROVIDER`を個別に指定する。
+
+`AI_BASE_URL` / `AI_API_KEY`を明示指定すると`AI_PROVIDER`より優先されるので、自前ホストのvLLM・Ollama・text-generation-inferenceなど、上記2つ以外のOpenAI互換APIに差し替えたい場合はそちらを使う。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
 
 ### アカウント単位でのファインチューニングモデル切り替え
 
