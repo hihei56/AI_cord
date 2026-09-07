@@ -6,10 +6,13 @@ const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 const aiProvider = require('./aiProvider');
 
-// 句読点を除去し、改行はスペースにまとめて常に1行のメッセージにする
-// (ペルソナ/プロンプトの指示をモデルが無視した場合の保険)
+// 「1行に収める」をプロンプト指示だけに頼らず、コード側で強制的に成形する。
+// 複数行に分かれていたら最初の1行だけを採用する(残りを繋げると逆に長くなるため
+// 意味が無い)。さらに文字数上限を超えていたら切り詰める
 function toSingleLine(text) {
-  return text.replace(/[、。]/g, '').replace(/\s*\n+\s*/g, ' ').trim();
+  const maxLength = config.ai?.reply?.maxReplyLength || 60;
+  const firstLine = text.split('\n')[0].replace(/[、。]/g, '').trim();
+  return firstLine.length > maxLength ? firstLine.slice(0, maxLength) : firstLine;
 }
 
 // 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
