@@ -70,6 +70,19 @@ function turnDelay() {
   return TURN_DELAY_MIN_MS + Math.random() * (TURN_DELAY_MAX_MS - TURN_DELAY_MIN_MS);
 }
 
+// typing表示を出してから即座に送信すると、応答が速い時は一瞬で消えて実質見えないため、
+// 最低限これだけは表示され続けるよう間を空ける
+const TYPING_MIN_VISIBLE_MS = 1500;
+
+async function showTyping(channel, accountId) {
+  try {
+    await channel.sendTyping();
+    await new Promise((r) => setTimeout(r, TYPING_MIN_VISIBLE_MS));
+  } catch (err) {
+    logger.error('SEED', `[${accountId}] typing表示に失敗: ${err.message}`);
+  }
+}
+
 // sinceTimestamp以降に人間の発言が無いか確認する(掛け合いの途中でユーザーが
 // 割り込んできたら打ち切って人間の話に譲るため)
 async function humanInterruptedSince(client, channelId, sinceTimestamp) {
@@ -90,11 +103,7 @@ async function seedConversation(clientA, clientB, channelId) {
   const channelA = clientA.channels.cache.get(channelId);
   if (!channelA) return;
 
-  try {
-    await channelA.sendTyping();
-  } catch {
-    // typing表示に失敗しても会話自体は続行する
-  }
+  await showTyping(channelA, clientA.accountState.id);
 
   const opener = await generateSelfTalk(clientA.accountState);
   if (!opener) return;
@@ -124,11 +133,7 @@ async function seedConversation(clientA, clientB, channelId) {
     const channel = speaker.channels.cache.get(channelId);
     if (!channel) break;
 
-    try {
-      await channel.sendTyping();
-    } catch {
-      // typing表示に失敗しても会話自体は続行する
-    }
+    await showTyping(channel, speaker.accountState.id);
 
     // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する
     const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
@@ -174,11 +179,10 @@ function registerConversationSeedHandler(clients) {
       const channel = clientA.channels.cache.get(channelId);
       if (!channel) continue;
       if (ALWAYS_ON || (await isChannelQuiet(channel))) {
-        try {
-          await seedConversation(clientA, clientB, channelId);
-        } catch (err) {
-          logger.error('SEED', err);
-        }
+        // awaitせずファイア&フォーゲットにする: ここでawaitすると1つの掛け合いが
+        // 終わるまで次のスケジュールが始まらず直列になってしまい、alwaysOnで
+        // 短い間隔を設定しても複数の掛け合いが同時進行せず賑やかさが出ない
+        seedConversation(clientA, clientB, channelId).catch((err) => logger.error('SEED', err));
         break;
       }
     }
