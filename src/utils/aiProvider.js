@@ -13,11 +13,13 @@ const PROVIDER_DEFAULTS = {
   gemini: {
     label: 'Gemini',
     // GeminiのOpenAI互換エンドポイント。呼び出し側で`${baseUrl}/chat/completions`と
-    // 連結するため、末尾スラッシュは付けない
+    // 連結するため、末尾スラッシュは付けない。
+    // gemini-2.5-flashは新規ユーザーに提供終了済み(404: "no longer available to
+    // new users")。Google側の案内に従いgemini-3.6-flashを使う
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     apiKeyEnv: 'GEMINI_API_KEY',
-    model: 'gemini-2.5-flash',
-    visionModel: 'gemini-2.5-flash'
+    model: 'gemini-3.6-flash',
+    visionModel: 'gemini-3.6-flash'
   }
 };
 
