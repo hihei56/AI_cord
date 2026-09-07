@@ -1,6 +1,7 @@
 {
   "commandPrefix": "!",
   "cooldownSeconds": 90,
+  "cooldownJitter": 0.3,
   "replyChance": {
     "mention": 0.95,
     "reply": 0.85,
@@ -18,7 +19,10 @@
   },
   "typingDelay": {
     "minMs": 3000,
-    "maxMs": 7000
+    "maxMs": 7000,
+    "longPauseChance": 0.12,
+    "longPauseMinMs": 15000,
+    "longPauseMaxMs": 90000
   },
   "replyDelay": {
     "minMs": 2500,
@@ -28,7 +32,11 @@
   },
   "conversationSeed": {
     "checkIntervalMs": 600000,
-    "quietThresholdMs": 1200000,
+    "checkIntervalJitter": 0.4,
+    "alwaysOn": false,
+    "alwaysOnIntervalMs": 180000,
+    "humanQuietThresholdMs": 600000,
+    "humanActivityWindowMs": 3600000,
     "triggerChance": 0.3,
     "minTurns": 3,
     "maxTurns": 6,
@@ -37,7 +45,9 @@
     "turnDelayMaxMs": 8000
   },
   "selfTalk": {
+    "enabled": false,
     "intervalMs": 3600000,
+    "intervalJitter": 0.4,
     "chance": 0.15,
     "imageChance": 0.3,
     "animalTypes": ["cat", "dog", "fox", "bird"]
@@ -69,5 +79,13 @@
       "maxTokens": 200
     }
   },
-  "presenceFile": "default.json"
+  "presenceFile": "default.json",
+  "priceAlert": {
+    "enabled": true,
+    "defaultSymbols": ["hype", "ponz", "zec", "btc"],
+    "checkIntervalMs": 900000,
+    "checkIntervalJitter": 0.3,
+    "changeThresholdPercent": 5,
+    "currency": "usd"
+  }
 }

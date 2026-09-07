@@ -66,6 +66,8 @@ npm start
 | `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
 | `ALLOWED_GUILD_ID` | 動作させるサーバーID |
 | `ALLOWED_CHANNEL_ID` | 初回起動時の初期応答チャンネルID(以降は`!channel`コマンドで動的に追加/削除可能) |
+| `TEST_CHANNEL_ID` | (任意)テスト用チャンネルID。設定すると、このチャンネルでは応答チャンネル登録・クールダウン・返信確率・crowdGuardを全部無視して常に即応答する(動作確認用) |
+| `ALLOWED_REPLY_USER_IDS` | (任意、カンマ区切り)応答してよい相手を制限したい場合のユーザーID一覧。未設定なら今まで通り誰にでも反応する |
 | `PERSONA` | `config/personas/` 内で使用する人格ファイル名(拡張子なし、省略時 `default`) |
 | `CORPUS_FILE` | `config/corpus/` 内で使用するコーパスファイル名(省略時 `config/settings.json`の`markov.corpusFile`) |
 
@@ -81,7 +83,15 @@ PERSONA_2=別の人格ファイル名
 CORPUS_FILE_2=別のコーパスファイル名
 ```
 
-アカウントごとに応答チャンネル一覧・ロックダウン状態・マルコフ連鎖・人格は完全に独立している(`src/account.js`でアカウントごとの実行時状態をまとめている)。AIバックエンド(`AI_BASE_URL`/`AI_API_KEY`)と`config/settings.json`の挙動設定(返信確率・遅延・モデルなど)は全アカウント共通。
+アカウントごとに応答チャンネル一覧・ロックダウン状態・マルコフ連鎖・人格は完全に独立している(`src/account.js`でアカウントごとの実行時状態をまとめている)。AIバックエンド(`AI_BASE_URL`/`AI_API_KEY`)と`config/settings.json`の挙動設定(返信確率・遅延・モデルなど)は全アカウント共通。上限は無く、`DISCORD_TOKEN_N`が設定されている番号まで自動的に読み込まれる(`.env.example`に3〜6体目までのテンプレあり)。
+
+### 全アカウント一括操作
+
+`src/utils/accountRegistry.js`がこのプロセスで動いている全アカウントのclientを共有で保持しており、`!lockdown`/`!pause`と`!channel`は引数に`all`を指定すると対象アカウントを1つずつ指定しなくても全アカウントに一括で効く。
+
+- `!pause all` — 全アカウントのロックダウン状態を一括で反転(自分の現在状態を反転させた値を全員に適用)
+- `!channel add all [channelId]` / `!channel remove all [channelId]` — 全アカウントの応答チャンネルに一括追加/削除(省略時は今いるチャンネル)
+- `!channel list all` — 全アカウントの応答チャンネル一覧をまとめて表示
 
 ### コマンド
 
@@ -91,14 +101,19 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 | コマンド | 内容 |
 |---|---|
-| `!channel add\|remove\|list [channelId]` | 応答チャンネルの追加/削除/一覧(省略時は今いるチャンネル) |
-| `!lockdown` / `!pause [@account]` | 自動応答・自発投稿を緊急停止/再開するトグル。ロール経由(本人以外)で実行する時は`@account`で対象アカウントの指定が必須(未指定だと全アカウント一斉停止になってしまうため) |
+| `!channel add\|remove\|list [all] [channelId]` | 応答チャンネルの追加/削除/一覧(省略時は今いるチャンネル、`all`で全アカウント一括) |
+| `!lockdown` / `!pause [@account\|all]` | 自動応答・自発投稿を緊急停止/再開するトグル。`all`で全アカウント一括。ロール経由(本人以外)で個別アカウントに実行する時は`@account`で対象の指定が必須(未指定だと全アカウント一斉停止になってしまうため) |
 | `!set channel @account #channel` | 指定アカウントに応答チャンネルを追加。複数アカウント運用中にロール経由でどれか1つだけ操作したい時用 |
 | `!set mode @account markov\|finetune` | 返信生成方式の切り替え(後述) |
 | `!train [件数] [@ユーザー]` | チャンネルの発言を集めてコーパスに追加し即再学習(省略時は自分自身、直近200件) |
 | `!nickname learn @user [件数]` | 会話履歴からその人への呼びかけ方の候補を探索して提示(省略時は直近300件) |
 | `!nickname set @user 名前` | 呼び名を個別登録 |
 | `!nickname remove @user` / `!nickname list` | 呼び名の削除 / 一覧表示 |
+| `!provider [groq\|gemini]` / `!ai [groq\|gemini]` | 会話生成に使うAIプロバイダを実行中に切り替え(引数省略で現在の状態を表示)。`.env`の書き換え・再起動不要、全アカウント共通 |
+| `!pricealert channel` | 今いるチャンネルを仮想通貨の価格アラート通知先に設定 |
+| `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
+| `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
+| `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
 | `!help` | コマンド一覧を表示 |
 
 ### ユーザーへの呼び方(`config/nicknames.json`)
@@ -109,9 +124,15 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 `!nickname learn @user`は、そのユーザー宛てのメンション/リプライの中から「文頭付近の名前+敬称(〜ちゃん/くん/さん等)」というパターンをヒューリスティックに拾って集計するだけで、自動では登録しない(誤爆した呼び名をAIが覚えると気まずいため)。出てきた候補を見て、正しそうなものだけ`!nickname set`で確定させる運用。
 
-### AIバックエンドの切り替え
+### AIバックエンドの切り替え(Groq / Gemini)
 
-`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叛く汎用実装。`AI_BASE_URL` / `AI_API_KEY` を変更するだけで、Groq以外(自前ホストのvLLM・Ollama・text-generation-inferenceなど、OpenAI互換API公開しているもの全般)に差し替え可能。モデル名は `config/settings.json` の `ai.model` で指定する。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
+`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叩く汎用実装で、実際の接続先は`src/utils/aiProvider.js`が管理している。`.env`に`GROQ_API_KEY`と`GEMINI_API_KEY`を**両方**入れておけば、起動後は`.env`を書き換えず**Discord上で`!provider groq`または`!provider gemini`と打つだけ**で会話生成のバックエンドを切り替えられる(即時反映、再起動不要、全アカウント共通)。`!provider`だけ打つと現在の状態と切り替え可能なプロバイダ一覧を表示する。
+
+切り替えると接続先URL・APIキー・モデル名(既定: groq=`openai/gpt-oss-120b`、gemini=`gemini-2.5-flash`)が自動で対応するものになる。特定のモデルを固定したい場合は`.env`の`AI_MODEL`で明示指定すれば常にそちらが優先される。`.env`の`AI_PROVIDER`は起動時点の初期値としてのみ使う(省略時`groq`)。
+
+画像解析(vision)も同じ仕組みで、未指定なら`!provider`で選択中の会話用プロバイダをそのまま使い回す(会話をGeminiに切り替えれば画像解析も自動でGeminiになる)。会話はGroq、画像解析だけGeminiのように分けたい場合だけ`.env`の`VISION_AI_PROVIDER`を個別に指定する。
+
+`AI_BASE_URL` / `AI_API_KEY`を明示指定すると`!provider`/`AI_PROVIDER`より優先されるので、自前ホストのvLLM・Ollama・text-generation-inferenceなど、上記2つ以外のOpenAI互換APIに差し替えたい場合はそちらを使う。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
 
 ### アカウント単位でのファインチューニングモデル切り替え
 
@@ -120,6 +141,14 @@ CORPUS_FILE_2=別のコーパスファイル名
 finetuneモードでは、そのアカウントの返信はペルソナ文書・マルコフ下書きを一切使わず、会話の流れをそのままファインチューニング済みモデルに投げるだけになる(ペルソナはモデル自体に学習済みという前提)。`!set mode @account markov`でいつでも今まで通りの方式(マルコフ下書き+Groq等での補正)に戻せる。`FINETUNE_BASE_URL_N`が未設定のアカウントでfinetuneモードに切り替えようとすると拒否される。
 
 `!set mode`での切り替えは実行中の状態変更なので再起動すると消える(常にmarkovで起動し直す)。常時finetuneモードで運用したいアカウントは`.env`で`AI_MODE_N=finetune`を指定しておくと、起動時点からfinetuneモードになる。
+
+### 仮想通貨の価格アラート(`!pricealert`)
+
+`src/handlers/priceAlertHandler.js`が`config/settings.json`の`priceAlert.checkIntervalMs`(既定15分、ジッター付き)ごとに監視銘柄の価格をチェックし、前回アラート時の基準価格から`priceAlert.changeThresholdPercent`(既定±5%)以上動いていたら`!pricealert channel`で設定したチャンネルに通知する。アカウントに紐づかない全体機能で、`clients[0]`(1つ目のアカウント)が通知を投稿する。
+
+銘柄の価格解決は`src/utils/priceApi.js`が担当し、優先順位は「`!pricealert setid`での手動指定」→「CoinGecko検索(ティッカーの完全一致のみ採用)」→「DexScreener検索(CoinGecko未上場の新興トークン向け、シンボル一致かつ流動性最大のペアを採用)」。どちらのAPIも無料でAPIキー不要。自動解決に失敗した銘柄は`!pricealert list`/`!pricealert now`で「取得失敗」と表示されるので、正しいCoinGecko idか`チェーンID:ペアアドレス`(DexScreenerの表記)が分かれば`!pricealert setid <銘柄> <id>`で手動指定できる。
+
+初期監視銘柄は`priceAlert.defaultSymbols`(既定: `hype`, `ponz`, `zec`, `btc`)。`!pricealert add|remove`で運用中に増減でき、設定は`.env`ではなく`data/price-alerts.json`に永続化されるので、通知先チャンネル・銘柄構成の変更に`.env`編集や再起動は不要。
 
 ### `config/settings.json`(動作パラメータ)
 
@@ -132,13 +161,21 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 | `recentDuplicateGuard` | 連投・自己連続投稿の抑制設定 |
 | `typingDelay` / `replyDelay` | typing表示や返信送信までの擬似的な遅延 |
 | `selfTalk` | 自発投稿の間隔・確率・画像混在率・対象動物 |
+| `conversationSeed` | 過疎ってるチャンネルでAIアカウント同士に掛け合いをさせる機能の設定(後述) |
 | `markov` | マルコフ連鎖の口調下書き機能の設定(後述) |
 | `ai` | モデル名、温度、履歴参照件数など |
 | `presence` | Spotify/視聴中ステータス(RPC)のローテーション内容 |
 
 ### `config/personas/default.txt`
 
-返信生成に使う人格・口調のシステムプロンプト。別人格を使いたい場合は同じディレクトリに新しいファイルを追加し、`.env` の `PERSONA` を切り替える。
+返信生成に使う人格・口調のシステムプロンプト。別人格を使いたい場合は同じディレクトリに新しいファイルを追加し、`.env` の `PERSONA` を切り替える。現在同梱されているのは `default`(率直・シニカル) / `gatts` / `original` / `suisui` / `discord_cutiest`(甘え上手で人懐っこい)。`discord_cutiest`アカウントは`config/corpus/Cutiest_discord.txt`をマルコフ下書き用コーパスとして使う想定なので、`.env`で該当アカウントの`PERSONA_N=discord_cutiest` / `CORPUS_FILE_N=Cutiest_discord.txt`をセットで指定する。
+
+### AI同士の掛け合い・常時チャットモード(`conversationSeed`)
+
+2アカウント以上動かしている時、`conversationSeedHandler.js`が定期的にランダムな2アカウントのペアを選び、共通の応答チャンネルで会話の掛け合いを起こす(`minTurns`〜`maxTurns`ターン、`continueChance`の確率で早めに切り上げ)。この掛け合いでは、相手のアカウントが人間ではなく別のAIチャットボットであることをプロンプトに明示しているので、AI同士が互いを人間だと誤認したような受け答えにはならない。
+
+- 通常時: `checkIntervalMs`ごとに`triggerChance`の確率で発火し、対象チャンネルが`quietThresholdMs`以上発言が無い(過疎ってる)時だけ会話を始める
+- `alwaysOn: true`にすると、この確率チェックと過疎チェックを両方無視し、より短い`alwaysOnIntervalMs`間隔で必ずどこかのペアが会話を始める(「AIだけで常時チャットを動かす」モード)。常時人間の発言を待たずにサーバーを賑やかに見せたい場合に使う。人間の発言に対する通常の返信ロジック(`messageHandler.js`)はそのまま生きているので、人間が話しかければ普通に反応する
 
 ### `config/prompts/self_talk.txt`
 
@@ -167,8 +204,15 @@ npm run markov:demo
 
 - サーバー内の特定チャンネルでのメンション/リプライ/通常発言に確率的に返信(OpenAI互換API経由でLLM生成、デフォルトはGroq)
 - 直近の会話履歴を踏まえた返信生成、連投防止・クールダウン制御
-- 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像+一言)
+- 直近の自分の発言と似すぎている返信は再生成し、機械的な連投・似た言い回しの繰り返しを抑える(`aiClient.js`の類似度チェック、messageHandler/selfTalk/conversationSeed全経路共通)
+- 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像+一言)。既定では無効(`config/settings.json`の`selfTalk.enabled`をtrueにすると有効化)
+- 複数アカウント運用時、過疎ってるチャンネルでAI同士に掛け合いをさせる(相手がAIであることはお互い認識した上で会話する)。`alwaysOn`設定で確率・過疎チェックを無視した常時チャットモードにもできる
 - Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
+- `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
+- テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
+- 仮想通貨の価格アラート(`!pricealert`)。指定チャンネルで監視銘柄を一定間隔でチェックし、前回アラート時から±5%(既定)以上動いたら通知する
+- 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)。返信までの間も`typingDelay.longPauseChance`の確率でたまに長考(既定15〜90秒)を挟み、毎回同じテンポで即レスしないようにしている
+- メッセージへの添付画像・URL貼り付け時のembed画像を読み取り、内容を踏まえて返信する(vision対応モデル経由。複数枚添付にも対応)
 - (任意)マルコフ連鎖による口調の下書き生成
 
 ## Oracle Cloudへのデプロイ

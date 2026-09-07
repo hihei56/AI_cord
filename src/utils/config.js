@@ -26,6 +26,11 @@ function numEnv(name) {
   return process.env[name] !== undefined ? Number(process.env[name]) : undefined;
 }
 
+function idListEnv(envVal) {
+  if (!envVal) return [];
+  return envVal.split(',').map((id) => id.trim()).filter(Boolean);
+}
+
 // !pause/!set channel等をロール経由で実行できる既定のロールID。サーバーによって
 // 持ってるロールが違うので複数許可する。ロールIDは秘密情報ではないのでハードコードしてよく、
 // .envで ALLOWED_COMMAND_ROLE_ID[_N] にカンマ区切りで指定すれば上書きできる
@@ -44,7 +49,7 @@ function resolveAiMode(envVal) {
 
 // アカウントごとにコマンドprefixを分ける(同じ!だとどのアカウント宛てか紛らわしいため)。
 // .envで COMMAND_PREFIX[_N] を設定すれば上書きできる
-const DEFAULT_COMMAND_PREFIXES = { 1: 'toku!', 2: 'sui!' };
+const DEFAULT_COMMAND_PREFIXES = { 1: 'toku!', 2: 'sui!', 3: 'mi!', 4: 'ren!', 5: 'aka!', 6: 'yuki!' };
 
 // 特別な呼び方をしたい相手だけ config/nicknames.json に { "ユーザーID": "呼び名" }
 // で個別登録する。登録が無いユーザーは今まで通りDiscordのusernameで呼ぶ
@@ -68,6 +73,8 @@ function loadAccounts() {
       discordToken: process.env.DISCORD_TOKEN,
       allowedGuildId: process.env.ALLOWED_GUILD_ID,
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
+      testChannelId: process.env.TEST_CHANNEL_ID,
+      allowedReplyUserIds: idListEnv(process.env.ALLOWED_REPLY_USER_IDS),
       personaName: process.env.PERSONA || 'default',
       corpusFile: process.env.CORPUS_FILE,
       presenceFile: process.env.PRESENCE_FILE,
@@ -89,6 +96,8 @@ function loadAccounts() {
       discordToken: process.env[`DISCORD_TOKEN_${i}`],
       allowedGuildId: process.env[`ALLOWED_GUILD_ID_${i}`],
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
+      testChannelId: process.env[`TEST_CHANNEL_ID_${i}`],
+      allowedReplyUserIds: idListEnv(process.env[`ALLOWED_REPLY_USER_IDS_${i}`]),
       personaName: process.env[`PERSONA_${i}`] || 'default',
       corpusFile: process.env[`CORPUS_FILE_${i}`],
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
@@ -114,17 +123,8 @@ function loadAccounts() {
   }));
 }
 
-const env = {
-  aiBaseUrl: process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
-  aiApiKey: process.env.AI_API_KEY || process.env.GROQ_API_KEY,
-  // 画像解析だけ別のAPI/モデルに投げたい場合用。未設定なら通常のAI接続先を使い回す
-  visionBaseUrl: process.env.VISION_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1',
-  visionApiKey: process.env.VISION_API_KEY || process.env.AI_API_KEY || process.env.GROQ_API_KEY
-};
-
 module.exports = {
   ...settings,
-  env,
   selfTalkPrompt,
   readPersona,
   corpusPathFor,

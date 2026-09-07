@@ -70,10 +70,11 @@ function registerCommandHandler(client) {
     if (!commandName) return;
 
     const state = client.accountState;
-    // ロックダウン中は解除コマンド(lockdown/pause)以外を受け付けない
-    if (state.lockedDown && commandName !== 'lockdown' && commandName !== 'pause') return;
-
     const cmd = commands.get(commandName);
+
+    // ロックダウン中は解除コマンド(lockdown/pauseとその全エイリアス)以外を受け付けない
+    if (state.lockedDown && cmd?.name !== 'lockdown') return;
+
     if (!cmd) {
       logger.log('COMMAND', `[${client.accountState.id}] 未知のコマンド: ${commandName}`);
       return;
