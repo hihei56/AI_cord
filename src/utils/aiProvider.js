@@ -7,7 +7,10 @@ const PROVIDER_DEFAULTS = {
     label: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     apiKeyEnv: 'GROQ_API_KEY',
-    model: 'openai/gpt-oss-120b',
+    // gpt-oss-120bはreasoningモデルで見えない部分のトークン消費が大きく、
+    // llama-3.1-8b-instantは軽い分日本語品質が落ちる。llama-3.3-70b-versatileは
+    // reasoning無しで70Bの品質があり、TPM上限もgpt-oss-120bより緩いバランス型
+    model: 'llama-3.3-70b-versatile',
     visionModel: 'meta-llama/llama-4-scout-17b-16e-instruct'
   },
   gemini: {
