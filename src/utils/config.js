@@ -10,8 +10,18 @@ function readText(relativePath) {
 const settings = JSON.parse(readText('settings.json'));
 const selfTalkPrompt = readText(path.join('prompts', 'self_talk.txt'));
 
+// personaNameがnull/空文字(人格を設定しないアカウント)ならファイルを読まず空文字を返す
 function readPersona(personaName) {
+  if (!personaName) return '';
   return readText(path.join('personas', `${personaName}.txt`));
+}
+
+// PERSONA[_N]を明示的に空文字か"none"にすると人格無し(null)になる。
+// 環境変数自体が未指定(undefined)の時だけ既定の'default'にフォールバックする
+function resolvePersonaName(envVal) {
+  if (envVal === undefined) return 'default';
+  if (envVal === '' || envVal.toLowerCase() === 'none') return null;
+  return envVal;
 }
 
 function corpusPathFor(corpusFile) {
@@ -75,7 +85,7 @@ function loadAccounts() {
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
       testChannelId: process.env.TEST_CHANNEL_ID,
       allowedReplyUserIds: idListEnv(process.env.ALLOWED_REPLY_USER_IDS),
-      personaName: process.env.PERSONA || 'default',
+      personaName: resolvePersonaName(process.env.PERSONA),
       corpusFile: process.env.CORPUS_FILE,
       presenceFile: process.env.PRESENCE_FILE,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
@@ -98,7 +108,7 @@ function loadAccounts() {
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
       testChannelId: process.env[`TEST_CHANNEL_ID_${i}`],
       allowedReplyUserIds: idListEnv(process.env[`ALLOWED_REPLY_USER_IDS_${i}`]),
-      personaName: process.env[`PERSONA_${i}`] || 'default',
+      personaName: resolvePersonaName(process.env[`PERSONA_${i}`]),
       corpusFile: process.env[`CORPUS_FILE_${i}`],
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),

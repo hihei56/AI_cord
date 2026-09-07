@@ -170,6 +170,8 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 返信生成に使う人格・口調のシステムプロンプト。別人格を使いたい場合は同じディレクトリに新しいファイルを追加し、`.env` の `PERSONA` を切り替える。現在同梱されているのは `default`(率直・シニカル) / `gatts` / `original` / `suisui` / `discord_cutiest`(甘え上手で人懐っこい)。`discord_cutiest`アカウントは`config/corpus/Cutiest_discord.txt`をマルコフ下書き用コーパスとして使う想定なので、`.env`で該当アカウントの`PERSONA_N=discord_cutiest` / `CORPUS_FILE_N=Cutiest_discord.txt`をセットで指定する。
 
+`.env`の`PERSONA[_N]`を空文字(`PERSONA=`)か`none`にすると、そのアカウントは人格プロンプト無しで動く。人格・口調の指示が一切無い状態で、マルコフ下書き(有効な場合)を「最低限の誤字脱字修正+会話の流れへの整合」だけで補正した返信になる(`src/utils/aiClient.js`のdraftSection参照)。コーパスの口調をLLMの解釈で上書きさせたくない場合に使う。
+
 ### AI同士の掛け合い・常時チャットモード(`conversationSeed`)
 
 2アカウント以上動かしている時、`conversationSeedHandler.js`が定期的にランダムな2アカウントのペアを選び、共通の応答チャンネルで会話の掛け合いを起こす(`minTurns`〜`maxTurns`ターン、`continueChance`の確率で早めに切り上げ)。この掛け合いでは、相手のアカウントが人間ではなく別のAIチャットボットであることをプロンプトに明示しているので、AI同士が互いを人間だと誤認したような受け答えにはならない。
