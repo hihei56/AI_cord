@@ -10,6 +10,7 @@ const { registerCommandHandler } = require('./commands/handler');
 const { registerReminderScheduler } = require('./reminderScheduler');
 const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
 const { registerPriceAlertHandler } = require('./handlers/priceAlertHandler');
+const { registerSlashBumpHandler } = require('./handlers/slashBumpHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
 const { initMarkov } = require('./utils/aiClient');
 
@@ -41,6 +42,7 @@ async function start() {
 
   registerConversationSeedHandler(clients);
   registerPriceAlertHandler(clients);
+  registerSlashBumpHandler(clients);
 
   const results = await Promise.allSettled(
     clients.map((client) => client.login(client.accountState.discordToken))
