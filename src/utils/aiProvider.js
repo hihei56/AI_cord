@@ -7,9 +7,7 @@ const PROVIDER_DEFAULTS = {
     label: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     apiKeyEnv: 'GROQ_API_KEY',
-    // gpt-oss-120bはreasoningモデルで消費が重く1日20万トークンですぐ枯渇するため、
-    // reasoning無しで1日50万トークンまで使えるllama-3.1-8b-instantを既定にする
-    model: 'llama-3.1-8b-instant',
+    model: 'openai/gpt-oss-120b',
     visionModel: 'meta-llama/llama-4-scout-17b-16e-instruct'
   },
   gemini: {
