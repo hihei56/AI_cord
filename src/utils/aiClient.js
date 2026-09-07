@@ -264,6 +264,15 @@ async function getAIResponseOnce(
 
   const draft = getMarkovDraft(accountState, `${ctx}\n${userMsg}`);
 
+  // 下書きが実際に生成されてプロンプトに渡っているかどうかを、直接採用しなかった
+  // 場合(=LLM補正パスに回る大半のケース)でも検証できるようにログを残す。
+  // 従来は直接採用時にしかログが出ず、「マルコフが使われているか」を外から確認できなかった
+  if (draft) {
+    logger.log('MARKOV', `[${accountState.id}] 下書き生成: ${draft}`);
+  } else if (config.markov?.enabled && accountState.markovChain) {
+    logger.log('MARKOV', `[${accountState.id}] 下書き生成失敗(生成結果が空)`);
+  }
+
   // メンション/リプライで直接呼ばれた時以外は、たまにLLMを介さずマルコフ連鎖の
   // 生成結果をそのまま返信にする(コーパスの口調がLLMの言い換えで薄まるのを防ぐ)
   const { directReplyChance = 0, directReplyMinLength = 0 } = config.markov || {};
@@ -303,9 +312,11 @@ async function getAIResponseOnce(
   // よくある。「できるだけそのまま使う」を強調しすぎると、LLMが文法修正すら遠慮して
   // 意味不明な文をほぼ生のまま出力してしまう(実際に発生した問題)。そのため、下書きの
   // 語彙は使い回しつつも「日本語として意味が通る一文にすること」自体は必須にし、
-  // 新しい話題・説明の追加やまったく違う言い回しへの総入れ替えだけを禁止する
+  // 新しい話題・説明の追加やまったく違う言い回しへの総入れ替えだけを禁止する。
+  // また、この指示は他の指示(人格・記憶・重複回避など)に埋もれると軽視されがちなので、
+  // システムプロンプトの最後(実際の生成直前)に置いて優先度を上げる
   const draftSection = draft
-    ? `\n【下書き(マルコフ連鎖生成、単語の並びや助詞がおかしいことが多い)】\n${draft}\n上の下書きの単語をできるだけ使い回して返信を作ること。ただし下書きは機械生成なので、単語の並べ替えや助詞の修正を行ってでも、日本語として意味が通る自然な一文にすること(意味不明な文のまま出力するのは不可)。下書きに無い新しい話題や説明を付け足したり、下書きの語彙を無視して全く違う言い回しに総入れ替えしたりはしない。`
+    ? `\n【最重要・下書き(マルコフ連鎖生成、単語の並びや助詞がおかしいことが多い)】\n${draft}\n返信は必ずこの下書きをベースにすること。下書きに出てくる単語を2つ以上、そのまま流用して使う(similar/synonymへの言い換え禁止)。文法がおかしければ単語の並べ替えや助詞の修正はしてよいが、下書きの語彙自体を無視して全く別の内容・言い回しをゼロから書くのは禁止。下書きに無い新しい話題や説明を付け足すのも禁止。`
     : '';
 
   // 人格プロンプトも下書きも無い(PERSONA未設定かつマルコフ下書きも無い)場合、
@@ -321,7 +332,7 @@ async function getAIResponseOnce(
   // Discordの通常の雑談は長文より短文連投の方が自然で、複数行は機械的・説明的に見えやすい
   const lengthConstraint = '\n【重要】返信は必ず1行に収めること。改行して2行以上にしたり、長々と説明したりしない。';
 
-  const systemPrompt = `${accountState.persona}${memorySection}${draftSection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
