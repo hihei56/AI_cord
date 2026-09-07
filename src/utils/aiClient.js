@@ -278,6 +278,14 @@ async function getAIResponseOnce(
   // Messageオブジェクトを介さずアカウント名を直接渡したい場合用)
   const speakerLabel = speakerLabelOverride || (speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー');
 
+  // 長期記憶: このユーザーについて過去に覚えたこと(memoryStore、要約済みなら特徴メモ、
+  // 未要約ならやり取りの断片)があればプロンプトに含める。「前も話したよね」のような
+  // 一貫した関係性を持たせるため
+  const speakerNotes = speakerMsg?.author?.id ? accountState.memoryStore?.getUserNotes(speakerMsg.author.id) : null;
+  const memorySection = speakerNotes?.length
+    ? `\n【${speakerLabel}について覚えていること】\n${speakerNotes.join('\n')}`
+    : '';
+
   // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
   // 「これは避けて」を明示的に渡す
   const antiRepeatSection = accountState.recentReplies?.length
@@ -313,7 +321,7 @@ async function getAIResponseOnce(
   // Discordの通常の雑談は長文より短文連投の方が自然で、複数行は機械的・説明的に見えやすい
   const lengthConstraint = '\n【重要】返信は必ず1行に収めること。改行して2行以上にしたり、長々と説明したりしない。';
 
-  const systemPrompt = `${accountState.persona}${draftSection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${memorySection}${draftSection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -367,4 +375,48 @@ async function generateSelfTalk(accountState = null) {
   return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState));
 }
 
-module.exports = { getAIResponse, generateSelfTalk, initMarkov, describeImage, recordReply };
+// 長期記憶: 1往復のやり取りを生ログとしてmemoryStoreに追記する。
+// 圧縮(要約)前提の断片なので長々と保存せず要点だけの短い1行にする
+function recordMemory(accountState, userId, speakerLabel, userMsg, reply) {
+  if (!accountState.memoryStore || !userId) return;
+  const fragment = `${speakerLabel}「${userMsg.slice(0, 40)}」→ 自分「${reply.slice(0, 40)}」`;
+  accountState.memoryStore.addUserNote(userId, fragment);
+}
+
+// ユーザーごとの生ログがMAX_RAW_NOTES件溜まったら、LLMに1回投げて特徴・好み・
+// 口癖などの短い箇条書きメモに圧縮する(そのまま溜め続けると肥大化するうえ、
+// プロンプトに生ログを流し込んでも読みにくいだけなので)。呼び出し側でawaitせず
+// バックグラウンドで実行して返信を遅らせないようにする想定
+async function compressUserMemoryIfNeeded(accountState, userId, displayName) {
+  if (!accountState.memoryStore?.shouldCompress(userId)) return;
+
+  const notes = accountState.memoryStore.getUserNotes(userId);
+  const prompt =
+    `以下は${displayName}という人物とのこれまでのやり取りの断片的な記録です。\n${notes.join('\n')}\n` +
+    `この記録から読み取れる${displayName}の特徴・好み・口癖・よく話す話題だけを、日本語で3行以内の` +
+    '簡潔な箇条書きメモにまとめてください。記録から読み取れないことは書かないこと。';
+
+  try {
+    const summary = await callChatCompletion([{ role: 'user', content: prompt }], {
+      temperature: 0.3,
+      maxTokens: 150,
+      logTag: 'MEMORY'
+    });
+    if (!summary) return;
+    const lines = summary.split('\n').map((l) => l.trim()).filter(Boolean);
+    accountState.memoryStore.setSummarizedNotes(userId, lines);
+    logger.log('MEMORY', `[${accountState.id}] ${displayName}の記憶を要約: ${lines.join(' / ')}`);
+  } catch (err) {
+    logger.error('MEMORY', err);
+  }
+}
+
+module.exports = {
+  getAIResponse,
+  generateSelfTalk,
+  initMarkov,
+  describeImage,
+  recordReply,
+  recordMemory,
+  compressUserMemoryIfNeeded
+};

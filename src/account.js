@@ -1,6 +1,7 @@
 const config = require('./utils/config');
 const { createChannelStore } = require('./utils/channelStore');
 const { createReminderStore } = require('./utils/reminderStore');
+const { createMemoryStore } = require('./utils/memoryStore');
 
 // アカウント1つ分の実行時状態(ペルソナ・コーパス・応答チャンネル・
 // クールダウン・ロックダウン・マルコフ連鎖・リマインダー)をひとまとめにする。
@@ -33,6 +34,8 @@ function buildAccountState(account) {
     finetuneModel: account.finetuneModel,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
+    // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる
+    memoryStore: createMemoryStore(account.id),
     lastReplyTime: 0,
     lockedDown: false,
     markovChain: null,

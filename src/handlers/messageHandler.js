@@ -1,7 +1,8 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { getAIResponse, describeImage, recordReply } = require('../utils/aiClient');
+const { getAIResponse, describeImage, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { isOwnAccount } = require('../utils/ownAccounts');
+const { resolveDisplayName } = require('../utils/nicknames');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -150,6 +151,12 @@ function registerMessageHandler(client) {
       state.lastReplyTime = Date.now();
       recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
+
+      // 長期記憶: このやり取りを記録し、生ログが溜まっていれば要約する。
+      // 返信を遅らせたくないのでawaitせずバックグラウンドで実行する
+      const speakerLabel = resolveDisplayName(msg.author, msg.member);
+      recordMemory(state, msg.author.id, speakerLabel, userMsg, reply);
+      compressUserMemoryIfNeeded(state, msg.author.id, speakerLabel).catch((err) => logger.error('MEMORY', err));
     } catch (err) {
       logger.error('MESSAGE', err);
     }
