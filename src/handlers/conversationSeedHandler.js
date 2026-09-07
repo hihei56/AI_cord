@@ -90,6 +90,12 @@ async function seedConversation(clientA, clientB, channelId) {
   const channelA = clientA.channels.cache.get(channelId);
   if (!channelA) return;
 
+  try {
+    await channelA.sendTyping();
+  } catch {
+    // typing表示に失敗しても会話自体は続行する
+  }
+
   const opener = await generateSelfTalk(clientA.accountState);
   if (!opener) return;
 
@@ -115,15 +121,21 @@ async function seedConversation(clientA, clientB, channelId) {
       break;
     }
 
+    const channel = speaker.channels.cache.get(channelId);
+    if (!channel) break;
+
+    try {
+      await channel.sendTyping();
+    } catch {
+      // typing表示に失敗しても会話自体は続行する
+    }
+
     // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する
     const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
       partnerIsAi: true,
       speakerLabelOverride: listener.user.username
     });
     if (!reply) break;
-
-    const channel = speaker.channels.cache.get(channelId);
-    if (!channel) break;
 
     await channel.send(reply);
     recordReply(speaker.accountState, reply);
