@@ -10,10 +10,13 @@ function readText(relativePath) {
 const settings = JSON.parse(readText('settings.json'));
 const selfTalkPrompt = readText(path.join('prompts', 'self_talk.txt'));
 
-// personaNameがnull/空文字(人格を設定しないアカウント)ならファイルを読まず空文字を返す
+// personaNameがnull/空文字(人格を設定しないアカウント)ならファイルを読まず空文字を返す。
+// CORPUS_FILE[_N]は拡張子込みで書く仕様なのに対しPERSONA[_N]は拡張子無しの仕様なので、
+// 混同して".txt"を付けて指定されても二重拡張子(*.txt.txt)にならないよう吸収する
 function readPersona(personaName) {
   if (!personaName) return '';
-  return readText(path.join('personas', `${personaName}.txt`));
+  const fileName = personaName.endsWith('.txt') ? personaName : `${personaName}.txt`;
+  return readText(path.join('personas', fileName));
 }
 
 // PERSONA[_N]を明示的に空文字か"none"にすると人格無し(null)になる。
