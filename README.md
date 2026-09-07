@@ -110,6 +110,10 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!nickname set @user 名前` | 呼び名を個別登録 |
 | `!nickname remove @user` / `!nickname list` | 呼び名の削除 / 一覧表示 |
 | `!provider [groq\|gemini]` / `!ai [groq\|gemini]` | 会話生成に使うAIプロバイダを実行中に切り替え(引数省略で現在の状態を表示)。`.env`の書き換え・再起動不要、全アカウント共通 |
+| `!pricealert channel` | 今いるチャンネルを仮想通貨の価格アラート通知先に設定 |
+| `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
+| `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
+| `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
 | `!help` | コマンド一覧を表示 |
 
 ### ユーザーへの呼び方(`config/nicknames.json`)
@@ -137,6 +141,14 @@ CORPUS_FILE_2=別のコーパスファイル名
 finetuneモードでは、そのアカウントの返信はペルソナ文書・マルコフ下書きを一切使わず、会話の流れをそのままファインチューニング済みモデルに投げるだけになる(ペルソナはモデル自体に学習済みという前提)。`!set mode @account markov`でいつでも今まで通りの方式(マルコフ下書き+Groq等での補正)に戻せる。`FINETUNE_BASE_URL_N`が未設定のアカウントでfinetuneモードに切り替えようとすると拒否される。
 
 `!set mode`での切り替えは実行中の状態変更なので再起動すると消える(常にmarkovで起動し直す)。常時finetuneモードで運用したいアカウントは`.env`で`AI_MODE_N=finetune`を指定しておくと、起動時点からfinetuneモードになる。
+
+### 仮想通貨の価格アラート(`!pricealert`)
+
+`src/handlers/priceAlertHandler.js`が`config/settings.json`の`priceAlert.checkIntervalMs`(既定15分、ジッター付き)ごとに監視銘柄の価格をチェックし、前回アラート時の基準価格から`priceAlert.changeThresholdPercent`(既定±5%)以上動いていたら`!pricealert channel`で設定したチャンネルに通知する。アカウントに紐づかない全体機能で、`clients[0]`(1つ目のアカウント)が通知を投稿する。
+
+銘柄の価格解決は`src/utils/priceApi.js`が担当し、優先順位は「`!pricealert setid`での手動指定」→「CoinGecko検索(ティッカーの完全一致のみ採用)」→「DexScreener検索(CoinGecko未上場の新興トークン向け、シンボル一致かつ流動性最大のペアを採用)」。どちらのAPIも無料でAPIキー不要。自動解決に失敗した銘柄は`!pricealert list`/`!pricealert now`で「取得失敗」と表示されるので、正しいCoinGecko idか`チェーンID:ペアアドレス`(DexScreenerの表記)が分かれば`!pricealert setid <銘柄> <id>`で手動指定できる。
+
+初期監視銘柄は`priceAlert.defaultSymbols`(既定: `hype`, `ponz`, `zec`, `btc`)。`!pricealert add|remove`で運用中に増減でき、設定は`.env`ではなく`data/price-alerts.json`に永続化されるので、通知先チャンネル・銘柄構成の変更に`.env`編集や再起動は不要。
 
 ### `config/settings.json`(動作パラメータ)
 
@@ -198,6 +210,7 @@ npm run markov:demo
 - Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
 - `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
 - テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
+- 仮想通貨の価格アラート(`!pricealert`)。指定チャンネルで監視銘柄を一定間隔でチェックし、前回アラート時から±5%(既定)以上動いたら通知する
 - 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)。返信までの間も`typingDelay.longPauseChance`の確率でたまに長考(既定15〜90秒)を挟み、毎回同じテンポで即レスしないようにしている
 - メッセージへの添付画像・URL貼り付け時のembed画像を読み取り、内容を踏まえて返信する(vision対応モデル経由。複数枚添付にも対応)
 - (任意)マルコフ連鎖による口調の下書き生成

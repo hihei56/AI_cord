@@ -35,7 +35,8 @@
     "checkIntervalJitter": 0.4,
     "alwaysOn": false,
     "alwaysOnIntervalMs": 180000,
-    "quietThresholdMs": 1200000,
+    "humanQuietThresholdMs": 600000,
+    "humanActivityWindowMs": 3600000,
     "triggerChance": 0.3,
     "minTurns": 3,
     "maxTurns": 6,
@@ -78,5 +79,13 @@
       "maxTokens": 200
     }
   },
-  "presenceFile": "default.json"
+  "presenceFile": "default.json",
+  "priceAlert": {
+    "enabled": true,
+    "defaultSymbols": ["hype", "ponz", "zec", "btc"],
+    "checkIntervalMs": 900000,
+    "checkIntervalJitter": 0.3,
+    "changeThresholdPercent": 5,
+    "currency": "usd"
+  }
 }

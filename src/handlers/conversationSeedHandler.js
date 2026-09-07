@@ -2,13 +2,15 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk, getAIResponse, recordReply } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
+const { isOwnAccount } = require('../utils/ownAccounts');
 
 const {
   checkIntervalMs: CHECK_INTERVAL_MS,
   checkIntervalJitter: CHECK_INTERVAL_JITTER = 0.4,
   alwaysOn: ALWAYS_ON,
   alwaysOnIntervalMs: ALWAYS_ON_INTERVAL_MS,
-  quietThresholdMs: QUIET_THRESHOLD_MS,
+  humanQuietThresholdMs: HUMAN_QUIET_THRESHOLD_MS = 600000,
+  humanActivityWindowMs: HUMAN_ACTIVITY_WINDOW_MS = 3600000,
   triggerChance: TRIGGER_CHANCE,
   minTurns: MIN_TURNS,
   maxTurns: MAX_TURNS,
@@ -17,15 +19,30 @@ const {
   turnDelayMaxMs: TURN_DELAY_MAX_MS
 } = config.conversationSeed;
 
-async function isChannelQuiet(channel) {
+// 本物のユーザー(botでも自アカウント群でもない)の発言か
+function isRealUserMessage(msg) {
+  return !msg.author.bot && !isOwnAccount(msg.author.id);
+}
+
+// チャンネル直近fetchLimit件の中から、人間の最新発言時刻を探す(無ければnull)
+async function lastHumanMessageAt(channel, fetchLimit = 50) {
   try {
-    const recent = await channel.messages.fetch({ limit: 1 });
-    const last = recent.first();
-    if (!last) return true;
-    return Date.now() - last.createdTimestamp > QUIET_THRESHOLD_MS;
+    const recent = await channel.messages.fetch({ limit: fetchLimit });
+    const humanTimestamps = [...recent.values()].filter(isRealUserMessage).map((m) => m.createdTimestamp);
+    return humanTimestamps.length ? Math.max(...humanTimestamps) : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+// 「直近1時間(humanActivityWindowMs)以内に人間が発言していて、かつその発言から
+// 10分(humanQuietThresholdMs)以上経過している」チャンネルだけをAI同士の掛け合いで
+// 賑やかす対象にする。人間の発言が1時間以上前(=長く放置された過疎チャンネル)なら対象外
+async function isReadyForRevival(channel) {
+  const lastHumanAt = await lastHumanMessageAt(channel);
+  if (lastHumanAt === null) return false;
+  const elapsed = Date.now() - lastHumanAt;
+  return elapsed >= HUMAN_QUIET_THRESHOLD_MS && elapsed <= HUMAN_ACTIVITY_WINDOW_MS;
 }
 
 function pickPair(clients) {
@@ -47,8 +64,22 @@ function turnDelay() {
   return TURN_DELAY_MIN_MS + Math.random() * (TURN_DELAY_MAX_MS - TURN_DELAY_MIN_MS);
 }
 
-// 過疎ってるチャンネルでAI同士に何度か掛け合いをさせて連投気味に会話を起こす。
+// sinceTimestamp以降に人間の発言が無いか確認する(掛け合いの途中でユーザーが
+// 割り込んできたら打ち切って人間の話に譲るため)
+async function humanInterruptedSince(client, channelId, sinceTimestamp) {
+  const channel = client.channels.cache.get(channelId);
+  if (!channel) return false;
+  try {
+    const recent = await channel.messages.fetch({ limit: 5 });
+    return [...recent.values()].some((m) => m.createdTimestamp > sinceTimestamp && isRealUserMessage(m));
+  } catch {
+    return false;
+  }
+}
+
+// 過疎ぎみのチャンネルでAI同士に何度か掛け合いをさせて連投気味に会話を起こす。
 // 通常のmessageCreateトリガーは経由しない(お互いに際限なく反応し合うのを防ぐため)。
+// 途中でユーザーが発言してきたら打ち切り、通常のmessageHandler(人間には普通に反応する)に譲る
 async function seedConversation(clientA, clientB, channelId) {
   const channelA = clientA.channels.cache.get(channelId);
   if (!channelA) return;
@@ -64,6 +95,7 @@ async function seedConversation(clientA, clientB, channelId) {
   let speaker = clientB;
   let listener = clientA;
   let lastMsg = opener;
+  let lastActionAt = Date.now();
 
   const totalTurns = randomTurnCount();
 
@@ -71,6 +103,11 @@ async function seedConversation(clientA, clientB, channelId) {
     if (speaker.accountState.lockedDown) break;
 
     await new Promise((r) => setTimeout(r, turnDelay()));
+
+    if (await humanInterruptedSince(speaker, channelId, lastActionAt)) {
+      logger.log('SEED', `[${speaker.accountState.id}] ユーザーの発言を検知したため掛け合いを中断`);
+      break;
+    }
 
     // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する
     const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
@@ -88,6 +125,7 @@ async function seedConversation(clientA, clientB, channelId) {
 
     history.push({ author: { username: speaker.user.username }, content: reply });
     lastMsg = reply;
+    lastActionAt = Date.now();
 
     [speaker, listener] = [listener, speaker];
 
@@ -97,7 +135,7 @@ async function seedConversation(clientA, clientB, channelId) {
 }
 
 // AIだけで常時チャットを動かす(config/settings.jsonのconversationSeed.alwaysOn)モード。
-// 有効な場合、trigger確率・「チャンネルが過疎ってるか」のチェックを無視して、
+// 有効な場合、trigger確率・「人間の発言から10分〜1時間か」のチェックを無視して、
 // より短い間隔(alwaysOnIntervalMs)で必ず誰かのペアがどこかのチャンネルで会話を始める
 function registerConversationSeedHandler(clients) {
   if (clients.length < 2) return;
@@ -117,7 +155,7 @@ function registerConversationSeedHandler(clients) {
     for (const channelId of channels) {
       const channel = clientA.channels.cache.get(channelId);
       if (!channel) continue;
-      if (ALWAYS_ON || (await isChannelQuiet(channel))) {
+      if (ALWAYS_ON || (await isReadyForRevival(channel))) {
         try {
           await seedConversation(clientA, clientB, channelId);
         } catch (err) {
