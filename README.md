@@ -66,6 +66,8 @@ npm start
 | `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
 | `ALLOWED_GUILD_ID` | 動作させるサーバーID |
 | `ALLOWED_CHANNEL_ID` | 初回起動時の初期応答チャンネルID(以降は`!channel`コマンドで動的に追加/削除可能) |
+| `TEST_CHANNEL_ID` | (任意)テスト用チャンネルID。設定すると、このチャンネルでは応答チャンネル登録・クールダウン・返信確率・crowdGuardを全部無視して常に即応答する(動作確認用) |
+| `ALLOWED_REPLY_USER_IDS` | (任意、カンマ区切り)応答してよい相手を制限したい場合のユーザーID一覧。未設定なら今まで通り誰にでも反応する |
 | `PERSONA` | `config/personas/` 内で使用する人格ファイル名(拡張子なし、省略時 `default`) |
 | `CORPUS_FILE` | `config/corpus/` 内で使用するコーパスファイル名(省略時 `config/settings.json`の`markov.corpusFile`) |
 
@@ -81,7 +83,15 @@ PERSONA_2=別の人格ファイル名
 CORPUS_FILE_2=別のコーパスファイル名
 ```
 
-アカウントごとに応答チャンネル一覧・ロックダウン状態・マルコフ連鎖・人格は完全に独立している(`src/account.js`でアカウントごとの実行時状態をまとめている)。AIバックエンド(`AI_BASE_URL`/`AI_API_KEY`)と`config/settings.json`の挙動設定(返信確率・遅延・モデルなど)は全アカウント共通。
+アカウントごとに応答チャンネル一覧・ロックダウン状態・マルコフ連鎖・人格は完全に独立している(`src/account.js`でアカウントごとの実行時状態をまとめている)。AIバックエンド(`AI_BASE_URL`/`AI_API_KEY`)と`config/settings.json`の挙動設定(返信確率・遅延・モデルなど)は全アカウント共通。上限は無く、`DISCORD_TOKEN_N`が設定されている番号まで自動的に読み込まれる(`.env.example`に3〜6体目までのテンプレあり)。
+
+### 全アカウント一括操作
+
+`src/utils/accountRegistry.js`がこのプロセスで動いている全アカウントのclientを共有で保持しており、`!lockdown`/`!pause`と`!channel`は引数に`all`を指定すると対象アカウントを1つずつ指定しなくても全アカウントに一括で効く。
+
+- `!pause all` — 全アカウントのロックダウン状態を一括で反転(自分の現在状態を反転させた値を全員に適用)
+- `!channel add all [channelId]` / `!channel remove all [channelId]` — 全アカウントの応答チャンネルに一括追加/削除(省略時は今いるチャンネル)
+- `!channel list all` — 全アカウントの応答チャンネル一覧をまとめて表示
 
 ### コマンド
 
@@ -91,8 +101,8 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 | コマンド | 内容 |
 |---|---|
-| `!channel add\|remove\|list [channelId]` | 応答チャンネルの追加/削除/一覧(省略時は今いるチャンネル) |
-| `!lockdown` / `!pause [@account]` | 自動応答・自発投稿を緊急停止/再開するトグル。ロール経由(本人以外)で実行する時は`@account`で対象アカウントの指定が必須(未指定だと全アカウント一斉停止になってしまうため) |
+| `!channel add\|remove\|list [all] [channelId]` | 応答チャンネルの追加/削除/一覧(省略時は今いるチャンネル、`all`で全アカウント一括) |
+| `!lockdown` / `!pause [@account\|all]` | 自動応答・自発投稿を緊急停止/再開するトグル。`all`で全アカウント一括。ロール経由(本人以外)で個別アカウントに実行する時は`@account`で対象の指定が必須(未指定だと全アカウント一斉停止になってしまうため) |
 | `!set channel @account #channel` | 指定アカウントに応答チャンネルを追加。複数アカウント運用中にロール経由でどれか1つだけ操作したい時用 |
 | `!set mode @account markov\|finetune` | 返信生成方式の切り替え(後述) |
 | `!train [件数] [@ユーザー]` | チャンネルの発言を集めてコーパスに追加し即再学習(省略時は自分自身、直近200件) |
@@ -132,13 +142,21 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 | `recentDuplicateGuard` | 連投・自己連続投稿の抑制設定 |
 | `typingDelay` / `replyDelay` | typing表示や返信送信までの擬似的な遅延 |
 | `selfTalk` | 自発投稿の間隔・確率・画像混在率・対象動物 |
+| `conversationSeed` | 過疎ってるチャンネルでAIアカウント同士に掛け合いをさせる機能の設定(後述) |
 | `markov` | マルコフ連鎖の口調下書き機能の設定(後述) |
 | `ai` | モデル名、温度、履歴参照件数など |
 | `presence` | Spotify/視聴中ステータス(RPC)のローテーション内容 |
 
 ### `config/personas/default.txt`
 
-返信生成に使う人格・口調のシステムプロンプト。別人格を使いたい場合は同じディレクトリに新しいファイルを追加し、`.env` の `PERSONA` を切り替える。
+返信生成に使う人格・口調のシステムプロンプト。別人格を使いたい場合は同じディレクトリに新しいファイルを追加し、`.env` の `PERSONA` を切り替える。現在同梱されているのは `default`(率直・シニカル) / `gatts` / `original` / `suisui` / `discord_cutiest`(甘え上手で人懐っこい)。`discord_cutiest`アカウントは`config/corpus/Cutiest_discord.txt`をマルコフ下書き用コーパスとして使う想定なので、`.env`で該当アカウントの`PERSONA_N=discord_cutiest` / `CORPUS_FILE_N=Cutiest_discord.txt`をセットで指定する。
+
+### AI同士の掛け合い・常時チャットモード(`conversationSeed`)
+
+2アカウント以上動かしている時、`conversationSeedHandler.js`が定期的にランダムな2アカウントのペアを選び、共通の応答チャンネルで会話の掛け合いを起こす(`minTurns`〜`maxTurns`ターン、`continueChance`の確率で早めに切り上げ)。この掛け合いでは、相手のアカウントが人間ではなく別のAIチャットボットであることをプロンプトに明示しているので、AI同士が互いを人間だと誤認したような受け答えにはならない。
+
+- 通常時: `checkIntervalMs`ごとに`triggerChance`の確率で発火し、対象チャンネルが`quietThresholdMs`以上発言が無い(過疎ってる)時だけ会話を始める
+- `alwaysOn: true`にすると、この確率チェックと過疎チェックを両方無視し、より短い`alwaysOnIntervalMs`間隔で必ずどこかのペアが会話を始める(「AIだけで常時チャットを動かす」モード)。常時人間の発言を待たずにサーバーを賑やかに見せたい場合に使う。人間の発言に対する通常の返信ロジック(`messageHandler.js`)はそのまま生きているので、人間が話しかければ普通に反応する
 
 ### `config/prompts/self_talk.txt`
 
@@ -167,8 +185,12 @@ npm run markov:demo
 
 - サーバー内の特定チャンネルでのメンション/リプライ/通常発言に確率的に返信(OpenAI互換API経由でLLM生成、デフォルトはGroq)
 - 直近の会話履歴を踏まえた返信生成、連投防止・クールダウン制御
+- 直近の自分の発言と似すぎている返信は再生成し、機械的な連投・似た言い回しの繰り返しを抑える(`aiClient.js`の類似度チェック、messageHandler/selfTalk/conversationSeed全経路共通)
 - 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像+一言)
+- 複数アカウント運用時、過疎ってるチャンネルでAI同士に掛け合いをさせる(相手がAIであることはお互い認識した上で会話する)。`alwaysOn`設定で確率・過疎チェックを無視した常時チャットモードにもできる
 - Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
+- `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
+- テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
 - (任意)マルコフ連鎖による口調の下書き生成
 
 ## Oracle Cloudへのデプロイ

@@ -3,6 +3,56 @@ const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 
+// 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
+// 文字2-gramのJaccard類似度。句読点は既に返信側で除去済みなので単純比較でよい
+function textSimilarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const grams = (s) => {
+    const set = new Set();
+    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+    if (set.size === 0) set.add(s);
+    return set;
+  };
+  const ga = grams(a);
+  const gb = grams(b);
+  let intersection = 0;
+  for (const g of ga) if (gb.has(g)) intersection++;
+  return intersection / (ga.size + gb.size - intersection);
+}
+
+const SIMILARITY_THRESHOLD = 0.6;
+const SIMILARITY_MAX_RETRY = 2;
+// bot臭さ対策として類似度チェック・プロンプトの「これは避けて」に渡す直近発言の保持件数
+const RECENT_REPLIES_MAX = 4;
+
+// 送信した発言をaccountState.recentRepliesに記録する。messageHandler/selfTalkHandler/
+// conversationSeedHandlerのどこから送っても同じ「直近の自分の発言」として扱うことで、
+// 経路をまたいだ連投・似た言い回しの繰り返しもチェック対象にする
+function recordReply(accountState, text) {
+  if (!accountState || !text) return;
+  accountState.recentReplies = accountState.recentReplies || [];
+  accountState.recentReplies.push(text);
+  if (accountState.recentReplies.length > RECENT_REPLIES_MAX) accountState.recentReplies.shift();
+}
+
+function isTooSimilarToRecent(text, recentReplies) {
+  return (recentReplies || []).some((prev) => textSimilarity(text, prev) >= SIMILARITY_THRESHOLD);
+}
+
+// 生成関数を、直近の自分の発言と似すぎていたら数回まで再生成するようラップする。
+// それでも似てしまう場合は諦めてそのまま返す(無限リトライで詰まらせないため)
+async function withSimilarityRetry(accountState, logTag, generate) {
+  let result = null;
+  for (let attempt = 0; attempt <= SIMILARITY_MAX_RETRY; attempt++) {
+    result = await generate();
+    if (!result) return result;
+    if (!isTooSimilarToRecent(result, accountState?.recentReplies)) return result;
+    logger.log(logTag, `[${accountState?.id}] 直近の発言と似すぎているため再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY})`);
+  }
+  return result;
+}
+
 // アカウント起動時に一度だけ呼ぶ。kuromojiの辞書読み込み+全行のトークン化は
 // 数百ms〜数秒かかることがあるため、実際のチャット応答の妨げにならないよう
 // 事前に済ませておく。学習結果はaccountStateに直接格納するので、
@@ -135,7 +185,13 @@ async function getFinetuneResponse(accountState, userMsg, history, speakerMsg) {
   }
 }
 
-async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null, { allowMarkovDirect = true } = {}) {
+async function getAIResponseOnce(
+  accountState,
+  userMsg,
+  history = [],
+  speakerMsg = null,
+  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null } = {}
+) {
   if (accountState.aiMode === 'finetune') {
     if (!accountState.finetuneBaseUrl) {
       logger.error('AI-FINETUNE', `[${accountState.id}] finetuneモード有効だがFINETUNE_BASE_URLが未設定`);
@@ -166,13 +222,22 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   }
 
   // speakerMsgが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonの個別登録 >
-  // サーバーニックネーム > username の優先順)で今の発言を表示し、AIがその名前で呼びかけられるようにする
-  const speakerLabel = speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー';
+  // サーバーニックネーム > username の優先順)で今の発言を表示し、AIがその名前で呼びかけられるようにする。
+  // speakerLabelOverrideが渡されていればそちらを優先する(conversationSeed等、Discord上の
+  // Messageオブジェクトを介さずアカウント名を直接渡したい場合用)
+  const speakerLabel = speakerLabelOverride || (speakerMsg ? resolveDisplayName(speakerMsg.author, speakerMsg.member) : 'ユーザー');
 
   // 直近の自分の発言と同じ言い回し・同じ絵文字を連発すると露骨にbotっぽく見えるので、
   // 「これは避けて」を明示的に渡す
   const antiRepeatSection = accountState.recentReplies?.length
     ? `\n【直近の自分の発言(この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
+    : '';
+
+  // AI同士の掛け合い(conversationSeedHandler)から呼ばれた時は、相手が人間ではなく
+  // 別のAIアカウントであることを明示する。ただし不自然に毎回言及されると逆にbotっぽく
+  // 見えるので、「自覚しつつキャラは崩さない」ことを指示するにとどめる
+  const aiPartnerSection = partnerIsAi
+    ? `\n【相手について】今話しかけてきた${speakerLabel}は人間ではなく、あなたと同じ仕組みで動いている別のAIチャットボットです。それを踏まえつつ、毎回律儀に指摘したりせず、いつも通り自分のキャラクターとして自然に会話を続けてください。`
     : '';
 
   // 下書きはマルコフ連鎖の生成物なので文法が崩れていたり意味が通らないことも多い。
@@ -182,7 +247,7 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
     ? `\n【下書き(マルコフ連鎖生成、文法が崩れていることがある)】\n${draft}\n上の下書きの語彙・言い回しを活かしつつ、あなた自身のキャラクターとして文法的に破綻しない自然な日本語に補正して返信を作ること。新しい話題や説明は付け足さない。`
     : '';
 
-  const systemPrompt = `${accountState.persona}${draftSection}${antiRepeatSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${draftSection}${antiRepeatSection}${aiPartnerSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -201,7 +266,12 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   }
 }
 
-async function generateSelfTalk(accountState = null) {
+// 直近の自分の発言と似すぎていたら再生成する(規則的な連投に見えないようにするため)
+async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null, options = {}) {
+  return withSimilarityRetry(accountState, 'AI', () => getAIResponseOnce(accountState, userMsg, history, speakerMsg, options));
+}
+
+async function generateSelfTalkOnce(accountState = null) {
   try {
     // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
     // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
@@ -228,4 +298,9 @@ async function generateSelfTalk(accountState = null) {
   }
 }
 
-module.exports = { getAIResponse, generateSelfTalk, initMarkov, describeImage };
+// 自発投稿も直近の自分の発言と似すぎていたら再生成する
+async function generateSelfTalk(accountState = null) {
+  return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState));
+}
+
+module.exports = { getAIResponse, generateSelfTalk, initMarkov, describeImage, recordReply };

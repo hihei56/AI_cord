@@ -1,9 +1,11 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { generateSelfTalk, getAIResponse } = require('../utils/aiClient');
+const { generateSelfTalk, getAIResponse, recordReply } = require('../utils/aiClient');
 
 const {
   checkIntervalMs: CHECK_INTERVAL_MS,
+  alwaysOn: ALWAYS_ON,
+  alwaysOnIntervalMs: ALWAYS_ON_INTERVAL_MS,
   quietThresholdMs: QUIET_THRESHOLD_MS,
   triggerChance: TRIGGER_CHANCE,
   minTurns: MIN_TURNS,
@@ -53,6 +55,7 @@ async function seedConversation(clientA, clientB, channelId) {
   if (!opener) return;
 
   await channelA.send(opener);
+  recordReply(clientA.accountState, opener);
   logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
 
   const history = [{ author: { username: clientA.user.username }, content: opener }];
@@ -67,13 +70,18 @@ async function seedConversation(clientA, clientB, channelId) {
 
     await new Promise((r) => setTimeout(r, turnDelay()));
 
-    const reply = await getAIResponse(speaker.accountState, lastMsg, history);
+    // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する
+    const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
+      partnerIsAi: true,
+      speakerLabelOverride: listener.user.username
+    });
     if (!reply) break;
 
     const channel = speaker.channels.cache.get(channelId);
     if (!channel) break;
 
     await channel.send(reply);
+    recordReply(speaker.accountState, reply);
     logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
 
     history.push({ author: { username: speaker.user.username }, content: reply });
@@ -86,11 +94,16 @@ async function seedConversation(clientA, clientB, channelId) {
   }
 }
 
+// AIだけで常時チャットを動かす(config/settings.jsonのconversationSeed.alwaysOn)モード。
+// 有効な場合、trigger確率・「チャンネルが過疎ってるか」のチェックを無視して、
+// より短い間隔(alwaysOnIntervalMs)で必ず誰かのペアがどこかのチャンネルで会話を始める
 function registerConversationSeedHandler(clients) {
   if (clients.length < 2) return;
 
+  const intervalMs = ALWAYS_ON ? ALWAYS_ON_INTERVAL_MS || CHECK_INTERVAL_MS : CHECK_INTERVAL_MS;
+
   setInterval(async () => {
-    if (Math.random() > TRIGGER_CHANCE) return;
+    if (!ALWAYS_ON && Math.random() > TRIGGER_CHANCE) return;
 
     const [clientA, clientB] = pickPair(clients);
     if (!clientA?.user || !clientB?.user) return;
@@ -100,7 +113,7 @@ function registerConversationSeedHandler(clients) {
     for (const channelId of channels) {
       const channel = clientA.channels.cache.get(channelId);
       if (!channel) continue;
-      if (await isChannelQuiet(channel)) {
+      if (ALWAYS_ON || (await isChannelQuiet(channel))) {
         try {
           await seedConversation(clientA, clientB, channelId);
         } catch (err) {
@@ -109,7 +122,7 @@ function registerConversationSeedHandler(clients) {
         break;
       }
     }
-  }, CHECK_INTERVAL_MS);
+  }, intervalMs);
 }
 
 module.exports = { registerConversationSeedHandler };

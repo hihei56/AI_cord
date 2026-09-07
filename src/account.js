@@ -11,6 +11,11 @@ function buildAccountState(account) {
     id: account.id,
     discordToken: account.discordToken,
     allowedGuildId: account.allowedGuildId,
+    // テスト用チャンネル(任意)。設定すると応答チャンネル登録・クールダウン・
+    // 確率・crowdGuardを無視して常に即応答する(動作確認用)
+    testChannelId: account.testChannelId,
+    // 応答してよい相手を制限したい場合(任意)。空なら誰にでも今まで通り反応する
+    allowedReplyUserIds: account.allowedReplyUserIds || [],
     personaName: account.personaName,
     persona: config.readPersona(account.personaName),
     corpusPath: config.corpusPathFor(account.corpusFile),

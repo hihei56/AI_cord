@@ -1,7 +1,7 @@
 const { MessageAttachment } = require('discord.js-selfbot-v13');
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { generateSelfTalk } = require('../utils/aiClient');
+const { generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
 
 async function selfPost(channel, accountState) {
@@ -21,6 +21,7 @@ async function selfPost(channel, accountState) {
           content: caption || '（画像）',
           files: [new MessageAttachment(img)]
         });
+        if (caption) recordReply(accountState, caption);
         logger.log('SELF', `${caption || '画像のみ'} (画像)`);
         return;
       }
@@ -29,6 +30,7 @@ async function selfPost(channel, accountState) {
     const text = await generateSelfTalk(accountState);
     if (text) {
       await channel.send(text);
+      recordReply(accountState, text);
       logger.log('SELF', text);
     }
   } catch (err) {

@@ -1,10 +1,7 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { getAIResponse, describeImage } = require('../utils/aiClient');
+const { getAIResponse, describeImage, recordReply } = require('../utils/aiClient');
 const { isOwnAccount } = require('../utils/ownAccounts');
-
-// bot臭さ対策: 直近何件分の自分の発言をプロンプトの「これは避けて」に渡すか
-const RECENT_REPLIES_MAX = 4;
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -61,25 +58,32 @@ function registerMessageHandler(client) {
     if (isOwnAccount(msg.author.id)) return;
     if (state.lockedDown) return;
     if (msg.guild?.id !== state.allowedGuildId) return;
-    if (!state.channelStore.isAllowedChannel(msg.channel.id)) return;
     if (!isRealUser(msg)) return;
+    if (state.allowedReplyUserIds?.length && !state.allowedReplyUserIds.includes(msg.author.id)) return;
+
+    // テスト用チャンネルは応答チャンネル登録・クールダウン・確率・crowdGuardを
+    // 全部無視して常に即応答する(動作確認用)。それ以外は今まで通りのガードを適用
+    const isTestChannel = Boolean(state.testChannelId) && msg.channel.id === state.testChannelId;
+    if (!isTestChannel && !state.channelStore.isAllowedChannel(msg.channel.id)) return;
 
     const now = Date.now();
     const cooldownSeconds = state.cooldownSeconds ?? config.cooldownSeconds;
-    if (now - state.lastReplyTime < cooldownSeconds * 1000) return;
+    if (!isTestChannel && now - state.lastReplyTime < cooldownSeconds * 1000) return;
 
     let sorted;
     try {
       const fetchLimit = Math.max(config.recentDuplicateGuard.fetchLimit, config.crowdGuard?.fetchLimit ?? 0);
       const recent = await msg.channel.messages.fetch({ limit: fetchLimit });
       sorted = recent.filter(isRealUser).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
-      if (isDuplicateBurst(sorted)) return;
-      if (sorted.size >= 2 && sorted.at(0).author.id === client.user.id) return;
+      if (!isTestChannel) {
+        if (isDuplicateBurst(sorted)) return;
+        if (sorted.size >= 2 && sorted.at(1).author.id === client.user.id) return;
+      }
     } catch {
       // ignore fetch failures, fall through to reply attempt
     }
 
-    const chance = resolveChance(msg, client, state, sorted);
+    const chance = isTestChannel ? 1 : resolveChance(msg, client, state, sorted);
     if (Math.random() > chance) return;
 
     logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);
@@ -114,8 +118,7 @@ function registerMessageHandler(client) {
       // いかにもbotっぽいので、普通のメッセージとして送る(会話履歴で文脈は伝わる)
       await msg.channel.send(reply);
       state.lastReplyTime = Date.now();
-      state.recentReplies.push(reply);
-      if (state.recentReplies.length > RECENT_REPLIES_MAX) state.recentReplies.shift();
+      recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
     } catch (err) {
       logger.error('MESSAGE', err);

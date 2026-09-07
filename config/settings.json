@@ -28,6 +28,8 @@
   },
   "conversationSeed": {
     "checkIntervalMs": 600000,
+    "alwaysOn": false,
+    "alwaysOnIntervalMs": 180000,
     "quietThresholdMs": 1200000,
     "triggerChance": 0.3,
     "minTurns": 3,
