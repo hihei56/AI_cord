@@ -141,6 +141,12 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
     return null;
   }
 
+  // 実際の消費トークン数をログに残す。レート制限の間隔調整を勘ではなく
+  // 実測値ベースでできるようにするため(以前は成功時の消費量が全く見えなかった)
+  if (data.usage) {
+    logger.log(logTag, `[usage/${conn.provider}] prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
+  }
+
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) {
     logger.error(logTag, `unexpected response shape (${conn.provider}): ${JSON.stringify(data)}`);
