@@ -112,10 +112,11 @@ function getMarkovDraft(accountState, contextText = '') {
   return accountState.markovChain.generate(config.markov.draftMaxWords, contextText);
 }
 
-async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI' } = {}) {
+async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat' } = {}) {
   // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
-  // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る
-  const conn = baseUrl ? null : aiProvider.getConnection('chat');
+  // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る。
+  // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う
+  const conn = baseUrl ? null : aiProvider.getConnection(kind);
   const resolvedBaseUrl = baseUrl ?? conn.baseUrl;
   const resolvedApiKey = apiKey ?? conn.apiKey;
   const resolvedModel = model ?? conn.model;
@@ -340,7 +341,9 @@ async function getAIResponseOnce(
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg }
       ],
-      { temperature, maxTokens }
+      // AI同士の掛け合い(partnerIsAi)は人間向け会話とは別のトークン枠(kind: 'seed',
+      // 未設定ならGemini)を使い、Groqの1日トークン上限を人間との会話用に温存する
+      { temperature, maxTokens, kind: partnerIsAi ? 'seed' : 'chat' }
     );
     if (reply) return toSingleLine(reply);
 

@@ -53,8 +53,12 @@ function setProvider(name) {
   return { ok: true };
 }
 
-// kind: 'chat'(通常の会話生成) | 'vision'(画像解析)。visionはVISION_AI_PROVIDERで
-// 個別に指定できる(未指定なら現在の会話用プロバイダをそのまま使い回す)
+// kind: 'chat'(通常の会話生成) | 'vision'(画像解析) | 'seed'(AI同士の掛け合い)。
+// visionはVISION_AI_PROVIDERで個別に指定できる(未指定なら現在の会話用プロバイダを
+// そのまま使い回す)。seedはSEED_AI_PROVIDERで指定でき、未指定でもGEMINI_API_KEYが
+// あれば自動でGeminiを使う。AI同士の掛け合いはalwaysOnモードで常時大量に呼ばれ、
+// 人間との会話用のGroqトークン枠(1日20万トークン)を食い潰してしまうため、
+// 掛け合い分だけ別プロバイダに逃がせるようにしている
 function getConnection(kind = 'chat') {
   if (kind === 'vision') {
     const providerName = resolveProviderName(process.env.VISION_AI_PROVIDER) || currentProvider;
@@ -64,6 +68,17 @@ function getConnection(kind = 'chat') {
       baseUrl: process.env.VISION_API_BASE_URL || process.env.AI_BASE_URL || p.baseUrl,
       apiKey: process.env.VISION_API_KEY || process.env.AI_API_KEY || apiKeyFor(providerName) || process.env.GROQ_API_KEY,
       model: process.env.VISION_MODEL || p.visionModel
+    };
+  }
+
+  if (kind === 'seed') {
+    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || (apiKeyFor('gemini') ? 'gemini' : currentProvider);
+    const p = PROVIDER_DEFAULTS[providerName];
+    return {
+      provider: providerName,
+      baseUrl: process.env.SEED_API_BASE_URL || p.baseUrl,
+      apiKey: process.env.SEED_API_KEY || apiKeyFor(providerName) || process.env.GROQ_API_KEY,
+      model: process.env.SEED_MODEL || p.model
     };
   }
 
