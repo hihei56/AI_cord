@@ -6,6 +6,12 @@ const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 const aiProvider = require('./aiProvider');
 
+// 句読点を除去し、改行はスペースにまとめて常に1行のメッセージにする
+// (ペルソナ/プロンプトの指示をモデルが無視した場合の保険)
+function toSingleLine(text) {
+  return text.replace(/[、。]/g, '').replace(/\s*\n+\s*/g, ' ').trim();
+}
+
 // 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
 // 文字2-gramのJaccard類似度。句読点は既に返信側で除去済みなので単純比較でよい
 function textSimilarity(a, b) {
@@ -220,7 +226,7 @@ async function getFinetuneResponse(accountState, userMsg, history, speakerMsg) {
         logTag: 'AI-FINETUNE'
       }
     );
-    return reply ? reply.replace(/[、。]/g, '') : reply;
+    return reply ? toSingleLine(reply) : reply;
   } catch (err) {
     logger.error('AI-FINETUNE', err);
     return null;
@@ -260,7 +266,7 @@ async function getAIResponseOnce(
   const { directReplyChance = 0, directReplyMinLength = 0 } = config.markov || {};
   if (allowMarkovDirect && draft && draft.length >= directReplyMinLength && Math.random() < directReplyChance) {
     logger.log('MARKOV', `[${accountState.id}] 下書きをそのまま採用: ${draft}`);
-    return draft.replace(/[、。]/g, '');
+    return toSingleLine(draft);
   }
 
   // speakerMsgが渡されていれば、そのユーザーの呼び名(config/nicknames.jsonの個別登録 >
@@ -300,7 +306,11 @@ async function getAIResponseOnce(
       ? '\n特定の人格設定はありません。Discordの雑談らしく素っ気なく短く返信すること。丁寧なアシスタント口調・説明的な言い回し・絵文字の多用はしないこと。'
       : '';
 
-  const systemPrompt = `${accountState.persona}${draftSection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  // 人格プロンプト側に「2〜4行まで」等の指示があっても、これを優先して1行に収めさせる。
+  // Discordの通常の雑談は長文より短文連投の方が自然で、複数行は機械的・説明的に見えやすい
+  const lengthConstraint = '\n【重要】返信は必ず1行に収めること。改行して2行以上にしたり、長々と説明したりしない。';
+
+  const systemPrompt = `${accountState.persona}${draftSection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -310,9 +320,7 @@ async function getAIResponseOnce(
       ],
       { temperature, maxTokens }
     );
-    // ペルソナで句読点を使わないよう指示しているが、モデルが無視することがあるので
-    // 念のため確実に除去する
-    return reply ? reply.replace(/[、。]/g, '') : reply;
+    return reply ? toSingleLine(reply) : reply;
   } catch (err) {
     logger.error('AI', err);
     return null;
