@@ -3,6 +3,7 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
+const { scheduleWithJitter } = require('../utils/scheduler');
 
 async function selfPost(channel, accountState) {
   if (!channel) return;
@@ -40,14 +41,18 @@ async function selfPost(channel, accountState) {
 
 function registerSelfTalkHandler(client) {
   const state = client.accountState;
-  setInterval(async () => {
+  const { intervalMs, intervalJitter = 0.4 } = config.selfTalk;
+
+  // setIntervalの完全固定周期だと投稿タイミングが機械的なパターンになりbotバレしやすい
+  // ため、毎回ランダムな待機時間で次回をスケジュールする(基準値の±intervalJitter)
+  scheduleWithJitter(intervalMs, intervalJitter, async () => {
     if (state.lockedDown) return;
     const ids = state.channelStore.listChannels();
     if (ids.length === 0) return;
     const channelId = ids[Math.floor(Math.random() * ids.length)];
     const channel = client.channels.cache.get(channelId);
     await selfPost(channel, state);
-  }, config.selfTalk.intervalMs);
+  });
 }
 
 module.exports = { registerSelfTalkHandler, selfPost };

@@ -191,6 +191,7 @@ npm run markov:demo
 - Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
 - `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
 - テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
+- 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)
 - (任意)マルコフ連鎖による口調の下書き生成
 
 ## Oracle Cloudへのデプロイ

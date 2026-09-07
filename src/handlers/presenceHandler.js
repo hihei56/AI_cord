@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { scheduleWithJitter } = require('../utils/scheduler');
 
 function pickSpotifyTrack(presence) {
   const tracks = presence.spotifyTracks;
@@ -77,7 +78,8 @@ async function updatePresence(client) {
 
 function registerPresenceHandler(client) {
   updatePresence(client);
-  setInterval(() => updatePresence(client), client.accountState.presence.updateIntervalMs);
+  // 完全固定周期での更新はRPCの切り替わりタイミングが規則的に見えるため、ここもジッターを掛ける
+  scheduleWithJitter(client.accountState.presence.updateIntervalMs, 0.3, () => updatePresence(client));
 }
 
 module.exports = { registerPresenceHandler, updatePresence };

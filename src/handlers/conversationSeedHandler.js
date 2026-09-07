@@ -1,9 +1,11 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk, getAIResponse, recordReply } = require('../utils/aiClient');
+const { scheduleWithJitter } = require('../utils/scheduler');
 
 const {
   checkIntervalMs: CHECK_INTERVAL_MS,
+  checkIntervalJitter: CHECK_INTERVAL_JITTER = 0.4,
   alwaysOn: ALWAYS_ON,
   alwaysOnIntervalMs: ALWAYS_ON_INTERVAL_MS,
   quietThresholdMs: QUIET_THRESHOLD_MS,
@@ -102,7 +104,9 @@ function registerConversationSeedHandler(clients) {
 
   const intervalMs = ALWAYS_ON ? ALWAYS_ON_INTERVAL_MS || CHECK_INTERVAL_MS : CHECK_INTERVAL_MS;
 
-  setInterval(async () => {
+  // setIntervalの完全固定周期だとチェックタイミングが規則的になるため、
+  // ここも毎回ランダムな待機時間で次回をスケジュールする
+  scheduleWithJitter(intervalMs, CHECK_INTERVAL_JITTER, async () => {
     if (!ALWAYS_ON && Math.random() > TRIGGER_CHANCE) return;
 
     const [clientA, clientB] = pickPair(clients);
@@ -122,7 +126,7 @@ function registerConversationSeedHandler(clients) {
         break;
       }
     }
-  }, intervalMs);
+  });
 }
 
 module.exports = { registerConversationSeedHandler };

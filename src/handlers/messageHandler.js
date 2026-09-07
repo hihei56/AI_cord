@@ -68,7 +68,11 @@ function registerMessageHandler(client) {
 
     const now = Date.now();
     const cooldownSeconds = state.cooldownSeconds ?? config.cooldownSeconds;
-    if (!isTestChannel && now - state.lastReplyTime < cooldownSeconds * 1000) return;
+    // クールダウンが毎回きっちり同じ長さだと機械的に見えるので、
+    // 判定のたびに±cooldownJitterの範囲でランダムに揺らす
+    const cooldownJitterRatio = config.cooldownJitter ?? 0.3;
+    const effectiveCooldownMs = cooldownSeconds * 1000 * (1 + (Math.random() * 2 - 1) * cooldownJitterRatio);
+    if (!isTestChannel && now - state.lastReplyTime < effectiveCooldownMs) return;
 
     let sorted;
     try {
