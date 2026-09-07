@@ -34,7 +34,7 @@
     "checkIntervalMs": 600000,
     "checkIntervalJitter": 0.4,
     "alwaysOn": false,
-    "alwaysOnIntervalMs": 180000,
+    "alwaysOnIntervalMs": 60000,
     "quietThresholdMs": 600000,
     "triggerChance": 0.3,
     "minTurns": 3,

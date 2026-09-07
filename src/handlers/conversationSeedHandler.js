@@ -44,6 +44,18 @@ function pickPair(clients) {
   return [shuffled[0], shuffled[1]];
 }
 
+// alwaysOnモード用: ランダムではなく全アカウントを順繰りに回す。
+// (0,1) → (1,2) → (2,3) → (3,0) → ... と隣接ペアを巡回することで、
+// 特定のアカウントだけ喋り続けて他が放置される偏りを防ぎ、全アカウントが
+// 均等に参加している「過熱感」を出す
+let rotationIndex = 0;
+function pickRotationPair(clients) {
+  const a = clients[rotationIndex % clients.length];
+  const b = clients[(rotationIndex + 1) % clients.length];
+  rotationIndex = (rotationIndex + 1) % clients.length;
+  return [a, b];
+}
+
 function sharedChannels(clientA, clientB) {
   return clientA.accountState.channelStore
     .listChannels()
@@ -141,7 +153,7 @@ function registerConversationSeedHandler(clients) {
   scheduleWithJitter(intervalMs, CHECK_INTERVAL_JITTER, async () => {
     if (!ALWAYS_ON && Math.random() > TRIGGER_CHANCE) return;
 
-    const [clientA, clientB] = pickPair(clients);
+    const [clientA, clientB] = ALWAYS_ON ? pickRotationPair(clients) : pickPair(clients);
     if (!clientA?.user || !clientB?.user) return;
     if (clientA.accountState.lockedDown || clientB.accountState.lockedDown) return;
 
