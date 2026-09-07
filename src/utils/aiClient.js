@@ -342,10 +342,19 @@ async function getAIResponseOnce(
       ],
       { temperature, maxTokens }
     );
-    return reply ? toSingleLine(reply) : reply;
+    if (reply) return toSingleLine(reply);
+
+    // LLM呼び出し失敗時(レート制限429など)に何も返さず黙り込むと、外からは
+    // 「人格もマルコフも死んでいる」ように見えてしまう。下書きがあればそのまま
+    // 返信として使い、完全に沈黙するよりはbotが生きている状態を保つ
+    if (draft) {
+      logger.log('MARKOV', `[${accountState.id}] LLM補正が失敗したため下書きをそのまま採用: ${draft}`);
+      return toSingleLine(draft);
+    }
+    return null;
   } catch (err) {
     logger.error('AI', err);
-    return null;
+    return draft ? toSingleLine(draft) : null;
   }
 }
 
