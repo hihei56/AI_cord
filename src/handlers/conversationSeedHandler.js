@@ -9,8 +9,7 @@ const {
   checkIntervalJitter: CHECK_INTERVAL_JITTER = 0.4,
   alwaysOn: ALWAYS_ON,
   alwaysOnIntervalMs: ALWAYS_ON_INTERVAL_MS,
-  humanQuietThresholdMs: HUMAN_QUIET_THRESHOLD_MS = 600000,
-  humanActivityWindowMs: HUMAN_ACTIVITY_WINDOW_MS = 3600000,
+  quietThresholdMs: QUIET_THRESHOLD_MS = 600000,
   triggerChance: TRIGGER_CHANCE,
   minTurns: MIN_TURNS,
   maxTurns: MAX_TURNS,
@@ -24,25 +23,20 @@ function isRealUserMessage(msg) {
   return !msg.author.bot && !isOwnAccount(msg.author.id);
 }
 
-// チャンネル直近fetchLimit件の中から、人間の最新発言時刻を探す(無ければnull)
-async function lastHumanMessageAt(channel, fetchLimit = 50) {
+// チャンネルが「盛り上げ対象」かどうか。直近の発言(誰のものでも良い)が
+// quietThresholdMs以上前なら対象。誰も一度も発言していない完全な無人チャンネルこそ
+// 最優先で賑やかすべき対象なので、「直近の発言が見つからない」場合もtrue扱いにする
+// (以前の実装は「人間の発言が見つからない」場合をfalse=対象外にしてしまっており、
+// 一番賑やかしたい無人チャンネルが逆に除外されるバグだった)
+async function isChannelQuiet(channel) {
   try {
-    const recent = await channel.messages.fetch({ limit: fetchLimit });
-    const humanTimestamps = [...recent.values()].filter(isRealUserMessage).map((m) => m.createdTimestamp);
-    return humanTimestamps.length ? Math.max(...humanTimestamps) : null;
+    const recent = await channel.messages.fetch({ limit: 1 });
+    const last = recent.first();
+    if (!last) return true;
+    return Date.now() - last.createdTimestamp > QUIET_THRESHOLD_MS;
   } catch {
-    return null;
+    return false;
   }
-}
-
-// 「直近1時間(humanActivityWindowMs)以内に人間が発言していて、かつその発言から
-// 10分(humanQuietThresholdMs)以上経過している」チャンネルだけをAI同士の掛け合いで
-// 賑やかす対象にする。人間の発言が1時間以上前(=長く放置された過疎チャンネル)なら対象外
-async function isReadyForRevival(channel) {
-  const lastHumanAt = await lastHumanMessageAt(channel);
-  if (lastHumanAt === null) return false;
-  const elapsed = Date.now() - lastHumanAt;
-  return elapsed >= HUMAN_QUIET_THRESHOLD_MS && elapsed <= HUMAN_ACTIVITY_WINDOW_MS;
 }
 
 function pickPair(clients) {
@@ -135,8 +129,8 @@ async function seedConversation(clientA, clientB, channelId) {
 }
 
 // AIだけで常時チャットを動かす(config/settings.jsonのconversationSeed.alwaysOn)モード。
-// 有効な場合、trigger確率・「人間の発言から10分〜1時間か」のチェックを無視して、
-// より短い間隔(alwaysOnIntervalMs)で必ず誰かのペアがどこかのチャンネルで会話を始める
+// 有効な場合、trigger確率・過疎チェックを無視して、より短い間隔(alwaysOnIntervalMs)で
+// 必ず誰かのペアがどこかのチャンネルで会話を始める
 function registerConversationSeedHandler(clients) {
   if (clients.length < 2) return;
 
@@ -155,7 +149,7 @@ function registerConversationSeedHandler(clients) {
     for (const channelId of channels) {
       const channel = clientA.channels.cache.get(channelId);
       if (!channel) continue;
-      if (ALWAYS_ON || (await isReadyForRevival(channel))) {
+      if (ALWAYS_ON || (await isChannelQuiet(channel))) {
         try {
           await seedConversation(clientA, clientB, channelId);
         } catch (err) {
