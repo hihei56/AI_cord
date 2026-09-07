@@ -364,23 +364,19 @@ async function getAIResponseOnce(
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg }
       ],
-      // AI同士の掛け合い(partnerIsAi)は人間向け会話とは別のトークン枠(kind: 'seed',
-      // 未設定ならGemini)を使い、Groqの1日トークン上限を人間との会話用に温存する
+      // AI同士の掛け合い(partnerIsAi)はkind: 'seed'で区別する。プロバイダ振り分けは
+      // aiProvider側の設定に従う(現在はGroq一本)
       { temperature, maxTokens, kind: partnerIsAi ? 'seed' : 'chat' }
     );
     if (reply) return toSingleLine(reply);
 
-    // LLM呼び出し失敗時(レート制限429など)に何も返さず黙り込むと、外からは
-    // 「人格もマルコフも死んでいる」ように見えてしまう。下書きがあればそのまま
-    // 返信として使い、完全に沈黙するよりはbotが生きている状態を保つ
-    if (draft) {
-      logger.log('MARKOV', `[${accountState.id}] LLM補正が失敗したため下書きをそのまま採用: ${draft}`);
-      return toSingleLine(draft);
-    }
+    // LLM呼び出し失敗時(レート制限429など)に生の下書きをそのまま返信にしていたが、
+    // 人格の口調が全く反映されない不自然な発言になり不評だったため撤回。
+    // 失敗した時は黙って次の機会を待つ(完全に無反応になるのは他の対策で軽減する)
     return null;
   } catch (err) {
     logger.error('AI', err);
-    return draft ? toSingleLine(draft) : null;
+    return null;
   }
 }
 
