@@ -112,45 +112,60 @@ function getMarkovDraft(accountState, contextText = '') {
   return accountState.markovChain.generate(config.markov.draftMaxWords, contextText);
 }
 
-async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat' } = {}) {
-  // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
-  // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る。
-  // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う
-  const conn = baseUrl ? null : aiProvider.getConnection(kind);
-  const resolvedBaseUrl = baseUrl ?? conn.baseUrl;
-  const resolvedApiKey = apiKey ?? conn.apiKey;
-  const resolvedModel = model ?? conn.model;
-
-  const res = await fetch(`${resolvedBaseUrl}/chat/completions`, {
+// 1回分のchat completionsリクエストを送る薄いラッパー。成功/失敗を例外ではなく
+// 戻り値で表現し、呼び出し側(callChatCompletion)でフォールバック判断に使う
+async function requestChatCompletion(conn, messages, { temperature, maxTokens, logTag }) {
+  const res = await fetch(`${conn.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${resolvedApiKey}`,
+      Authorization: `Bearer ${conn.apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: resolvedModel,
+      model: conn.model,
       messages,
       temperature,
       max_tokens: maxTokens,
       // reasoning_effortはGroq固有パラメータ。Gemini等の他プロバイダに送るとエラーになりうるため、
-      // baseUrl未指定(=通常の会話用接続先)かつプロバイダがgroqの時だけ付与する
-      ...(conn?.provider === 'groq' && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
+      // プロバイダがgroqの時だけ付与する
+      ...(conn.provider === 'groq' && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
     })
   });
   const data = await res.json();
 
   if (!res.ok) {
-    logger.error(logTag, `HTTP ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+    logger.error(logTag, `HTTP ${res.status} ${res.statusText} (${conn.provider}): ${JSON.stringify(data)}`);
     return null;
   }
 
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) {
-    logger.error(logTag, `unexpected response shape: ${JSON.stringify(data)}`);
+    logger.error(logTag, `unexpected response shape (${conn.provider}): ${JSON.stringify(data)}`);
     return null;
   }
 
   return content;
+}
+
+async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat' } = {}) {
+  // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
+  // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る。
+  // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う
+  const conn = baseUrl ? { provider: null, baseUrl, apiKey, model } : aiProvider.getConnection(kind);
+
+  const content = await requestChatCompletion(conn, messages, { temperature, maxTokens, logTag });
+  if (content) return content;
+
+  // baseUrlが明示指定されている(finetune等の専用接続先)場合はフォールバック対象外。
+  // それ以外はレート制限等の失敗時、APIキーが設定済みの別プロバイダで1回だけリトライする
+  // (Groqが1日のトークン上限に達しても、Geminiのキーがあれば会話が完全に止まらないようにする)
+  if (baseUrl) return null;
+
+  const fallback = aiProvider.getFallbackConnection(kind);
+  if (!fallback) return null;
+
+  logger.log(logTag, `${conn.provider}が失敗したため${fallback.provider}にフォールバック`);
+  return requestChatCompletion(fallback, messages, { temperature, maxTokens, logTag });
 }
 
 // 画像添付があった時だけ呼ぶ。普段の会話モデルとは別に、

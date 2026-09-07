@@ -91,4 +91,19 @@ function getConnection(kind = 'chat') {
   };
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, resolveProviderName };
+// getConnectionが返すプロバイダとは別の、APIキーが設定済みのプロバイダの接続情報を返す。
+// レート制限(429)等で主プロバイダが失敗した時のフォールバック用。無ければnull
+function getFallbackConnection(kind = 'chat') {
+  const primary = getConnection(kind);
+  const fallbackName = availableProviders().find((name) => name !== primary.provider);
+  if (!fallbackName) return null;
+  const p = PROVIDER_DEFAULTS[fallbackName];
+  return {
+    provider: fallbackName,
+    baseUrl: p.baseUrl,
+    apiKey: apiKeyFor(fallbackName),
+    model: kind === 'vision' ? p.visionModel : p.model
+  };
+}
+
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackConnection, resolveProviderName };
