@@ -2,6 +2,7 @@ const config = require('./config');
 const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
+const aiProvider = require('./aiProvider');
 
 // 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
 // 文字2-gramのJaccard類似度。句読点は既に返信側で除去済みなので単純比較でよい
@@ -83,20 +84,27 @@ function getMarkovDraft(accountState, contextText = '') {
 }
 
 async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI' } = {}) {
-  const res = await fetch(`${baseUrl ?? config.env.aiBaseUrl}/chat/completions`, {
+  // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
+  // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る
+  const conn = baseUrl ? null : aiProvider.getConnection('chat');
+  const resolvedBaseUrl = baseUrl ?? conn.baseUrl;
+  const resolvedApiKey = apiKey ?? conn.apiKey;
+  const resolvedModel = model ?? conn.model;
+
+  const res = await fetch(`${resolvedBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey ?? config.env.aiApiKey}`,
+      Authorization: `Bearer ${resolvedApiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: model ?? config.ai.model,
+      model: resolvedModel,
       messages,
       temperature,
       max_tokens: maxTokens,
       // reasoning_effortはGroq固有パラメータ。Gemini等の他プロバイダに送るとエラーになりうるため、
       // baseUrl未指定(=通常の会話用接続先)かつプロバイダがgroqの時だけ付与する
-      ...(!baseUrl && config.env.aiProvider === 'groq' && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
+      ...(conn?.provider === 'groq' && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
     })
   });
   const data = await res.json();
@@ -125,15 +133,17 @@ async function describeImage(imageUrls) {
   const urls = (Array.isArray(imageUrls) ? imageUrls : [imageUrls]).filter(Boolean);
   if (urls.length === 0) return null;
 
+  const conn = aiProvider.getConnection('vision');
+
   try {
-    const res = await fetch(`${config.env.visionBaseUrl}/chat/completions`, {
+    const res = await fetch(`${conn.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${config.env.visionApiKey}`,
+        Authorization: `Bearer ${conn.apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: config.ai.vision.model,
+        model: conn.model,
         messages: [
           {
             role: 'user',

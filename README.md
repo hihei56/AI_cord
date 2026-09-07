@@ -109,6 +109,7 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!nickname learn @user [件数]` | 会話履歴からその人への呼びかけ方の候補を探索して提示(省略時は直近300件) |
 | `!nickname set @user 名前` | 呼び名を個別登録 |
 | `!nickname remove @user` / `!nickname list` | 呼び名の削除 / 一覧表示 |
+| `!provider [groq\|gemini]` / `!ai [groq\|gemini]` | 会話生成に使うAIプロバイダを実行中に切り替え(引数省略で現在の状態を表示)。`.env`の書き換え・再起動不要、全アカウント共通 |
 | `!help` | コマンド一覧を表示 |
 
 ### ユーザーへの呼び方(`config/nicknames.json`)
@@ -121,11 +122,13 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 ### AIバックエンドの切り替え(Groq / Gemini)
 
-`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叩く汎用実装。`.env`に`GROQ_API_KEY`と`GEMINI_API_KEY`を両方入れておいた上で、`AI_PROVIDER`(`groq` / `gemini`、省略時`groq`)で使う方を切り替えられる。切り替えると接続先URL・APIキー・モデル名(既定: groq=`openai/gpt-oss-120b`、gemini=`gemini-2.5-flash`)が自動で対応するものになる。特定のモデルを使いたい場合は`.env`の`AI_MODEL`で明示指定すれば常にそちらが優先される。
+`src/utils/aiClient.js` はOpenAI互換の `/chat/completions` エンドポイントを叩く汎用実装で、実際の接続先は`src/utils/aiProvider.js`が管理している。`.env`に`GROQ_API_KEY`と`GEMINI_API_KEY`を**両方**入れておけば、起動後は`.env`を書き換えず**Discord上で`!provider groq`または`!provider gemini`と打つだけ**で会話生成のバックエンドを切り替えられる(即時反映、再起動不要、全アカウント共通)。`!provider`だけ打つと現在の状態と切り替え可能なプロバイダ一覧を表示する。
 
-画像解析(vision)も同じ仕組みで、未指定なら会話用と同じプロバイダを使い回す。会話はGroq、画像解析だけGeminiのように分けたい場合は`VISION_AI_PROVIDER`を個別に指定する。
+切り替えると接続先URL・APIキー・モデル名(既定: groq=`openai/gpt-oss-120b`、gemini=`gemini-2.5-flash`)が自動で対応するものになる。特定のモデルを固定したい場合は`.env`の`AI_MODEL`で明示指定すれば常にそちらが優先される。`.env`の`AI_PROVIDER`は起動時点の初期値としてのみ使う(省略時`groq`)。
 
-`AI_BASE_URL` / `AI_API_KEY`を明示指定すると`AI_PROVIDER`より優先されるので、自前ホストのvLLM・Ollama・text-generation-inferenceなど、上記2つ以外のOpenAI互換APIに差し替えたい場合はそちらを使う。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
+画像解析(vision)も同じ仕組みで、未指定なら`!provider`で選択中の会話用プロバイダをそのまま使い回す(会話をGeminiに切り替えれば画像解析も自動でGeminiになる)。会話はGroq、画像解析だけGeminiのように分けたい場合だけ`.env`の`VISION_AI_PROVIDER`を個別に指定する。
+
+`AI_BASE_URL` / `AI_API_KEY`を明示指定すると`!provider`/`AI_PROVIDER`より優先されるので、自前ホストのvLLM・Ollama・text-generation-inferenceなど、上記2つ以外のOpenAI互換APIに差し替えたい場合はそちらを使う。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
 
 ### アカウント単位でのファインチューニングモデル切り替え
 
