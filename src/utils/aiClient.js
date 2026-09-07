@@ -126,9 +126,12 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
       messages,
       temperature,
       max_tokens: maxTokens,
-      // reasoning_effortはGroq固有パラメータ。Gemini等の他プロバイダに送るとエラーになりうるため、
-      // プロバイダがgroqの時だけ付与する
-      ...(conn.provider === 'groq' && config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {})
+      // reasoning_effortはGroqのreasoningモデル(gpt-oss等)専用パラメータ。Gemini等の
+      // 他プロバイダや、Groqでもllama-3.1-8b-instantのような非reasoningモデルに送ると
+      // エラーになりうるため、プロバイダがgroqかつモデル名に'gpt-oss'を含む時だけ付与する
+      ...(conn.provider === 'groq' && conn.model?.includes('gpt-oss') && config.ai.reasoningEffort
+        ? { reasoning_effort: config.ai.reasoningEffort }
+        : {})
     })
   });
   const data = await res.json();
