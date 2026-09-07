@@ -19,7 +19,10 @@
   },
   "typingDelay": {
     "minMs": 3000,
-    "maxMs": 7000
+    "maxMs": 7000,
+    "longPauseChance": 0.12,
+    "longPauseMinMs": 15000,
+    "longPauseMaxMs": 90000
   },
   "replyDelay": {
     "minMs": 2500,
@@ -41,6 +44,7 @@
     "turnDelayMaxMs": 8000
   },
   "selfTalk": {
+    "enabled": false,
     "intervalMs": 3600000,
     "intervalJitter": 0.4,
     "chance": 0.15,

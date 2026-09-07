@@ -116,8 +116,12 @@ async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, a
 // 画像添付があった時だけ呼ぶ。普段の会話モデルとは別に、
 // vision対応モデル(VISION_API_BASE_URL/VISION_API_KEY、未設定ならAI_*を使い回す)
 // に投げて内容を説明させる。会話自体はテキストのみのモデルのまま。
-async function describeImage(imageUrl) {
+// imageUrlsは単一URLの文字列でも配列でもよい(複数画像添付時にまとめて読み取るため)
+async function describeImage(imageUrls) {
   if (!config.ai.vision?.enabled) return null;
+
+  const urls = (Array.isArray(imageUrls) ? imageUrls : [imageUrls]).filter(Boolean);
+  if (urls.length === 0) return null;
 
   try {
     const res = await fetch(`${config.env.visionBaseUrl}/chat/completions`, {
@@ -132,8 +136,14 @@ async function describeImage(imageUrl) {
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'この画像に何が写っているか、日本語で1〜2文で簡潔に説明して' },
-              { type: 'image_url', image_url: { url: imageUrl } }
+              {
+                type: 'text',
+                text:
+                  urls.length > 1
+                    ? `この${urls.length}枚の画像それぞれに何が写っているか、日本語で簡潔に説明して`
+                    : 'この画像に何が写っているか、日本語で1〜2文で簡潔に説明して'
+              },
+              ...urls.map((url) => ({ type: 'image_url', image_url: { url } }))
             ]
           }
         ],

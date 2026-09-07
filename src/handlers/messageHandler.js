@@ -10,6 +10,25 @@ function isRealUser(message) {
   return !message.author.bot || Boolean(message.webhookId);
 }
 
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp)(\?.*)?$/i;
+
+// 添付ファイルのcontentTypeが取得できないことがある(セルフボット経由だと特に)ため、
+// 拡張子でもフォールバック判定する。加えて、URLをそのまま貼った時にDiscordが自動生成する
+// embed(image/thumbnail)からも拾う。複数画像添付にも対応するため全部集める
+function extractImageUrls(msg) {
+  const urls = [];
+  for (const a of msg.attachments.values()) {
+    if (a.contentType?.startsWith('image/') || IMAGE_EXT_RE.test(a.url || a.name || '')) {
+      urls.push(a.url);
+    }
+  }
+  for (const embed of msg.embeds || []) {
+    const url = embed.image?.url || embed.thumbnail?.url;
+    if (url) urls.push(url);
+  }
+  return [...new Set(urls)];
+}
+
 function isDuplicateBurst(sorted) {
   const { minGapMs } = config.recentDuplicateGuard;
   if (sorted.size < 2) return false;
@@ -93,18 +112,25 @@ function registerMessageHandler(client) {
     logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);
 
     try {
-      await msg.channel.sendTyping();
+      const { minMs, maxMs, longPauseChance = 0, longPauseMinMs = 0, longPauseMaxMs = 0 } = config.typingDelay;
 
-      const { minMs, maxMs } = config.typingDelay;
+      // 毎回きっちり数秒後に反応すると機械的に見えるので、たまに長考の間を作る。
+      // 長考中はtyping表示を出さず、実際に入力し始めるタイミングでsendTypingする
+      if (longPauseChance > 0 && Math.random() < longPauseChance) {
+        const silentMs = longPauseMinMs + Math.random() * (longPauseMaxMs - longPauseMinMs);
+        await new Promise((r) => setTimeout(r, silentMs));
+      }
+
+      await msg.channel.sendTyping();
       await new Promise((r) => setTimeout(r, Math.random() * (maxMs - minMs) + minMs));
 
       const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
       const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
 
       let userMsg = msg.content;
-      const image = [...msg.attachments.values()].find((a) => a.contentType?.startsWith('image/'));
-      if (image) {
-        const description = await describeImage(image.url);
+      const imageUrls = extractImageUrls(msg);
+      if (imageUrls.length > 0) {
+        const description = await describeImage(imageUrls);
         if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
       }
 
