@@ -290,7 +290,16 @@ async function getAIResponseOnce(
     ? `\n【下書き(マルコフ連鎖生成、文法が崩れていることがある)】\n${draft}\n上の下書きをできるだけそのまま使うこと。手を加えていいのは最低限の誤字脱字・文法エラーの修正と、今の会話の流れに自然に噛み合うようにするための最小限の調整だけ。言い換えや意訳、新しい話題や説明の追加はしない。`
     : '';
 
-  const systemPrompt = `${accountState.persona}${draftSection}${antiRepeatSection}${aiPartnerSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  // 人格プロンプトも下書きも無い(PERSONA未設定かつマルコフ下書きも無い)場合、
+  // LLMへの指示が実質ゼロになり、丁寧で説明的な「アシスタントらしい」文章を
+  // 自由に書いてしまいがち(「AIによる修正が過剰」に見える一因)。最低限、
+  // Discordの雑談らしい素っ気なさだけは指定しておく
+  const noGuidanceFallback =
+    !accountState.persona && !draft
+      ? '\n特定の人格設定はありません。Discordの雑談らしく素っ気なく短く返信すること。丁寧なアシスタント口調・説明的な言い回し・絵文字の多用はしないこと。'
+      : '';
+
+  const systemPrompt = `${accountState.persona}${draftSection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
