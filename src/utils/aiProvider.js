@@ -35,15 +35,19 @@ const PROVIDER_DEFAULTS = {
   },
   nvidia: {
     label: 'NVIDIA NIM',
-    // build.nvidia.comのOpenAI互換エンドポイント。無料枠は40RPM、登録時に
-    // 約1000クレジット付与(カード不要)だが、NVIDIA公式は「評価用途向け、
+    // build.nvidia.comのOpenAI互換エンドポイント。無料枠は40RPM・1日10,000リクエスト、
+    // 登録時に約1000クレジット付与(カード不要)だが、NVIDIA公式は「評価用途向け、
     // 本番トラフィック向けではない」と明記しているため、クレジットが尽きたら
-    // 使えなくなる可能性がある。モデル名の命名規則(vendor/model形式)は
-    // カタログの変更が頻繁なので、実際に動くモデル名をAI_MODELで上書き推奨
+    // 使えなくなる可能性がある。モデル名の命名規則(vendor/model形式)はカタログの
+    // 変更が頻繁で、GET /v1/modelsに載っていても実際は404(アカウント未許可)に
+    // なることがあるため、実際にchat/completionsで200が返るか確認して選定すること。
+    // meta/llama-3.3-70b-instruct, nvidia/llama-3.1-nemotron-70b-instruct,
+    // moonshotai/kimi-k2.6, mistralai/mistral-large-2-instruct等は404だったが、
+    // meta/llama-3.2-11b-vision-instructは動作確認済み(vision対応でもある)
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     apiKeyEnv: 'NVIDIA_API_KEY',
-    model: 'meta/llama-3.3-70b-instruct',
-    visionModel: 'meta/llama-3.3-70b-instruct'
+    model: 'meta/llama-3.2-11b-vision-instruct',
+    visionModel: 'meta/llama-3.2-11b-vision-instruct'
   }
 };
 
