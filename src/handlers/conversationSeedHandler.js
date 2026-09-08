@@ -3,6 +3,15 @@ const logger = require('../utils/logger');
 const { generateSelfTalk, getAIResponse, recordReply } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
+const { resolveDisplayName } = require('../utils/nicknames');
+
+// AI同士の掛け合いで、相手を生のDiscordユーザー名(ログインハンドル)ではなく
+// あだ名で呼び合わせる。優先順位はresolveDisplayNameと同じ
+// (config/nicknames.jsonの個別登録 > そのサーバーのニックネーム > username)
+function resolveBotDisplayName(client, channel) {
+  const member = channel.guild?.members.cache.get(client.user.id);
+  return resolveDisplayName(client.user, member);
+}
 
 const {
   checkIntervalMs: CHECK_INTERVAL_MS,
@@ -112,7 +121,7 @@ async function seedConversation(clientA, clientB, channelId) {
   recordReply(clientA.accountState, opener);
   logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
 
-  const history = [{ author: { username: clientA.user.username }, content: opener }];
+  const history = [{ author: { username: resolveBotDisplayName(clientA, channelA) }, content: opener }];
   let speaker = clientB;
   let listener = clientA;
   let lastMsg = opener;
@@ -138,10 +147,11 @@ async function seedConversation(clientA, clientB, channelId) {
 
     await showTyping(channel, speaker.accountState.id);
 
-    // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する
+    // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する。
+    // 呼びかける名前は生のusernameではなくあだ名(サーバーニックネーム等)を使う
     const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
       partnerIsAi: true,
-      speakerLabelOverride: listener.user.username
+      speakerLabelOverride: resolveBotDisplayName(listener, channel)
     });
     if (!reply) break;
 
@@ -154,7 +164,7 @@ async function seedConversation(clientA, clientB, channelId) {
     recordReply(speaker.accountState, reply);
     logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
 
-    history.push({ author: { username: speaker.user.username }, content: reply });
+    history.push({ author: { username: resolveBotDisplayName(speaker, channel) }, content: reply });
     lastMsg = reply;
     lastActionAt = Date.now();
 
