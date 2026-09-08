@@ -32,6 +32,18 @@ const PROVIDER_DEFAULTS = {
     apiKeyEnv: 'CEREBRAS_API_KEY',
     model: 'gpt-oss-120b',
     visionModel: 'gpt-oss-120b'
+  },
+  nvidia: {
+    label: 'NVIDIA NIM',
+    // build.nvidia.comのOpenAI互換エンドポイント。無料枠は40RPM、登録時に
+    // 約1000クレジット付与(カード不要)だが、NVIDIA公式は「評価用途向け、
+    // 本番トラフィック向けではない」と明記しているため、クレジットが尽きたら
+    // 使えなくなる可能性がある。モデル名の命名規則(vendor/model形式)は
+    // カタログの変更が頻繁なので、実際に動くモデル名をAI_MODELで上書き推奨
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    apiKeyEnv: 'NVIDIA_API_KEY',
+    model: 'meta/llama-3.3-70b-instruct',
+    visionModel: 'meta/llama-3.3-70b-instruct'
   }
 };
 
@@ -86,14 +98,12 @@ function getConnection(kind = 'chat') {
   }
 
   if (kind === 'seed') {
-    // AI同士の掛け合いは大量に呼ばれるため、人間向け会話とは別の余力があるプロバイダに
-    // 逃がしたい。優先順位: SEED_AI_PROVIDER(明示指定) > Cerebras(大量リクエスト向け) >
-    // Gemini > 現在のプロバイダ
-    const providerName =
-      resolveProviderName(process.env.SEED_AI_PROVIDER) ||
-      (apiKeyFor('cerebras') ? 'cerebras' : null) ||
-      (apiKeyFor('gemini') ? 'gemini' : null) ||
-      currentProvider;
+    // AI同士の掛け合いは大量に呼ばれるため、人間向け会話(currentProvider)とは
+    // 別の余力があるプロバイダに逃がしたい。SEED_AI_PROVIDERで明示指定できるほか、
+    // 未指定なら「現在のプロバイダ以外でAPIキーが設定済みのもの」を自動で選ぶ
+    // (PROVIDER_DEFAULTSの定義順)。他に無ければ現在のプロバイダを使い回す
+    const otherAvailable = availableProviders().find((name) => name !== currentProvider);
+    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || otherAvailable || currentProvider;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,
