@@ -1,6 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { generateSelfTalk, getAIResponse, recordReply } = require('../utils/aiClient');
+const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
@@ -114,7 +114,13 @@ async function seedConversation(clientA, clientB, channelId) {
 
   await showTyping(channelA, clientA.accountState.id);
 
-  const opener = await generateSelfTalk(clientA.accountState);
+  // 各ターンをその場しのぎで生成すると「そうだね」の連発のような浅い応酬に
+  // なりがちなので、会話を始める前に一度お題を決めて全ターンで共有する。
+  // 失敗してもnullのまま(お題無し)で従来通り進行する
+  const topicHint = await planConversationTopic(clientA.accountState.persona, clientB.accountState.persona);
+  if (topicHint) logger.log('SEED', `[${clientA.accountState.id}⇄${clientB.accountState.id}] お題: ${topicHint}`);
+
+  const opener = await generateSelfTalk(clientA.accountState, topicHint);
   if (!opener) return;
 
   const openerMsg = await channelA.send(opener);
@@ -151,7 +157,8 @@ async function seedConversation(clientA, clientB, channelId) {
     // 呼びかける名前は生のusernameではなくあだ名(サーバーニックネーム等)を使う
     const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
       partnerIsAi: true,
-      speakerLabelOverride: resolveBotDisplayName(listener, channel)
+      speakerLabelOverride: resolveBotDisplayName(listener, channel),
+      topicHint
     });
     if (!reply) break;
 

@@ -272,7 +272,7 @@ async function getAIResponseOnce(
   userMsg,
   history = [],
   speakerMsg = null,
-  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null } = {}
+  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null } = {}
 ) {
   if (accountState.aiMode === 'finetune') {
     if (!accountState.finetuneBaseUrl) {
@@ -374,7 +374,12 @@ async function getAIResponseOnce(
   // 時間感覚のある発言ができるようにする(これが無いとAIは常に日付不明のまま喋る)
   const dateSection = `\n【現在日時】${formatNowJST()}`;
 
-  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${humanLikeConstraint}${dateSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  // AI同士の掛け合いでは、会話開始前にplanConversationTopicで決めたお題を
+  // 全ターンで共有する。行き当たりばったりで各ターンを生成すると「そうだね」の
+  // 連発のような浅い応酬になりがちなので、会話全体を貫く軸を持たせる
+  const topicSection = topicHint ? `\n【この会話のお題(参考程度)】${topicHint}` : '';
+
+  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${humanLikeConstraint}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -404,18 +409,19 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   return withSimilarityRetry(accountState, 'AI', () => getAIResponseOnce(accountState, userMsg, history, speakerMsg, options));
 }
 
-async function generateSelfTalkOnce(accountState = null) {
+async function generateSelfTalkOnce(accountState = null, topicHint = null) {
   try {
     // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
     // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
     // 呼び出し側は必ずaccountStateを渡すこと
     const dateLine = `\n【現在日時】${formatNowJST()}`;
 
-    // 一定確率で実際のニュース見出しを話題のきっかけとして渡す。「最新の話題を
-    // AIが自分から作れるように」という要望への対応。丸ごと読み上げたり生真面目に
-    // 解説されると不自然なので、あくまで着想程度に留めるよう明示する
-    let newsLine = '';
-    if (Math.random() < (config.ai.selfTalk.newsTopicChance ?? 0)) {
+    // topicHint(planConversationTopicで事前に決めたお題)があればそれを優先し、
+    // 無い場合のみ一定確率で実際のニュース見出しを話題のきっかけとして渡す。
+    // 丸ごと読み上げたり生真面目に解説されると不自然なので、あくまで着想程度に
+    // 留めるよう明示する
+    let newsLine = topicHint ? `\n【会話のお題(参考程度)】${topicHint}` : '';
+    if (!topicHint && Math.random() < (config.ai.selfTalk.newsTopicChance ?? 0)) {
       const headline = await getRandomHeadline();
       if (headline) {
         newsLine = `\n【最近のニュース見出し(参考程度。丸ごと引用したり生真面目に解説したりしない)】${headline}`;
@@ -445,8 +451,36 @@ async function generateSelfTalkOnce(accountState = null) {
 }
 
 // 自発投稿も直近の自分の発言と似すぎていたら再生成する
-async function generateSelfTalk(accountState = null) {
-  return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState));
+async function generateSelfTalk(accountState = null, topicHint = null) {
+  return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState, topicHint));
+}
+
+// AI同士の掛け合いを始める前に、賢いモデルで一度「今回何を話すか」を考えさせる。
+// 各ターンをその場しのぎで生成すると「そうだね」の連発のような浅い応酬になりがちなので、
+// 会話全体を貫く簡単なお題を先に決めておき、両アカウントの発言生成に共有する。
+// 失敗してもnullを返すだけで、呼び出し側は従来通り(お題無し)で進行できる
+async function planConversationTopic(personaA, personaB) {
+  try {
+    const dateLine = `【現在日時】${formatNowJST()}`;
+    const headline = await getRandomHeadline();
+    const newsLine = headline ? `\n【最近のニュース見出し】${headline}` : '';
+
+    const prompt =
+      `${dateLine}${newsLine}\n【キャラクター1の人格】${personaA || '(人格設定なし)'}\n【キャラクター2の人格】${personaB || '(人格設定なし)'}\n\n` +
+      'この2人がDiscordで交わす短い雑談のお題を1つだけ提案してください。日時やニュースを参考にしても、2人の人格に合いそうな全く別の話題でも構いません。' +
+      '説明・前置き・理由は書かず、お題そのものだけを15文字以内の名詞句かフレーズで出力すること。';
+
+    const topic = await callChatCompletion([{ role: 'user', content: prompt }], {
+      temperature: 0.9,
+      maxTokens: 60,
+      logTag: 'SEED-PLAN'
+    });
+    if (!topic) return null;
+    return topic.replace(/\n/g, ' ').replace(/^["「【]|["」】]$/g, '').trim().slice(0, 40) || null;
+  } catch (err) {
+    logger.error('SEED-PLAN', err);
+    return null;
+  }
 }
 
 // 長期記憶: 1往復のやり取りを生ログとしてmemoryStoreに追記する。
@@ -488,6 +522,7 @@ async function compressUserMemoryIfNeeded(accountState, userId, displayName) {
 module.exports = {
   getAIResponse,
   generateSelfTalk,
+  planConversationTopic,
   initMarkov,
   describeImage,
   recordReply,
