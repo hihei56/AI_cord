@@ -20,6 +20,18 @@ const PROVIDER_DEFAULTS = {
     apiKeyEnv: 'GEMINI_API_KEY',
     model: 'gemini-3.6-flash',
     visionModel: 'gemini-3.6-flash'
+  },
+  cerebras: {
+    label: 'Cerebras',
+    // CerebrasはGroqと同じgpt-oss-120bを配信しており、1日の消費上限が緩い
+    // (Groqの1日20万トークンに対し、Cerebrasは1日100万トークン程度と報告されている)。
+    // 無料枠の条件(カード登録要否)は情報源により食い違うため、実際に
+    // CEREBRAS_API_KEYを設定して動くかどうかで判断すること。
+    // vision対応モデルは無いため、VISION_AI_PROVIDERで別プロバイダを明示指定推奨
+    baseUrl: 'https://api.cerebras.ai/v1',
+    apiKeyEnv: 'CEREBRAS_API_KEY',
+    model: 'gpt-oss-120b',
+    visionModel: 'gpt-oss-120b'
   }
 };
 
@@ -74,7 +86,14 @@ function getConnection(kind = 'chat') {
   }
 
   if (kind === 'seed') {
-    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || (apiKeyFor('gemini') ? 'gemini' : currentProvider);
+    // AI同士の掛け合いは大量に呼ばれるため、人間向け会話とは別の余力があるプロバイダに
+    // 逃がしたい。優先順位: SEED_AI_PROVIDER(明示指定) > Cerebras(大量リクエスト向け) >
+    // Gemini > 現在のプロバイダ
+    const providerName =
+      resolveProviderName(process.env.SEED_AI_PROVIDER) ||
+      (apiKeyFor('cerebras') ? 'cerebras' : null) ||
+      (apiKeyFor('gemini') ? 'gemini' : null) ||
+      currentProvider;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,
