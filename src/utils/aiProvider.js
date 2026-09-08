@@ -42,11 +42,14 @@ const PROVIDER_DEFAULTS = {
     // 変更が頻繁で、GET /v1/modelsに載っていても実際は404(アカウント未許可)に
     // なることがあるため、実際にchat/completionsで200が返るか確認して選定すること。
     // meta/llama-3.3-70b-instruct, nvidia/llama-3.1-nemotron-70b-instruct,
-    // moonshotai/kimi-k2.6, mistralai/mistral-large-2-instruct等は404だったが、
-    // meta/llama-3.2-11b-vision-instructは動作確認済み(vision対応でもある)
+    // moonshotai/kimi-k2.6, mistralai/mistral-large-2-instruct, 90B/253B級の
+    // 大型モデル等は404または実用にならないレイテンシだったが、moonshotai/kimi-k3と
+    // meta/llama-3.2-11b-vision-instructは動作確認済み。kimi-k3はreasoningモデルで
+    // トークン消費がやや重いが、11Bより品質が高いので会話用の既定はkimi-k3にする。
+    // vision(画像解析)はkimi-k3が非対応の可能性があるため11B visionモデルのままにする
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     apiKeyEnv: 'NVIDIA_API_KEY',
-    model: 'meta/llama-3.2-11b-vision-instruct',
+    model: 'moonshotai/kimi-k3',
     visionModel: 'meta/llama-3.2-11b-vision-instruct'
   }
 };
