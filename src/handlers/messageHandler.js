@@ -64,6 +64,11 @@ function resolveChance(msg, client, state, sortedMessages) {
   // メンション・リプライで直接呼ばれた時は混雑してても普通に反応する
   if (!isMention && !isReply) chance *= crowdMultiplier(sortedMessages, client.user.id);
 
+  // ユーザーが直接リプライしてきた時は、アカウントごとの確率ばらつき
+  // (replyChanceMultiplier)も無視して確実に反応する。呼びかけられたのに
+  // 無視するのは不自然なため
+  if (isReply) return chance;
+
   return chance * (state.replyChanceMultiplier ?? 1);
 }
 

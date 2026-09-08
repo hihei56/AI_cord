@@ -364,11 +364,17 @@ async function getAIResponseOnce(
   // Discordの通常の雑談は長文より短文連投の方が自然で、複数行は機械的・説明的に見えやすい
   const lengthConstraint = '\n【重要】返信は必ず1行に収めること。改行して2行以上にしたり、長々と説明したりしない。';
 
+  // 計算問題や込み入った処理に一瞬で完璧な答えを返すと、いかにもAIっぽく見えて
+  // 不自然(人間はそんなに速く正確に暗算できない)。特に計算問題はわざと間違えたり、
+  // 自信なさげに答えるくらいがちょうどいい
+  const humanLikeConstraint =
+    '\n【重要】計算問題や込み入った処理を人間離れした速さ・正確さで解かない。特に計算問題は暗算のふりをして、わざと間違えるか「合ってるか自信ない」くらいの態度で答えること。';
+
   // 日付・曜日・時刻を伝えておくことで、「今日」「週末」「もう夜だし」のような
   // 時間感覚のある発言ができるようにする(これが無いとAIは常に日付不明のまま喋る)
   const dateSection = `\n【現在日時】${formatNowJST()}`;
 
-  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${dateSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${humanLikeConstraint}${dateSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
