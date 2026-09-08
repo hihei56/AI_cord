@@ -5,6 +5,8 @@ const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 const aiProvider = require('./aiProvider');
+const { formatNowJST } = require('./datetime');
+const { getRandomHeadline } = require('./newsTopics');
 
 // 「1行に収める」をプロンプト指示だけに頼らず、コード側で強制的に成形する。
 // 複数行に分かれていたら最初の1行だけを採用する(残りを繋げると逆に長くなるため
@@ -337,15 +339,14 @@ async function getAIResponseOnce(
     ? `\n【相手について】今話しかけてきた${speakerLabel}は人間ではなく、あなたと同じ仕組みで動いている別のAIチャットボットです。それを踏まえつつ、毎回律儀に指摘したりせず、いつも通り自分のキャラクターとして自然に会話を続けてください。`
     : '';
 
-  // 人格が設定されているアカウントは、返信の内容・話題自体を下書きベースに固定し、
-  // 口調・語尾・文法の整え方だけを人格設定に従わせる。「単語を1つ含める」程度の
-  // 緩い縛りだと、会話履歴の話題に釣られてLLMが下書きに無い具体的な話題(名詞等)を
-  // 勝手に作文してしまう(実際に発生した問題: 下書き「特殊名称つらかったね」に対し
-  // 会話履歴の「雨」「コーヒー」を持ち込んで全く別の話題の文を作ってしまった)。
-  // そのため、話題は下書き由来に固定することを明示的に禁止事項として強調する
+  // 何度か「下書きに厳密に従わせる」⇄「下書きを軽視させる」を行き来した末、
+  // 人格ありアカウントは下書きを軽い参考程度に格下げし、人格に従って自然に
+  // 喋らせる方針に落ち着いた。下書きの単語をそのまま使う義務は無く、会話の
+  // 流れに自然に応じてよい(それこそが本来自然な会話であるため)。人格の口調・
+  // キャラクターを保つことだけを最優先にする
   const draftSection =
     draft && accountState.persona
-      ? `\n【下書き(マルコフ連鎖生成、単語の並びや助詞がおかしいことが多い)】\n${draft}\n返信の話題・内容は必ずこの下書きをベースにすること。下書きに出てくる単語を最低1つはそのまま含める。会話履歴の話題につられて、下書きに出てこない具体的な話題や単語(名詞など)を新しく持ち込んで作文するのは禁止。口調・語尾・文法の整え方だけは人格設定を優先してよい。`
+      ? `\n【下書き(マルコフ連鎖生成、話題やニュアンスの軽い参考程度)】\n${draft}\nこの下書きはあくまで軽い参考であり、単語をそのまま使う必要は無い。会話の流れに自然に応じつつ、必ず自分の人格設定の口調・キャラクターで喋ること。`
       : draft
         ? `\n【下書き(マルコフ連鎖生成)】\n${draft}\n人格設定は無いので、上の下書きをベースに最低限の誤字脱字・助詞の修正だけを行って返信すること。単語の言い換え、文の作り直し、新しい話題や説明の追加はしないこと。下書きに無い一人称や主語を勝手に補わないこと。Discordの実際のユーザーの発言のように、丁寧な完全文に整えず、素っ気なく短いままにすること。`
         : '';
@@ -363,7 +364,11 @@ async function getAIResponseOnce(
   // Discordの通常の雑談は長文より短文連投の方が自然で、複数行は機械的・説明的に見えやすい
   const lengthConstraint = '\n【重要】返信は必ず1行に収めること。改行して2行以上にしたり、長々と説明したりしない。';
 
-  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  // 日付・曜日・時刻を伝えておくことで、「今日」「週末」「もう夜だし」のような
+  // 時間感覚のある発言ができるようにする(これが無いとAIは常に日付不明のまま喋る)
+  const dateSection = `\n【現在日時】${formatNowJST()}`;
+
+  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${dateSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -398,9 +403,22 @@ async function generateSelfTalkOnce(accountState = null) {
     // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
     // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
     // 呼び出し側は必ずaccountStateを渡すこと
+    const dateLine = `\n【現在日時】${formatNowJST()}`;
+
+    // 一定確率で実際のニュース見出しを話題のきっかけとして渡す。「最新の話題を
+    // AIが自分から作れるように」という要望への対応。丸ごと読み上げたり生真面目に
+    // 解説されると不自然なので、あくまで着想程度に留めるよう明示する
+    let newsLine = '';
+    if (Math.random() < (config.ai.selfTalk.newsTopicChance ?? 0)) {
+      const headline = await getRandomHeadline();
+      if (headline) {
+        newsLine = `\n【最近のニュース見出し(参考程度。丸ごと引用したり生真面目に解説したりしない)】${headline}`;
+      }
+    }
+
     const systemPrompt = accountState?.persona
-      ? `${accountState.persona}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
-      : 'あなたは適当な人間です。深く考えずに雑談します。';
+      ? `${accountState.persona}${dateLine}${newsLine}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
+      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}`;
 
     const text = await callChatCompletion(
       [

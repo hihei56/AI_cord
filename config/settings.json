@@ -49,6 +49,7 @@
     "intervalJitter": 0.4,
     "chance": 0.15,
     "imageChance": 0.3,
+    "newsTopicChance": 0.3,
     "animalTypes": ["cat", "dog", "fox", "bird"]
   },
   "markov": {
