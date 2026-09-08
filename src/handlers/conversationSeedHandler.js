@@ -108,7 +108,7 @@ async function seedConversation(clientA, clientB, channelId) {
   const opener = await generateSelfTalk(clientA.accountState);
   if (!opener) return;
 
-  await channelA.send(opener);
+  const openerMsg = await channelA.send(opener);
   recordReply(clientA.accountState, opener);
   logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
 
@@ -117,6 +117,9 @@ async function seedConversation(clientA, clientB, channelId) {
   let listener = clientA;
   let lastMsg = opener;
   let lastActionAt = Date.now();
+  // 直前に送信したメッセージ。次のターンでDiscordのリプライ機能を使って
+  // 参照することで、AI同士の掛け合いも実際の会話らしく繋がって見えるようにする
+  let lastSentMsg = openerMsg;
 
   const totalTurns = randomTurnCount();
 
@@ -142,7 +145,12 @@ async function seedConversation(clientA, clientB, channelId) {
     });
     if (!reply) break;
 
-    await channel.send(reply);
+    // 直前のメッセージへのリプライとして送る(失敗しても普通の投稿として送れれば良いので
+    // failIfNotExists: falseにし、参照先が既に削除されていてもエラーにしない)
+    lastSentMsg = await channel.send({
+      content: reply,
+      reply: { messageReference: lastSentMsg.id, failIfNotExists: false }
+    });
     recordReply(speaker.accountState, reply);
     logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
 
