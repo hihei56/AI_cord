@@ -32,6 +32,9 @@ function buildAccountState(account) {
     finetuneBaseUrl: account.finetuneBaseUrl,
     finetuneApiKey: account.finetuneApiKey,
     finetuneModel: account.finetuneModel,
+    // 同じプロバイダ内でアカウントごとに違うモデルを使い分けたい時の上書き先
+    // (.envのCHAT_MODEL[_N])。未指定ならプロバイダの既定モデルを使う
+    chatModel: account.chatModel,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる

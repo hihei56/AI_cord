@@ -91,6 +91,9 @@ function loadAccounts() {
       personaName: resolvePersonaName(process.env.PERSONA),
       corpusFile: process.env.CORPUS_FILE,
       presenceFile: process.env.PRESENCE_FILE,
+      // アカウント単位でAIモデルを上書きしたい場合(同じプロバイダ内で複数モデルを
+      // 使い分けたい時など)。未指定ならプロバイダの既定モデルをそのまま使う
+      chatModel: process.env.CHAT_MODEL,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
       replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER'),
       commandRoleIds: resolveCommandRoleIds(process.env.ALLOWED_COMMAND_ROLE_ID),
@@ -114,6 +117,7 @@ function loadAccounts() {
       personaName: resolvePersonaName(process.env[`PERSONA_${i}`]),
       corpusFile: process.env[`CORPUS_FILE_${i}`],
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
+      chatModel: process.env[`CHAT_MODEL_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
       replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`),
       commandRoleIds: resolveCommandRoleIds(process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`]),

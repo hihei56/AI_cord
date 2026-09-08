@@ -159,8 +159,12 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
 async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat' } = {}) {
   // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
   // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る。
-  // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う
-  const conn = baseUrl ? { provider: null, baseUrl, apiKey, model } : aiProvider.getConnection(kind);
+  // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う。
+  // baseUrl未指定でmodelだけ指定された場合(アカウント単位のCHAT_MODEL上書き)は、
+  // プロバイダの認証・接続先はそのままにモデル名だけ差し替える
+  const conn = baseUrl
+    ? { provider: null, baseUrl, apiKey, model }
+    : { ...aiProvider.getConnection(kind), ...(model ? { model } : {}) };
 
   const content = await requestChatCompletion(conn, messages, { temperature, maxTokens, logTag });
   if (content) return content;
@@ -367,8 +371,9 @@ async function getAIResponseOnce(
         { role: 'user', content: userMsg }
       ],
       // AI同士の掛け合い(partnerIsAi)はkind: 'seed'で区別する。プロバイダ振り分けは
-      // aiProvider側の設定に従う(現在はGroq一本)
-      { temperature, maxTokens, kind: partnerIsAi ? 'seed' : 'chat' }
+      // aiProvider側の設定に従う。modelはアカウント単位のCHAT_MODEL上書きがあれば
+      // それを使う(未設定ならプロバイダの既定モデルのまま)
+      { temperature, maxTokens, kind: partnerIsAi ? 'seed' : 'chat', model: accountState.chatModel }
     );
     if (reply) return toSingleLine(reply);
 
