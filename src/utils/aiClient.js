@@ -17,6 +17,12 @@ function toSingleLine(text) {
   return firstLine.length > maxLength ? firstLine.slice(0, maxLength) : firstLine;
 }
 
+// モデル側のチャットテンプレート制御トークンがそのまま応答本文に漏れてくることがある
+// (NVIDIA NIMのllama系モデル等で確認済み。例: "<|start_header_id|>assistant<|end_header_id|>")。
+// これが混ざった応答は文章として壊れているため、そのまま投稿せず失敗扱いにして
+// フォールバックチェーンの次のプロバイダに回す
+const RAW_TEMPLATE_TOKEN_RE = /<\|(?:start|end)_header_id\|>|<\|eot_id\|>|<\|im_(?:start|end)\|>/;
+
 // 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
 // 文字2-gramのJaccard類似度。句読点は既に返信側で除去済みなので単純比較でよい
 function textSimilarity(a, b) {
@@ -152,6 +158,11 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) {
     logger.error(logTag, `unexpected response shape (${conn.provider}): ${JSON.stringify(data)}`);
+    return null;
+  }
+
+  if (RAW_TEMPLATE_TOKEN_RE.test(content)) {
+    logger.error(logTag, `チャットテンプレート制御トークンが漏れた壊れた応答のため破棄 (${conn.provider}): ${content}`);
     return null;
   }
 

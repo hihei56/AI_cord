@@ -74,6 +74,11 @@ class MarkovChain {
     const keys = [...this.chain.keys()];
     let key = this.pickStartKey(keys, contextText);
     const result = key.split(' ');
+    // 生成途中で以前通ったキーに戻ってくると、そこから先は決定的な短い周期の
+    // ループに入り「AといらないAといらない…」のように同じフレーズを延々と
+    // 繰り返してしまう(pickStartKeyの自己増殖ループとは別原因)。
+    // 一度通ったキーに戻ったらそこで打ち切る
+    const usedKeys = new Set([key]);
 
     for (let i = 0; i < maxWords; i++) {
       const nexts = this.chain.get(key);
@@ -81,6 +86,8 @@ class MarkovChain {
       const next = nexts[Math.floor(Math.random() * nexts.length)];
       result.push(next);
       key = result.slice(-this.order).join(' ');
+      if (usedKeys.has(key)) break;
+      usedKeys.add(key);
     }
 
     // kuromojiの形態素は日本語として空白なしで繋げてこそ自然な文になる。
