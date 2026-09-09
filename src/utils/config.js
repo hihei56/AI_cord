@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('./logger');
 
 const CONFIG_DIR = path.join(__dirname, '..', '..', 'config');
 
@@ -20,9 +21,19 @@ function readPersona(personaName) {
 }
 
 // PERSONA[_N]を明示的に空文字か"none"にすると人格無し(null)になる。
-// 環境変数自体が未指定(undefined)の時だけ既定の'default'にフォールバックする
-function resolvePersonaName(envVal) {
-  if (envVal === undefined) return 'default';
+// 環境変数自体が未指定(undefined)の時だけ既定の'default'にフォールバックする。
+// このフォールバックは今まで完全にサイレントだったため、複数アカウント運用時に
+// PERSONA_Nの書き忘れ・タイプミスで意図せずdefaultペルソナのまま動いてしまい、
+// 「そのアカウントだけ人格が違う/消えた」ように見える実例が確認された
+// (pm2ログを見るだけでは気づけない)。envVarLabelを渡してもらい、起動時ログに
+// 警告として残すことで、同じ調査を毎回チャットで行わずに済むようにする
+function resolvePersonaName(envVal, envVarLabel) {
+  if (envVal === undefined) {
+    if (envVarLabel) {
+      logger.log('CONFIG', `⚠️ ${envVarLabel}が.envに未設定のため、既定のdefaultペルソナで起動します(意図した動作でなければ.envに${envVarLabel}を追加してください)`);
+    }
+    return 'default';
+  }
   if (envVal === '' || envVal.toLowerCase() === 'none') return null;
   return envVal;
 }
@@ -88,7 +99,7 @@ function loadAccounts() {
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
       testChannelId: process.env.TEST_CHANNEL_ID,
       allowedReplyUserIds: idListEnv(process.env.ALLOWED_REPLY_USER_IDS),
-      personaName: resolvePersonaName(process.env.PERSONA),
+      personaName: resolvePersonaName(process.env.PERSONA, 'PERSONA'),
       corpusFile: process.env.CORPUS_FILE,
       presenceFile: process.env.PRESENCE_FILE,
       // アカウント単位でAIモデルを上書きしたい場合(同じプロバイダ内で複数モデルを
@@ -114,7 +125,7 @@ function loadAccounts() {
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
       testChannelId: process.env[`TEST_CHANNEL_ID_${i}`],
       allowedReplyUserIds: idListEnv(process.env[`ALLOWED_REPLY_USER_IDS_${i}`]),
-      personaName: resolvePersonaName(process.env[`PERSONA_${i}`]),
+      personaName: resolvePersonaName(process.env[`PERSONA_${i}`], `PERSONA_${i}`),
       corpusFile: process.env[`CORPUS_FILE_${i}`],
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
       chatModel: process.env[`CHAT_MODEL_${i}`],

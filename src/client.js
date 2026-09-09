@@ -19,6 +19,10 @@ function createClients() {
       client.accountState = buildAccountState(account);
       registerClient(client);
       clients.push(client);
+      // 「このアカウントは実際どのペルソナで動いているか」をpm2ログから一目で
+      // 確認できるようにする(以前はPERSONA_Nの書き忘れがあっても起動ログに
+      // 一切出ず、Discord上の発言内容から逆算して気づくしかなかった)
+      logger.log('CLIENT', `[${account.id}] ペルソナ: ${account.personaName || '(なし)'}`);
     } catch (err) {
       logger.error('CLIENT', `[${account.id}] アカウントの初期化に失敗したためスキップします: ${err.message}`);
     }
