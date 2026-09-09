@@ -41,10 +41,22 @@ function textSimilarity(a, b) {
   return intersection / (ga.size + gb.size - intersection);
 }
 
+// ペルソナが「素っ気ない相槌が多い」のような性格設定を持つ場合、直近の発言との
+// 類似度チェック(リトライ)をすり抜けながらも「そう」「知らん」「へえ」等の
+// 同じ2〜3語だけの中身の無い返信を繰り返し投稿し続ける実例が確認された
+// (アカウントごとの口調のクセ+似た話しかけに反応することが重なり、
+// 数分おきにほぼ同じ一言を延々連投するスパム状態になっていた)。
+// ペルソナ側の対応(語彙の固定をやめる指示)だけでは他のペルソナでも同様の
+// 事態が起こりうるため、全アカウント共通のガードとしてここでも明示する
+const ANTI_FILLER_SPAM_CONSTRAINT =
+  '\n【重要】素っ気ない性格でも、相手の発言の中身を無視した「そう」「知らん」「へえ」「まあ」のような同じ単語だけの相槌を連発しないこと。反応が薄いキャラクターでも、その時々の話題に応じた違う言葉を選ぶこと。';
+
 const SIMILARITY_THRESHOLD = 0.6;
-const SIMILARITY_MAX_RETRY = 2;
-// bot臭さ対策として類似度チェック・プロンプトの「これは避けて」に渡す直近発言の保持件数
-const RECENT_REPLIES_MAX = 4;
+const SIMILARITY_MAX_RETRY = 3;
+// bot臭さ対策として類似度チェック・プロンプトの「これは避けて」に渡す直近発言の保持件数。
+// 4件だと、口癖への偏りが強いペルソナでは数分の間隔でも古い発言が枠から押し出されて
+// しまい、実質的に同じ短い相槌("そうそうかもな"等)を繰り返し投稿できてしまっていたため増やした
+const RECENT_REPLIES_MAX = 8;
 
 // 送信した発言をaccountState.recentRepliesに記録する。messageHandler/selfTalkHandler/
 // conversationSeedHandlerのどこから送っても同じ「直近の自分の発言」として扱うことで、
@@ -62,16 +74,21 @@ function isTooSimilarToRecent(text, recentReplies) {
 }
 
 // 生成関数を、直近の自分の発言と似すぎていたら数回まで再生成するようラップする。
-// それでも似てしまう場合は諦めてそのまま返す(無限リトライで詰まらせないため)
+// 以前は「それでも似てしまう場合は諦めてそのまま返す」実装だったが、ペルソナの
+// 口癖(「そう」「まあ」等)への偏りが強いアカウントだと、リトライしても毎回
+// 似た結果しか出せず、結局ほぼ同じ発言("そうそうかもな"等)を延々投稿し続ける
+// スパム状態になってしまう実例が確認された。似すぎたまま無理に投稿するより
+// 黙る方がマシなので、最終リトライでも似すぎている場合はnullを返して今回は
+// 見送る(完全な無反応になるのは他の対策で軽減する方針は他の箇所と同じ)
 async function withSimilarityRetry(accountState, logTag, generate) {
-  let result = null;
   for (let attempt = 0; attempt <= SIMILARITY_MAX_RETRY; attempt++) {
-    result = await generate();
+    const result = await generate();
     if (!result) return result;
     if (!isTooSimilarToRecent(result, accountState?.recentReplies)) return result;
     logger.log(logTag, `[${accountState?.id}] 直近の発言と似すぎているため再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY})`);
   }
-  return result;
+  logger.log(logTag, `[${accountState?.id}] リトライしても直近の発言と似すぎるため今回は投稿を見送る`);
+  return null;
 }
 
 // アカウント起動時に一度だけ呼ぶ。kuromojiの辞書読み込み+全行のトークン化は
@@ -427,7 +444,7 @@ async function getAIResponseOnce(
   // 連発のような浅い応酬になりがちなので、会話全体を貫く軸を持たせる
   const topicSection = topicHint ? `\n【この会話のお題(参考程度)】${topicHint}` : '';
 
-  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${roleSection}${lengthConstraint}${humanLikeConstraint}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${roleSection}${lengthConstraint}${humanLikeConstraint}${ANTI_FILLER_SPAM_CONSTRAINT}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -483,8 +500,8 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
       role === 'center' ? '\n具体的な話題や自分のエピソードを振って、相手が反応しやすい話しかけ方をすること。' : '';
 
     const systemPrompt = accountState?.persona
-      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
-      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}`;
+      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
+      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}`;
 
     const text = await callChatCompletion(
       [
