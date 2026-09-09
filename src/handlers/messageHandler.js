@@ -115,6 +115,15 @@ function registerMessageHandler(client) {
     const chance = isTestChannel ? 1 : resolveChance(msg, client, state, sorted);
     if (Math.random() > chance) return;
 
+    // cooldownチェック(100行目)はここまでの間にawait(履歴fetch等)を挟んでいるため、
+    // 別のメッセージが同時期に届くと両方とも古いlastReplyTimeを見て通過してしまい、
+    // 同じアカウントから返信が2連続で送られることが稀にあった。ここでawaitを挟まず
+    // 同期的に再チェック+即座に予約することで、以降の生成・送信が終わる前に
+    // 他のイベントがすり抜けるのを防ぐ(Nodeはシングルスレッドなので、
+    // このチェックと代入の間に他のmessageCreateハンドラが割り込むことはない)
+    if (!isTestChannel && Date.now() - state.lastReplyTime < effectiveCooldownMs) return;
+    state.lastReplyTime = Date.now();
+
     logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);
 
     try {
@@ -159,7 +168,6 @@ function registerMessageHandler(client) {
         reply: { messageReference: msg.id, failIfNotExists: false },
         allowedMentions: { repliedUser: false }
       });
-      state.lastReplyTime = Date.now();
       recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
 
