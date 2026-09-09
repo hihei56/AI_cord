@@ -105,13 +105,33 @@ async function humanInterruptedSince(client, channelId, sinceTimestamp) {
   }
 }
 
+// 進行中の掛け合いがあるチャンネルID。alwaysOnモードは短い間隔で次のfn()が
+// 発火するが、1回の掛け合いは複数ターン×turnDelayぶん時間がかかるため、
+// このロックが無いと同じチャンネルで2つの掛け合いが同時進行してしまい、
+// 互いのlastSentMsgが入れ替わって「直近メッセージではない古いメッセージへの
+// リプライ」が発生する(Aの返信を送った直後にBが割り込んで投稿し、その後
+// Aの次のターンが本来の直前メッセージ=Aの前回発言に返信すると、実際の
+// チャンネル最新メッセージはB由来のものになっているため見た目がズレる)
+const activeChannels = new Set();
+
 // 過疎ぎみのチャンネルでAI同士に何度か掛け合いをさせて連投気味に会話を起こす。
 // 通常のmessageCreateトリガーは経由しない(お互いに際限なく反応し合うのを防ぐため)。
 // 途中でユーザーが発言してきたら打ち切り、通常のmessageHandler(人間には普通に反応する)に譲る
 async function seedConversation(clientA, clientB, channelId) {
+  if (activeChannels.has(channelId)) return;
+
   const channelA = clientA.channels.cache.get(channelId);
   if (!channelA) return;
 
+  activeChannels.add(channelId);
+  try {
+    await runSeedConversation(clientA, clientB, channelId, channelA);
+  } finally {
+    activeChannels.delete(channelId);
+  }
+}
+
+async function runSeedConversation(clientA, clientB, channelId, channelA) {
   await showTyping(channelA, clientA.accountState.id);
 
   // 各ターンをその場しのぎで生成すると「そうだね」の連発のような浅い応酬に
