@@ -23,10 +23,12 @@ function createMemoryStore(accountId) {
   const state = load();
   state.users = state.users || {};
   state.topics = state.topics || [];
+  state.recentReplies = state.recentReplies || [];
 
   const MAX_RAW_NOTES = 8;
   const MAX_SUMMARY_NOTES = 6;
   const MAX_TOPICS = 12;
+  const MAX_RECENT_REPLIES = 4;
 
   function save() {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -78,6 +80,21 @@ function createMemoryStore(accountId) {
       if (!topic || state.topics.includes(topic)) return;
       state.topics.push(topic);
       if (state.topics.length > MAX_TOPICS) state.topics.shift();
+      save();
+    },
+
+    // 直近の自分の発言(bot臭さ対策の「同じ言い回し・絵文字を繰り返さない」チェック用)。
+    // 以前はaccountState上のメモリだけに保持しており、pm2再起動のたびに空になって
+    // いた。他の長期記憶(users/topics)と同じくファイルに永続化することで、
+    // 再起動を挟んでも直近の言い回しを覚えたままにする
+    getRecentReplies() {
+      return state.recentReplies;
+    },
+
+    addRecentReply(text) {
+      if (!text) return;
+      state.recentReplies.push(text);
+      if (state.recentReplies.length > MAX_RECENT_REPLIES) state.recentReplies.shift();
       save();
     }
   };
