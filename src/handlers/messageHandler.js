@@ -150,9 +150,15 @@ function registerMessageHandler(client) {
       const typingMs = Math.max(replyMinMs, Math.min(reply.length * perCharMs, capMs));
       await new Promise((r) => setTimeout(r, typingMs + Math.random() * jitterMs));
 
-      // msg.reply()だと相手にメンション通知が飛ぶ「リプライ」表示になり、それが毎回だと
-      // いかにもbotっぽいので、普通のメッセージとして送る(会話履歴で文脈は伝わる)
-      await msg.channel.send(reply);
+      // リプライ表示(誰への返信か分かるUI)は付けつつ、allowedMentions.repliedUserを
+      // falseにしてメンション通知は飛ばさない「サイレントリプライ」にする。
+      // 普通のmsg.reply()だと毎回通知が飛んでbotっぽく見えるが、通知無しなら
+      // 会話の繋がりを見せつつ不自然さも出ない
+      await msg.channel.send({
+        content: reply,
+        reply: { messageReference: msg.id, failIfNotExists: false },
+        allowedMentions: { repliedUser: false }
+      });
       state.lastReplyTime = Date.now();
       recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);

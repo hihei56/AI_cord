@@ -57,13 +57,15 @@ const PROVIDER_DEFAULTS = {
     // Cloudflareは接続先URLにAccount IDを含める必要があるため、他プロバイダと違い
     // baseUrlを動的に組み立てる(CLOUDFLARE_ACCOUNT_IDが無ければ空文字のまま=
     // 実質使用不可になる)。無料枠は1日10,000ニューロン(全モデル共通のプール、
-    // モデルサイズによって消費速度が変わる)、40RPM相当。実機でllama-3.3-70b-
-    // instruct-fp8-fastの動作を確認済み(llama-3.1-8b-instructは廃止済みだった)
+    // モデルサイズによって消費速度が変わる)、40RPM相当。llama-3.3-70b-instruct-
+    // fp8-fast(量子化・高速化版)は実際にトークンサラダ状態で出力が壊れる事例が
+    // 複数回発生したため、Groqと同じ系統でこのセッションを通して安定していた
+    // gpt-oss-120bに切り替えた
     baseUrl: process.env.CLOUDFLARE_ACCOUNT_ID
       ? `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/v1`
       : '',
     apiKeyEnv: 'CLOUDFLARE_API_KEY',
-    model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    model: '@cf/openai/gpt-oss-120b',
     visionModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
   }
 };
