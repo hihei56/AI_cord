@@ -536,7 +536,12 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
       }
     );
     if (!text) return null;
-    return text.replace(/\n/g, ' ').replace(/^["「]|["」]$/g, '');
+    // 通常の返信(getAIResponseOnce)はtoSingleLineで必ず1行・maxReplyLength以内に
+    // 切り詰めているが、自発投稿(独り言)はこの処理を通さず生のテキストをそのまま
+    // 返していた。モデルが暴走して長文を返すと、Discordの投稿上限(2000文字)を
+    // 超えて送信自体がエラーになることが実際にあったため、他の返信経路と同じく
+    // ここでも必ず1行・上限文字数以内に切り詰める
+    return toSingleLine(text.replace(/\n/g, ' ').replace(/^["「]|["」]$/g, ''));
   } catch (err) {
     logger.error('SELF-TALK AI', err);
     return null;
@@ -563,9 +568,14 @@ async function planConversationTopic(personaA, personaB) {
       'この2人がDiscordで交わす短い雑談のお題を1つだけ提案してください。日時やニュースを参考にしても、2人の人格に合いそうな全く別の話題でも構いません。' +
       '説明・前置き・理由は書かず、お題そのものだけを15文字以内の名詞句かフレーズで出力すること。';
 
+    // gpt-oss-120bのような推論モデルは、reasoning_effort:lowでも本文を出す前に
+    // 内部の"reasoning"に数十トークンを消費する。maxTokens: 60だとreasoningだけで
+    // 使い切ってしまい、finish_reason: "length" のままcontentが空文字になって
+    // 毎回失敗する実例が確認された(Groqの貴重な1日トークン枠も無駄になる)。
+    // reasoning分の余裕を見て引き上げる
     const topic = await callChatCompletion([{ role: 'user', content: prompt }], {
       temperature: 0.9,
-      maxTokens: 60,
+      maxTokens: 150,
       logTag: 'SEED-PLAN'
     });
     if (!topic) return null;
