@@ -23,6 +23,24 @@ function toSingleLine(text) {
 // フォールバックチェーンの次のプロバイダに回す
 const RAW_TEMPLATE_TOKEN_RE = /<\|(?:start|end)_header_id\|>|<\|eot_id\|>|<\|im_(?:start|end)\|>/;
 
+// 量子化・不安定なモデル(Cloudflareのfp8モデル等)が「トークンサラダ」状態で
+// 意味不明な多言語混在テキストを返すことが複数回確認された(例:
+// 「наслідетrі」のようなキリル文字の断片、「สtоn」のようなタイ文字の断片、
+// 「MonoBehaviour」「Javadoc」のようなプログラミング用語の断片混入)。
+// 特定の制御トークンのような分かりやすい印は無いため、代わりに「日本語チャットの
+// 返信としてまず出てこないはずの特徴」で検知する:
+// 1) 通常の日本語チャットには出現しないはずの文字体系(キリル文字/タイ文字/
+//    デーヴァナーガリー文字)が混ざっている
+// 2) 半角英数字の割合が異常に高い(識別子っぽい英単語の断片が大量に混じっている)
+const GARBLED_SCRIPT_RE = /[Ѐ-ӿ฀-๿ऀ-ॿ]/;
+function isGarbledOutput(text) {
+  if (GARBLED_SCRIPT_RE.test(text)) return true;
+
+  const asciiLetters = (text.match(/[A-Za-z]/g) || []).length;
+  const nonSpaceLength = text.replace(/\s/g, '').length;
+  return nonSpaceLength > 0 && asciiLetters / nonSpaceLength > 0.5;
+}
+
 // 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
 // 文字2-gramのJaccard類似度。句読点は既に返信側で除去済みなので単純比較でよい
 function textSimilarity(a, b) {
@@ -181,6 +199,11 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
 
   if (RAW_TEMPLATE_TOKEN_RE.test(content)) {
     logger.error(logTag, `チャットテンプレート制御トークンが漏れた壊れた応答のため破棄 (${conn.provider}): ${content}`);
+    return null;
+  }
+
+  if (isGarbledOutput(content)) {
+    logger.error(logTag, `トークンサラダ状態(多言語混在・意味不明)の壊れた応答のため破棄 (${conn.provider}): ${content}`);
     return null;
   }
 

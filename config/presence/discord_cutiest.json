@@ -1,0 +1,14 @@
+{
+  "updateIntervalMs": 30000,
+  "status": "online",
+  "spotifyTracks": [
+    {
+      "details": "Wonder Scale",
+      "state": "初星学園, 兼松衆, 倉本千奈",
+      "syncId": "1KkJAl2nkRGfgzxB5xOqIu",
+      "albumId": "3ntiCRYXav0isRFCKKlSLX",
+      "largeImage": "spotify:ab67616d0000b273e04e53af0d28efe8843449c3"
+    }
+  ],
+  "watching": null
+}
