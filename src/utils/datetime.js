@@ -18,4 +18,21 @@ function formatNowJST(date = new Date()) {
   return `${get('year')}年${get('month')}月${get('day')}日(${get('weekday')}) ${get('hour')}:${get('minute')}`;
 }
 
-module.exports = { formatNowJST, WEEKDAYS_JA };
+function hourJST(date = new Date()) {
+  return Number(new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false }).format(date));
+}
+
+// 時間帯ごとのざっくりした呼び名。挨拶(おはよう/おやすみ等)のきっかけとして
+// プロンプトに渡すためのラベルで、時刻そのもの(formatNowJST)と別に持たせておくと
+// 「6〜7時台=朝」のような判定をプロンプト側の文章から都度読み取らせずに済む
+function timeOfDayLabel(date = new Date()) {
+  const hour = hourJST(date);
+  if (hour >= 5 && hour < 7) return '早朝';
+  if (hour >= 7 && hour < 10) return '朝';
+  if (hour >= 10 && hour < 17) return '昼';
+  if (hour >= 17 && hour < 19) return '夕方';
+  if (hour >= 19 && hour < 23) return '夜';
+  return '深夜';
+}
+
+module.exports = { formatNowJST, timeOfDayLabel, WEEKDAYS_JA };

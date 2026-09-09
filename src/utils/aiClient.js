@@ -5,7 +5,7 @@ const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 const aiProvider = require('./aiProvider');
-const { formatNowJST } = require('./datetime');
+const { formatNowJST, timeOfDayLabel } = require('./datetime');
 const { getRandomHeadline } = require('./newsTopics');
 
 // 「1行に収める」をプロンプト指示だけに頼らず、コード側で強制的に成形する。
@@ -436,8 +436,12 @@ async function getAIResponseOnce(
     '\n【重要】計算問題や込み入った処理を人間離れした速さ・正確さで解かない。特に計算問題は暗算のふりをして、わざと間違えるか「合ってるか自信ない」くらいの態度で答えること。';
 
   // 日付・曜日・時刻を伝えておくことで、「今日」「週末」「もう夜だし」のような
-  // 時間感覚のある発言ができるようにする(これが無いとAIは常に日付不明のまま喋る)
-  const dateSection = `\n【現在日時】${formatNowJST()}`;
+  // 時間感覚のある発言ができるようにする(これが無いとAIは常に日付不明のまま喋る)。
+  // 時間帯ラベル(朝/夜等)も添えることで、早朝なら「おはよう」、深夜なら
+  // 「まだ起きてる」のような時間感覚の一言も自然に出せるようにする。ただし
+  // 毎回必ず時間帯に触れさせると「おはよう」の連発のような別のパターン化を
+  // 生みかねないため、あくまで参考程度・自然な時だけでよいと明示する
+  const dateSection = `\n【現在日時】${formatNowJST()}(${timeOfDayLabel()})。時間帯は参考程度。挨拶や時間の話をしたくなったら使ってよいが、毎回触れる必要はない。`;
 
   // AI同士の掛け合いでは、会話開始前にplanConversationTopicで決めたお題を
   // 全ターンで共有する。行き当たりばったりで各ターンを生成すると「そうだね」の
@@ -479,7 +483,11 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
     // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
     // 呼び出し側は必ずaccountStateを渡すこと
-    const dateLine = `\n【現在日時】${formatNowJST()}`;
+    // 自発投稿(独り言)は「話しかけられて答える」のではなく自分から発する一言なので、
+    // 通常の返信よりも時間帯に触れた挨拶・つぶやきが自然に出やすい場面。ただし
+    // ここでも毎回時間帯に触れさせると「おはよう」の連発になりかねないため、
+    // 参考程度・自然な時だけでよいと明示する
+    const dateLine = `\n【現在日時】${formatNowJST()}(${timeOfDayLabel()})。時間帯は参考程度。挨拶や時間の話をしたくなったら使ってよいが、毎回触れる必要はない。`;
 
     // topicHint(planConversationTopicで事前に決めたお題)があればそれを優先し、
     // 無い場合のみ一定確率で実際のニュース見出しを話題のきっかけとして渡す。
