@@ -145,19 +145,24 @@ function getConnection(kind = 'chat') {
   };
 }
 
-// getConnectionが返すプロバイダとは別の、APIキーが設定済みのプロバイダの接続情報を返す。
-// レート制限(429)等で主プロバイダが失敗した時のフォールバック用。無ければnull
-function getFallbackConnection(kind = 'chat') {
+// getConnectionが返すプロバイダとは別の、APIキーが設定済みの全プロバイダの接続情報を
+// 優先度順(PROVIDER_DEFAULTSの定義順)で返す。1つ目が429/404等で失敗しても次を
+// 試せるよう、フォールバック候補を「1つだけ」ではなく「残り全部」返す設計にしている
+// (以前は1つ試して失敗したらそこで諦めていたため、主プロバイダ+フォールバック先の
+// 両方が同時に落ちる複合障害に対応できなかった)
+function getFallbackChain(kind = 'chat') {
   const primary = getConnection(kind);
-  const fallbackName = availableProviders().find((name) => name !== primary.provider);
-  if (!fallbackName) return null;
-  const p = PROVIDER_DEFAULTS[fallbackName];
-  return {
-    provider: fallbackName,
-    baseUrl: p.baseUrl,
-    apiKey: apiKeyFor(fallbackName),
-    model: kind === 'vision' ? p.visionModel : p.model
-  };
+  return availableProviders()
+    .filter((name) => name !== primary.provider)
+    .map((name) => {
+      const p = PROVIDER_DEFAULTS[name];
+      return {
+        provider: name,
+        baseUrl: p.baseUrl,
+        apiKey: apiKeyFor(name),
+        model: kind === 'vision' ? p.visionModel : p.model
+      };
+    });
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackConnection, resolveProviderName };
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, resolveProviderName };

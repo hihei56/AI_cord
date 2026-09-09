@@ -172,15 +172,19 @@ async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, a
   if (content) return content;
 
   // baseUrlが明示指定されている(finetune等の専用接続先)場合はフォールバック対象外。
-  // それ以外はレート制限等の失敗時、APIキーが設定済みの別プロバイダで1回だけリトライする
-  // (Groqが1日のトークン上限に達しても、Geminiのキーがあれば会話が完全に止まらないようにする)
+  // それ以外はレート制限・404等の失敗時、APIキーが設定済みの他プロバイダを順番に
+  // 全部試す(1つ試して失敗したら諦める、ではなく残り全プロバイダを使い切るまで
+  // リトライする。主プロバイダとフォールバック先が同時に落ちる複合障害でも
+  // 3つ目・4つ目のプロバイダが生きていれば会話を止めないため)
   if (baseUrl) return null;
 
-  const fallback = aiProvider.getFallbackConnection(kind);
-  if (!fallback) return null;
+  for (const fallback of aiProvider.getFallbackChain(kind)) {
+    logger.log(logTag, `${conn.provider}が失敗したため${fallback.provider}にフォールバック`);
+    const fallbackContent = await requestChatCompletion(fallback, messages, { temperature, maxTokens, logTag });
+    if (fallbackContent) return fallbackContent;
+  }
 
-  logger.log(logTag, `${conn.provider}が失敗したため${fallback.provider}にフォールバック`);
-  return requestChatCompletion(fallback, messages, { temperature, maxTokens, logTag });
+  return null;
 }
 
 // 画像添付があった時だけ呼ぶ。普段の会話モデルとは別に、
