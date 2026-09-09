@@ -32,17 +32,20 @@ function isRealUserMessage(msg) {
   return !msg.author.bot && !isOwnAccount(msg.author.id);
 }
 
-// チャンネルが「盛り上げ対象」かどうか。直近の発言(誰のものでも良い)が
-// quietThresholdMs以上前なら対象。誰も一度も発言していない完全な無人チャンネルこそ
-// 最優先で賑やかすべき対象なので、「直近の発言が見つからない」場合もtrue扱いにする
-// (以前の実装は「人間の発言が見つからない」場合をfalse=対象外にしてしまっており、
-// 一番賑やかしたい無人チャンネルが逆に除外されるバグだった)
+// チャンネルが「盛り上げ対象」かどうか。「ユーザーが一定時間会話しなかったら
+// AI同士が自発的に会話する」という要件なので、直近の"人間の"発言が
+// quietThresholdMs以上前かどうかで判定する(AI同士の発言はここでは見ない。
+// AIが喋ってる間は"賑やか"扱いにしてしまうと、ユーザーが実際は何時間も
+// 発言していなくてもAI同士のやり取りだけで延々"賑やか"と誤判定され続けてしまうため)。
+// 直近フェッチした範囲に人間の発言が1件も無ければ、誰も一度も発言していない
+// 完全な無人チャンネルの可能性が高く、そここそ最優先で賑やかすべき対象なので
+// true(対象)扱いにする
 async function isChannelQuiet(channel) {
   try {
-    const recent = await channel.messages.fetch({ limit: 1 });
-    const last = recent.first();
-    if (!last) return true;
-    return Date.now() - last.createdTimestamp > QUIET_THRESHOLD_MS;
+    const recent = await channel.messages.fetch({ limit: 20 });
+    const lastHuman = [...recent.values()].find(isRealUserMessage);
+    if (!lastHuman) return true;
+    return Date.now() - lastHuman.createdTimestamp > QUIET_THRESHOLD_MS;
   } catch {
     return false;
   }
@@ -211,8 +214,13 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
 }
 
 // AIだけで常時チャットを動かす(config/settings.jsonのconversationSeed.alwaysOn)モード。
-// 有効な場合、trigger確率・過疎チェックを無視して、より短い間隔(alwaysOnIntervalMs)で
-// 必ず誰かのペアがどこかのチャンネルで会話を始める
+// 有効な場合、trigger確率を無視して、より短い間隔(alwaysOnIntervalMs)でチェックする。
+// ただし「ユーザーが一定時間会話しなかったらAI同士が自発的に会話する」という
+// 要件自体はalwaysOnかどうかに関わらず常に適用する(以前はalwaysOn時に
+// isChannelQuietの判定ごと丸ごとスキップしていたため、ユーザーが実際に
+// 会話中でもお構いなしにAI同士が割り込んで喋り続けてしまっていた)。
+// alwaysOnはあくまで「チェックの頻度を上げ、ダイス判定(triggerChance)を
+// 省略する」ことだけを意味し、ユーザーの発言を待つかどうかには関与しない
 function registerConversationSeedHandler(clients) {
   if (clients.length < 2) return;
 
@@ -231,7 +239,7 @@ function registerConversationSeedHandler(clients) {
     for (const channelId of channels) {
       const channel = clientA.channels.cache.get(channelId);
       if (!channel) continue;
-      if (ALWAYS_ON || (await isChannelQuiet(channel))) {
+      if (await isChannelQuiet(channel)) {
         // awaitせずファイア&フォーゲットにする: ここでawaitすると1つの掛け合いが
         // 終わるまで次のスケジュールが始まらず直列になってしまい、alwaysOnで
         // 短い間隔を設定しても複数の掛け合いが同時進行せず賑やかさが出ない
