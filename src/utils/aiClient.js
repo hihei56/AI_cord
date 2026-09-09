@@ -287,7 +287,7 @@ async function getAIResponseOnce(
   userMsg,
   history = [],
   speakerMsg = null,
-  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null } = {}
+  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null, role = null } = {}
 ) {
   if (accountState.aiMode === 'finetune') {
     if (!accountState.finetuneBaseUrl) {
@@ -354,6 +354,18 @@ async function getAIResponseOnce(
     ? `\n【相手について】今話しかけてきた${speakerLabel}は人間ではなく、あなたと同じ仕組みで動いている別のAIチャットボットです。それを踏まえつつ、毎回律儀に指摘したりせず、いつも通り自分のキャラクターとして自然に会話を続けてください。`
     : '';
 
+  // AI同士の掛け合いでは、両者が同じように話題を出そうとして噛み合わなかったり、
+  // 逆にお互い相槌ばかりで話が広がらなかったりしがちだった。会話ごとに
+  // 「話題を広げる中心役」「聞き役・相槌役」を明確に割り振ることで、
+  // 実際の雑談のような自然な役割分担を持たせる(役割自体はconversationSeedHandler側で
+  // 会話単位に決めて渡す。人格そのものは変えず、あくまで振る舞い方の指示)
+  const roleSection =
+    role === 'center'
+      ? '\n【この会話でのあなたの役割】あなたが話題の中心。自分の話や具体的なエピソードを振ったり、相手に質問したりして会話を引っ張ること。ただし1つの話題に固執しすぎず、自然に広げること。'
+      : role === 'reactor'
+        ? '\n【この会話でのあなたの役割】あなたは聞き役。相手の話に短く相槌を打ったり感想を返したりすることを中心にし、自分から新しい話題を広げすぎないこと。「へー」「それな」のような短い反応も普通に混ぜてよい。'
+        : '';
+
   // 何度か「下書きに厳密に従わせる」⇄「下書きを軽視させる」を行き来した末、
   // 人格ありアカウントは下書きを軽い参考程度に格下げし、人格に従って自然に
   // 喋らせる方針に落ち着いた。下書きの単語をそのまま使う義務は無く、会話の
@@ -394,7 +406,7 @@ async function getAIResponseOnce(
   // 連発のような浅い応酬になりがちなので、会話全体を貫く軸を持たせる
   const topicSection = topicHint ? `\n【この会話のお題(参考程度)】${topicHint}` : '';
 
-  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${lengthConstraint}${humanLikeConstraint}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${memorySection}${noGuidanceFallback}${antiRepeatSection}${aiPartnerSection}${roleSection}${lengthConstraint}${humanLikeConstraint}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -424,7 +436,7 @@ async function getAIResponse(accountState, userMsg, history = [], speakerMsg = n
   return withSimilarityRetry(accountState, 'AI', () => getAIResponseOnce(accountState, userMsg, history, speakerMsg, options));
 }
 
-async function generateSelfTalkOnce(accountState = null, topicHint = null) {
+async function generateSelfTalkOnce(accountState = null, topicHint = null, role = null) {
   try {
     // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
     // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
@@ -443,9 +455,15 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null) {
       }
     }
 
+    // AI同士の掛け合いの口火を切る発言。会話全体でこのアカウントが
+    // 「話題を広げる中心役」を割り振られている場合、その後の相手の相槌を
+    // 引き出しやすいよう、最初から具体的な話題・エピソードを振らせる
+    const roleLine =
+      role === 'center' ? '\n具体的な話題や自分のエピソードを振って、相手が反応しやすい話しかけ方をすること。' : '';
+
     const systemPrompt = accountState?.persona
-      ? `${accountState.persona}${dateLine}${newsLine}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
-      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}`;
+      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
+      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}`;
 
     const text = await callChatCompletion(
       [
@@ -466,8 +484,8 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null) {
 }
 
 // 自発投稿も直近の自分の発言と似すぎていたら再生成する
-async function generateSelfTalk(accountState = null, topicHint = null) {
-  return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState, topicHint));
+async function generateSelfTalk(accountState = null, topicHint = null, role = null) {
+  return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState, topicHint, role));
 }
 
 // AI同士の掛け合いを始める前に、賢いモデルで一度「今回何を話すか」を考えさせる。

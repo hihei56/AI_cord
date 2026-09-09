@@ -140,7 +140,14 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
   const topicHint = await planConversationTopic(clientA.accountState.persona, clientB.accountState.persona);
   if (topicHint) logger.log('SEED', `[${clientA.accountState.id}⇄${clientB.accountState.id}] お題: ${topicHint}`);
 
-  const opener = await generateSelfTalk(clientA.accountState, topicHint);
+  // この会話での役割分担: 両者が同じように話題を出そうとして噛み合わなかったり、
+  // 逆にお互い相槌ばかりで話が広がらなかったりするのを防ぐため、話を切り出す側
+  // (clientA=opener)を「話題を広げる中心役」、受け止める側(clientB)を
+  // 「聞き役・相槌役」に固定する。ペア自体はpickPair/pickRotationPairで毎回
+  // 入れ替わるため、長期的にはどのアカウントも両方の役を経験する
+  const roleOf = (client) => (client === clientA ? 'center' : 'reactor');
+
+  const opener = await generateSelfTalk(clientA.accountState, topicHint, 'center');
   if (!opener) return;
 
   const openerMsg = await channelA.send(opener);
@@ -178,7 +185,8 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
     const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
       partnerIsAi: true,
       speakerLabelOverride: resolveBotDisplayName(listener, channel),
-      topicHint
+      topicHint,
+      role: roleOf(speaker)
     });
     if (!reply) break;
 
