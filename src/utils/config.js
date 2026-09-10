@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('./logger');
 
 const CONFIG_DIR = path.join(__dirname, '..', '..', 'config');
 
@@ -10,8 +11,31 @@ function readText(relativePath) {
 const settings = JSON.parse(readText('settings.json'));
 const selfTalkPrompt = readText(path.join('prompts', 'self_talk.txt'));
 
+// personaNameがnull/空文字(人格を設定しないアカウント)ならファイルを読まず空文字を返す。
+// CORPUS_FILE[_N]は拡張子込みで書く仕様なのに対しPERSONA[_N]は拡張子無しの仕様なので、
+// 混同して".txt"を付けて指定されても二重拡張子(*.txt.txt)にならないよう吸収する
 function readPersona(personaName) {
-  return readText(path.join('personas', `${personaName}.txt`));
+  if (!personaName) return '';
+  const fileName = personaName.endsWith('.txt') ? personaName : `${personaName}.txt`;
+  return readText(path.join('personas', fileName));
+}
+
+// PERSONA[_N]を明示的に空文字か"none"にすると人格無し(null)になる。
+// 環境変数自体が未指定(undefined)の時だけ既定の'default'にフォールバックする。
+// このフォールバックは今まで完全にサイレントだったため、複数アカウント運用時に
+// PERSONA_Nの書き忘れ・タイプミスで意図せずdefaultペルソナのまま動いてしまい、
+// 「そのアカウントだけ人格が違う/消えた」ように見える実例が確認された
+// (pm2ログを見るだけでは気づけない)。envVarLabelを渡してもらい、起動時ログに
+// 警告として残すことで、同じ調査を毎回チャットで行わずに済むようにする
+function resolvePersonaName(envVal, envVarLabel) {
+  if (envVal === undefined) {
+    if (envVarLabel) {
+      logger.log('CONFIG', `⚠️ ${envVarLabel}が.envに未設定のため、既定のdefaultペルソナで起動します(意図した動作でなければ.envに${envVarLabel}を追加してください)`);
+    }
+    return 'default';
+  }
+  if (envVal === '' || envVal.toLowerCase() === 'none') return null;
+  return envVal;
 }
 
 function corpusPathFor(corpusFile) {
@@ -75,9 +99,12 @@ function loadAccounts() {
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
       testChannelId: process.env.TEST_CHANNEL_ID,
       allowedReplyUserIds: idListEnv(process.env.ALLOWED_REPLY_USER_IDS),
-      personaName: process.env.PERSONA || 'default',
+      personaName: resolvePersonaName(process.env.PERSONA, 'PERSONA'),
       corpusFile: process.env.CORPUS_FILE,
       presenceFile: process.env.PRESENCE_FILE,
+      // アカウント単位でAIモデルを上書きしたい場合(同じプロバイダ内で複数モデルを
+      // 使い分けたい時など)。未指定ならプロバイダの既定モデルをそのまま使う
+      chatModel: process.env.CHAT_MODEL,
       cooldownSecondsOverride: numEnv('COOLDOWN_SECONDS'),
       replyChanceMultiplierOverride: numEnv('REPLY_CHANCE_MULTIPLIER'),
       commandRoleIds: resolveCommandRoleIds(process.env.ALLOWED_COMMAND_ROLE_ID),
@@ -98,9 +125,10 @@ function loadAccounts() {
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
       testChannelId: process.env[`TEST_CHANNEL_ID_${i}`],
       allowedReplyUserIds: idListEnv(process.env[`ALLOWED_REPLY_USER_IDS_${i}`]),
-      personaName: process.env[`PERSONA_${i}`] || 'default',
+      personaName: resolvePersonaName(process.env[`PERSONA_${i}`], `PERSONA_${i}`),
       corpusFile: process.env[`CORPUS_FILE_${i}`],
       presenceFile: process.env[`PRESENCE_FILE_${i}`],
+      chatModel: process.env[`CHAT_MODEL_${i}`],
       cooldownSecondsOverride: numEnv(`COOLDOWN_SECONDS_${i}`),
       replyChanceMultiplierOverride: numEnv(`REPLY_CHANCE_MULTIPLIER_${i}`),
       commandRoleIds: resolveCommandRoleIds(process.env[`ALLOWED_COMMAND_ROLE_ID_${i}`]),

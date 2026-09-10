@@ -1,12 +1,15 @@
 const config = require('./utils/config');
 const { createChannelStore } = require('./utils/channelStore');
 const { createReminderStore } = require('./utils/reminderStore');
+const { createMemoryStore } = require('./utils/memoryStore');
 
 // アカウント1つ分の実行時状態(ペルソナ・コーパス・応答チャンネル・
 // クールダウン・ロックダウン・マルコフ連鎖・リマインダー)をひとまとめにする。
 // これをclientに紐付けることで、複数アカウントを同一プロセスで
 // 動かしてもお互いの状態が混ざらないようにする。
 function buildAccountState(account) {
+  const memoryStore = createMemoryStore(account.id);
+
   return {
     id: account.id,
     discordToken: account.discordToken,
@@ -31,14 +34,20 @@ function buildAccountState(account) {
     finetuneBaseUrl: account.finetuneBaseUrl,
     finetuneApiKey: account.finetuneApiKey,
     finetuneModel: account.finetuneModel,
+    // 同じプロバイダ内でアカウントごとに違うモデルを使い分けたい時の上書き先
+    // (.envのCHAT_MODEL[_N])。未指定ならプロバイダの既定モデルを使う
+    chatModel: account.chatModel,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
+    // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる
+    memoryStore,
     lastReplyTime: 0,
     lockedDown: false,
     markovChain: null,
     // 直近の自分の発言を数件保持し、同じ感嘆詞・絵文字の組み合わせを連発しないよう
-    // プロンプトに「これは避けて」として渡す(bot臭さ対策)
-    recentReplies: []
+    // プロンプトに「これは避けて」として渡す(bot臭さ対策)。memoryStoreの永続化ファイルから
+    // 読み込むことで、pm2再起動を挟んでも直近の言い回しを覚えたままにする
+    recentReplies: [...memoryStore.getRecentReplies()]
   };
 }
 

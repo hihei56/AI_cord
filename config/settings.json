@@ -1,10 +1,14 @@
 {
   "commandPrefix": "!",
+  "loginStagger": {
+    "minMs": 8000,
+    "maxMs": 30000
+  },
   "cooldownSeconds": 90,
   "cooldownJitter": 0.3,
   "replyChance": {
     "mention": 0.95,
-    "reply": 0.85,
+    "reply": 0.93,
     "normal": 0.35
   },
   "crowdGuard": {
@@ -33,10 +37,9 @@
   "conversationSeed": {
     "checkIntervalMs": 600000,
     "checkIntervalJitter": 0.4,
-    "alwaysOn": false,
-    "alwaysOnIntervalMs": 180000,
-    "humanQuietThresholdMs": 600000,
-    "humanActivityWindowMs": 3600000,
+    "alwaysOn": true,
+    "alwaysOnIntervalMs": 420000,
+    "quietThresholdMs": 600000,
     "triggerChance": 0.3,
     "minTurns": 3,
     "maxTurns": 6,
@@ -50,6 +53,7 @@
     "intervalJitter": 0.4,
     "chance": 0.15,
     "imageChance": 0.3,
+    "newsTopicChance": 0.3,
     "animalTypes": ["cat", "dog", "fox", "bird"]
   },
   "markov": {
@@ -67,7 +71,8 @@
       "temperature": 0.85,
       "maxTokens": 400,
       "historyContextSize": 5,
-      "historyFetchLimit": 10
+      "historyFetchLimit": 10,
+      "maxReplyLength": 60
     },
     "selfTalk": {
       "temperature": 1.3,
@@ -87,5 +92,16 @@
     "checkIntervalJitter": 0.3,
     "changeThresholdPercent": 5,
     "currency": "usd"
+  },
+  "mealPosts": {
+    "enabled": true,
+    "channelId": "1477176667066728518",
+    "folderBase": "config/mealImages",
+    "checkIntervalMs": 300000,
+    "meals": {
+      "breakfast": { "hour": 8, "jitterHours": 2, "label": "朝ごはん" },
+      "lunch": { "hour": 12, "jitterHours": 1, "label": "お昼ごはん" },
+      "dinner": { "hour": 18, "jitterHours": 1, "label": "晩ごはん" }
+    }
   }
 }

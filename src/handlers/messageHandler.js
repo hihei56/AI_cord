@@ -1,7 +1,8 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { getAIResponse, describeImage, recordReply } = require('../utils/aiClient');
+const { getAIResponse, describeImage, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { isOwnAccount } = require('../utils/ownAccounts');
+const { resolveDisplayName } = require('../utils/nicknames');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -52,6 +53,13 @@ function crowdMultiplier(sortedMessages, selfId) {
   return distinct.size >= minDistinctUsers ? backoffMultiplier : 1;
 }
 
+// config.replyChanceの値(mention/reply/normal)は固定の定数なので、そのまま
+// 使うと「外から見た反応率が常にきっちり同じ割合」になり、観測され続けると
+// 機械的なパターンとして見えやすい(実際に「反応が規則的すぎる」と指摘された)。
+// 判定のたびに±REPLY_CHANCE_JITTERの範囲でランダムに揺らして、人間の気分屋な
+// 反応頻度のようにばらつきを持たせる
+const REPLY_CHANCE_JITTER = 0.15;
+
 function resolveChance(msg, client, state, sortedMessages) {
   const isMention = msg.mentions.has(client.user.id);
   const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
@@ -60,8 +68,16 @@ function resolveChance(msg, client, state, sortedMessages) {
   if (isMention) chance = config.replyChance.mention;
   if (isReply) chance = config.replyChance.reply;
 
+  chance = Math.min(1, Math.max(0, chance * (1 + (Math.random() * 2 - 1) * REPLY_CHANCE_JITTER)));
+
   // メンション・リプライで直接呼ばれた時は混雑してても普通に反応する
   if (!isMention && !isReply) chance *= crowdMultiplier(sortedMessages, client.user.id);
+
+  // ユーザーが直接リプライしてきた時は、アカウントごとの確率ばらつき
+  // (replyChanceMultiplier)も無視してほぼ確実に反応する(呼びかけられたのに
+  // 無視するのは不自然なため)。ただしconfig側のreplyChance.replyを1未満に
+  // 下げれば、上のジッターと合わせてごく稀に反応しないこともあり得るようにできる
+  if (isReply) return chance;
 
   return chance * (state.replyChanceMultiplier ?? 1);
 }
@@ -109,6 +125,15 @@ function registerMessageHandler(client) {
     const chance = isTestChannel ? 1 : resolveChance(msg, client, state, sorted);
     if (Math.random() > chance) return;
 
+    // cooldownチェック(100行目)はここまでの間にawait(履歴fetch等)を挟んでいるため、
+    // 別のメッセージが同時期に届くと両方とも古いlastReplyTimeを見て通過してしまい、
+    // 同じアカウントから返信が2連続で送られることが稀にあった。ここでawaitを挟まず
+    // 同期的に再チェック+即座に予約することで、以降の生成・送信が終わる前に
+    // 他のイベントがすり抜けるのを防ぐ(Nodeはシングルスレッドなので、
+    // このチェックと代入の間に他のmessageCreateハンドラが割り込むことはない)
+    if (!isTestChannel && Date.now() - state.lastReplyTime < effectiveCooldownMs) return;
+    state.lastReplyTime = Date.now();
+
     logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);
 
     try {
@@ -144,12 +169,23 @@ function registerMessageHandler(client) {
       const typingMs = Math.max(replyMinMs, Math.min(reply.length * perCharMs, capMs));
       await new Promise((r) => setTimeout(r, typingMs + Math.random() * jitterMs));
 
-      // msg.reply()だと相手にメンション通知が飛ぶ「リプライ」表示になり、それが毎回だと
-      // いかにもbotっぽいので、普通のメッセージとして送る(会話履歴で文脈は伝わる)
-      await msg.channel.send(reply);
-      state.lastReplyTime = Date.now();
+      // リプライ表示(誰への返信か分かるUI)は付けつつ、allowedMentions.repliedUserを
+      // falseにしてメンション通知は飛ばさない「サイレントリプライ」にする。
+      // 普通のmsg.reply()だと毎回通知が飛んでbotっぽく見えるが、通知無しなら
+      // 会話の繋がりを見せつつ不自然さも出ない
+      await msg.channel.send({
+        content: reply,
+        reply: { messageReference: msg.id, failIfNotExists: false },
+        allowedMentions: { repliedUser: false }
+      });
       recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
+
+      // 長期記憶: このやり取りを記録し、生ログが溜まっていれば要約する。
+      // 返信を遅らせたくないのでawaitせずバックグラウンドで実行する
+      const speakerLabel = resolveDisplayName(msg.author, msg.member);
+      recordMemory(state, msg.author.id, speakerLabel, userMsg, reply);
+      compressUserMemoryIfNeeded(state, msg.author.id, speakerLabel).catch((err) => logger.error('MEMORY', err));
     } catch (err) {
       logger.error('MESSAGE', err);
     }

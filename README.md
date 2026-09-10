@@ -114,6 +114,9 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
 | `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
 | `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
+| `!slashbump add <botId> <command> [#channel] [表示名]` | 他BOT(Dissoku等)へのスラッシュコマンド自動送信を登録(省略時は今のチャンネル) |
+| `!slashbump remove <botId> [#channel]` / `!slashbump list` | 登録解除 / 登録一覧表示 |
+| `!slashbump now [botId] [#channel]` | クールダウンを無視して即時実行(省略時は登録済み全対象) |
 | `!help` | コマンド一覧を表示 |
 
 ### ユーザーへの呼び方(`config/nicknames.json`)
@@ -123,6 +126,14 @@ CORPUS_FILE_2=別のコーパスファイル名
 個別登録は`!nickname set`コマンドで行うのが基本(直接ファイルを編集しなくてよい)。手動で書く場合は`config/nicknames.json`に`{ "Discordユーザー ID": "呼び名" }`の形で追加する。
 
 `!nickname learn @user`は、そのユーザー宛てのメンション/リプライの中から「文頭付近の名前+敬称(〜ちゃん/くん/さん等)」というパターンをヒューリスティックに拾って集計するだけで、自動では登録しない(誤爆した呼び名をAIが覚えると気まずいため)。出てきた候補を見て、正しそうなものだけ`!nickname set`で確定させる運用。
+
+### 長期記憶(`src/utils/memoryStore.js`)
+
+アカウントごとに、話しかけてきたユーザーとのやり取りを`data/memory-<accountId>.json`に記録する。1往復ごとに要点だけの短い断片(「〇〇「発言の一部」→ 自分「返信の一部」」)を追記し、8件溜まるとLLMに1回投げてその人物の特徴・好み・口癖を3行以内の箇条書きに要約、生ログを置き換える。次回そのユーザーと話す時、システムプロンプトの【〇〇について覚えていること】セクションとして自動で渡される。要約後にまた生ログを追記すると、次の圧縮までは要約と生ログが混ざらないよう一旦リセットされる。
+
+### 自我・一貫性
+
+各ペルソナ(`config/personas/*.txt`)の冒頭に「自分について(一貫して守ること)」セクションを設け、生活リズム・価値観・態度の一貫性(素性をはぐらかす、意見をコロコロ変えない、等)を明記している。あわせて、返信は必ず1行に収めるようsystemPrompt側で強制している(`src/utils/aiClient.js`の`toSingleLine`、ペルソナ側の行数指定より優先)。
 
 ### AIバックエンドの切り替え(Groq / Gemini)
 
@@ -150,6 +161,15 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 初期監視銘柄は`priceAlert.defaultSymbols`(既定: `hype`, `ponz`, `zec`, `btc`)。`!pricealert add|remove`で運用中に増減でき、設定は`.env`ではなく`data/price-alerts.json`に永続化されるので、通知先チャンネル・銘柄構成の変更に`.env`編集や再起動は不要。
 
+### スラッシュコマンド自動送信(`!slashbump`)
+
+[disssoku](https://github.com/hihei56/disssoku)のbump(サーバー宣伝BOTへの`/up`等の自動送信)機能をAI_cordに統合したもの。`!slashbump add`で登録した対象(BOTのユーザーID・実行するスラッシュコマンド名・チャンネル)ごとに、`src/handlers/slashBumpHandler.js`が自動で実行し続ける。
+
+- 対象BOTからの応答メッセージを監視し、`successfully`を含めば成功、`please wait`/`cooldown`/`failed`/`error`等を含めばクールダウン中と判定する。クールダウン応答に`try again in N minutes/hours/days`のような記載があればその時間を読み取って次回実行時刻を調整し、読み取れなければ既定15分後にする
+- 応答が全く無い場合は30〜40分のランダムな間隔で再試行する
+- 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
+- 対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+
 ### `config/settings.json`(動作パラメータ)
 
 | セクション | 内容 |
@@ -170,12 +190,15 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 返信生成に使う人格・口調のシステムプロンプト。別人格を使いたい場合は同じディレクトリに新しいファイルを追加し、`.env` の `PERSONA` を切り替える。現在同梱されているのは `default`(率直・シニカル) / `gatts` / `original` / `suisui` / `discord_cutiest`(甘え上手で人懐っこい)。`discord_cutiest`アカウントは`config/corpus/Cutiest_discord.txt`をマルコフ下書き用コーパスとして使う想定なので、`.env`で該当アカウントの`PERSONA_N=discord_cutiest` / `CORPUS_FILE_N=Cutiest_discord.txt`をセットで指定する。
 
+`.env`の`PERSONA[_N]`を空文字(`PERSONA=`)か`none`にすると、そのアカウントは人格プロンプト無しで動く。人格・口調の指示が一切無い状態で、マルコフ下書き(有効な場合)を「最低限の誤字脱字修正+会話の流れへの整合」だけで補正した返信になる(`src/utils/aiClient.js`のdraftSection参照)。コーパスの口調をLLMの解釈で上書きさせたくない場合に使う。
+
 ### AI同士の掛け合い・常時チャットモード(`conversationSeed`)
 
 2アカウント以上動かしている時、`conversationSeedHandler.js`が定期的にランダムな2アカウントのペアを選び、共通の応答チャンネルで会話の掛け合いを起こす(`minTurns`〜`maxTurns`ターン、`continueChance`の確率で早めに切り上げ)。この掛け合いでは、相手のアカウントが人間ではなく別のAIチャットボットであることをプロンプトに明示しているので、AI同士が互いを人間だと誤認したような受け答えにはならない。
 
 - 通常時: `checkIntervalMs`ごとに`triggerChance`の確率で発火し、対象チャンネルが`quietThresholdMs`以上発言が無い(過疎ってる)時だけ会話を始める
 - `alwaysOn: true`にすると、この確率チェックと過疎チェックを両方無視し、より短い`alwaysOnIntervalMs`間隔で必ずどこかのペアが会話を始める(「AIだけで常時チャットを動かす」モード)。常時人間の発言を待たずにサーバーを賑やかに見せたい場合に使う。人間の発言に対する通常の返信ロジック(`messageHandler.js`)はそのまま生きているので、人間が話しかければ普通に反応する
+- 誰も一度も発言していない完全な無人チャンネルも「過疎ってる」判定に含まれる(むしろ最優先で賑やかす対象)。掛け合いの最中にユーザーが発言してきたら検知して打ち切り、そこからは通常の返信ロジックに譲る
 
 ### `config/prompts/self_talk.txt`
 
@@ -211,6 +234,7 @@ npm run markov:demo
 - `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
 - テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
 - 仮想通貨の価格アラート(`!pricealert`)。指定チャンネルで監視銘柄を一定間隔でチェックし、前回アラート時から±5%(既定)以上動いたら通知する
+- 他BOTへのスラッシュコマンド自動送信(`!slashbump`)。サーバー宣伝BOT等への`/up`を対象BOTの応答(成功/クールダウン)に応じて自動でスケジュールし続ける
 - 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)。返信までの間も`typingDelay.longPauseChance`の確率でたまに長考(既定15〜90秒)を挟み、毎回同じテンポで即レスしないようにしている
 - メッセージへの添付画像・URL貼り付け時のembed画像を読み取り、内容を踏まえて返信する(vision対応モデル経由。複数枚添付にも対応)
 - (任意)マルコフ連鎖による口調の下書き生成
