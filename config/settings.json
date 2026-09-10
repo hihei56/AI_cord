@@ -1,5 +1,9 @@
 {
   "commandPrefix": "!",
+  "loginStagger": {
+    "minMs": 8000,
+    "maxMs": 30000
+  },
   "cooldownSeconds": 90,
   "cooldownJitter": 0.3,
   "replyChance": {
