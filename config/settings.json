@@ -88,5 +88,16 @@
     "checkIntervalJitter": 0.3,
     "changeThresholdPercent": 5,
     "currency": "usd"
+  },
+  "mealPosts": {
+    "enabled": true,
+    "channelId": "1477176667066728518",
+    "folderBase": "config/mealImages",
+    "checkIntervalMs": 300000,
+    "meals": {
+      "breakfast": { "hour": 8, "jitterHours": 2, "label": "朝ごはん" },
+      "lunch": { "hour": 12, "jitterHours": 1, "label": "お昼ごはん" },
+      "dinner": { "hour": 18, "jitterHours": 1, "label": "晩ごはん" }
+    }
   }
 }
