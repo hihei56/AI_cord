@@ -53,6 +53,13 @@ function crowdMultiplier(sortedMessages, selfId) {
   return distinct.size >= minDistinctUsers ? backoffMultiplier : 1;
 }
 
+// config.replyChanceの値(mention/reply/normal)は固定の定数なので、そのまま
+// 使うと「外から見た反応率が常にきっちり同じ割合」になり、観測され続けると
+// 機械的なパターンとして見えやすい(実際に「反応が規則的すぎる」と指摘された)。
+// 判定のたびに±REPLY_CHANCE_JITTERの範囲でランダムに揺らして、人間の気分屋な
+// 反応頻度のようにばらつきを持たせる
+const REPLY_CHANCE_JITTER = 0.15;
+
 function resolveChance(msg, client, state, sortedMessages) {
   const isMention = msg.mentions.has(client.user.id);
   const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
@@ -61,12 +68,15 @@ function resolveChance(msg, client, state, sortedMessages) {
   if (isMention) chance = config.replyChance.mention;
   if (isReply) chance = config.replyChance.reply;
 
+  chance = Math.min(1, Math.max(0, chance * (1 + (Math.random() * 2 - 1) * REPLY_CHANCE_JITTER)));
+
   // メンション・リプライで直接呼ばれた時は混雑してても普通に反応する
   if (!isMention && !isReply) chance *= crowdMultiplier(sortedMessages, client.user.id);
 
   // ユーザーが直接リプライしてきた時は、アカウントごとの確率ばらつき
-  // (replyChanceMultiplier)も無視して確実に反応する。呼びかけられたのに
-  // 無視するのは不自然なため
+  // (replyChanceMultiplier)も無視してほぼ確実に反応する(呼びかけられたのに
+  // 無視するのは不自然なため)。ただしconfig側のreplyChance.replyを1未満に
+  // 下げれば、上のジッターと合わせてごく稀に反応しないこともあり得るようにできる
   if (isReply) return chance;
 
   return chance * (state.replyChanceMultiplier ?? 1);

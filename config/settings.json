@@ -4,7 +4,7 @@
   "cooldownJitter": 0.3,
   "replyChance": {
     "mention": 0.95,
-    "reply": 1,
+    "reply": 0.93,
     "normal": 0.35
   },
   "crowdGuard": {
