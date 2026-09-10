@@ -76,6 +76,12 @@ function scheduleNextBump(clients, target) {
   const delay = state.lastBumped > now ? state.lastBumped - now : randomInterval;
 
   state.timer = setTimeout(async () => {
+    // このタイマーはクールダウン明け(またはランダム間隔経過後)に再試行するために
+    // 予約したものなので、ここでcooldownActiveを解除する。解除しないと
+    // executeBump側が毎回cooldownActiveを理由にスキップし続けて実際には
+    // コマンドを二度と送信せず、対象Botからの"successfully"応答も二度と
+    // 来ないため、cooldownActiveが永久にtrueのまま固まってしまう
+    state.cooldownActive = false;
     await executeBump(clients, target);
     scheduleNextBump(clients, target);
   }, delay);

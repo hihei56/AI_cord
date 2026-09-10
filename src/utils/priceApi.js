@@ -60,8 +60,16 @@ async function resolveSymbol(symbol, manualOverride) {
   if (!resolved) resolved = await searchCoinGecko(s);
   if (!resolved) resolved = await searchDexScreener(s);
 
+  // 解決に失敗した場合(一時的なネットワークエラー・APIのレート制限等も含む)は
+  // キャッシュしない。キャッシュしてしまうと、原因が一時的なものでも次回以降の
+  // チェックで自動的に再試行されず、プロセスを再起動するか!pricealert setidで
+  // 手動指定するまで永久に「取得失敗」のまま固定されてしまうため
+  if (!resolved) {
+    logger.error('PRICE', `銘柄"${symbol}"を自動解決できませんでした(CoinGecko/DexScreenerとも該当なし)`);
+    return null;
+  }
+
   resolvedCache.set(s, resolved);
-  if (!resolved) logger.error('PRICE', `銘柄"${symbol}"を自動解決できませんでした(CoinGecko/DexScreenerとも該当なし)`);
   return resolved;
 }
 

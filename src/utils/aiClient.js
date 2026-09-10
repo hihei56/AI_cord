@@ -167,26 +167,38 @@ function getMarkovDraft(accountState, contextText = '') {
 // 1回分のchat completionsリクエストを送る薄いラッパー。成功/失敗を例外ではなく
 // 戻り値で表現し、呼び出し側(callChatCompletion)でフォールバック判断に使う
 async function requestChatCompletion(conn, messages, { temperature, maxTokens, logTag }) {
-  const res = await fetch(`${conn.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${conn.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: conn.model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      // reasoning_effortはGroqのreasoningモデル(gpt-oss等)専用パラメータ。Gemini等の
-      // 他プロバイダや、Groqでもllama-3.1-8b-instantのような非reasoningモデルに送ると
-      // エラーになりうるため、プロバイダがgroqかつモデル名に'gpt-oss'を含む時だけ付与する
-      ...(conn.provider === 'groq' && conn.model?.includes('gpt-oss') && config.ai.reasoningEffort
-        ? { reasoning_effort: config.ai.reasoningEffort }
-        : {})
-    })
-  });
-  const data = await res.json();
+  // fetch自体の失敗(タイムアウト・DNS失敗等)やres.json()の失敗(APIゲートウェイが
+  // 障害時にJSON以外のエラーページを返す等)がここで例外として投げられると、
+  // 呼び出し元(callChatCompletion)のフォールバックループに入る前に処理全体が
+  // 中断されてしまい、「他のプロバイダが生きていれば会話を止めない」という
+  // フォールバック機構の目的を果たせなくなる。そのため他の失敗パターン(HTTPエラー等)
+  // と同じくnullを返して呼び出し元でフォールバックを継続できるようにする
+  let res, data;
+  try {
+    res = await fetch(`${conn.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${conn.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: conn.model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        // reasoning_effortはGroqのreasoningモデル(gpt-oss等)専用パラメータ。Gemini等の
+        // 他プロバイダや、Groqでもllama-3.1-8b-instantのような非reasoningモデルに送ると
+        // エラーになりうるため、プロバイダがgroqかつモデル名に'gpt-oss'を含む時だけ付与する
+        ...(conn.provider === 'groq' && conn.model?.includes('gpt-oss') && config.ai.reasoningEffort
+          ? { reasoning_effort: config.ai.reasoningEffort }
+          : {})
+      })
+    });
+    data = await res.json();
+  } catch (err) {
+    logger.error(logTag, `リクエスト失敗 (${conn.provider}): ${err.message}`);
+    return null;
+  }
 
   if (!res.ok) {
     logger.error(logTag, `HTTP ${res.status} ${res.statusText} (${conn.provider}): ${JSON.stringify(data)}`);

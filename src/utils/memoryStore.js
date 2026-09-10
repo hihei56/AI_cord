@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('./logger');
 
 function storePath(accountId) {
   return path.join(__dirname, '..', '..', 'data', `memory-${accountId}.json`);
@@ -30,9 +31,20 @@ function createMemoryStore(accountId) {
   const MAX_TOPICS = 12;
   const MAX_RECENT_REPLIES = 4;
 
+  // 返信のたびに(addUserNote/addRecentReply経由で)呼ばれるため、同期的な
+  // fs.writeFileSyncだとNode.jsのイベントループをその都度ブロックしてしまい、
+  // 複数アカウント運用時は1アカウントの保存中に他アカウントのメッセージ処理も
+  // 止まってしまう。非同期writeに切り替えつつ、呼び出し元の関数シグネチャは
+  // 変えたくない(いちいちawaitさせたくない)ので、書き込みをキューに繋げて
+  // 直列実行することで、非同期化しつつ複数の書き込みが競合して古い状態で
+  // 上書きされる(=後から完了した古い書き込みで最新の状態が消える)ことを防ぐ
+  let writeQueue = Promise.resolve();
   function save() {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
+    const snapshot = JSON.stringify(state, null, 2);
+    writeQueue = writeQueue
+      .then(() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }))
+      .then(() => fs.promises.writeFile(filePath, snapshot))
+      .catch((err) => logger.error('MEMORY', err));
   }
 
   function ensureUser(userId) {
