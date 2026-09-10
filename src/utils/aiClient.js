@@ -30,15 +30,23 @@ const RAW_TEMPLATE_TOKEN_RE = /<\|(?:start|end)_header_id\|>|<\|eot_id\|>|<\|im_
 // 特定の制御トークンのような分かりやすい印は無いため、代わりに「日本語チャットの
 // 返信としてまず出てこないはずの特徴」で検知する:
 // 1) 通常の日本語チャットには出現しないはずの文字体系(キリル文字/タイ文字/
-//    デーヴァナーガリー文字)が混ざっている
-// 2) 半角英数字の割合が異常に高い(識別子っぽい英単語の断片が大量に混じっている)
+//    デーヴァナーガリー文字)が混ざっている(短文でも誤検知リスクがほぼ無いため
+//    長さを問わず判定する)
+// 2) 半角英数字の割合が異常に高い(識別子っぽい英単語の断片が大量に混じっている)。
+//    ただしこちらは「www」「OK」「lol」のような日本語チャットでごく普通に使う
+//    短い全角無しリアクションまで誤検知してしまい(=正常な投稿が黙って握り
+//    潰される)実際に投稿頻度が落ちる原因になったため、ある程度長い文章
+//    (下書きや通常会話でまず出ない長さ)にだけ適用する
 const GARBLED_SCRIPT_RE = /[Ѐ-ӿ฀-๿ऀ-ॿ]/;
+const GARBLED_ASCII_RATIO_MIN_LENGTH = 20;
 function isGarbledOutput(text) {
   if (GARBLED_SCRIPT_RE.test(text)) return true;
 
-  const asciiLetters = (text.match(/[A-Za-z]/g) || []).length;
   const nonSpaceLength = text.replace(/\s/g, '').length;
-  return nonSpaceLength > 0 && asciiLetters / nonSpaceLength > 0.5;
+  if (nonSpaceLength < GARBLED_ASCII_RATIO_MIN_LENGTH) return false;
+
+  const asciiLetters = (text.match(/[A-Za-z]/g) || []).length;
+  return asciiLetters / nonSpaceLength > 0.5;
 }
 
 // 直近の自分の発言と似すぎていないか(=機械的な連投に見えないか)のチェック用。
