@@ -40,7 +40,10 @@ async function checkMeal(channel, mealKey, mealConfig, folderBase) {
 
   if (hourOfDayJST() < target) return;
 
-  const folderPath = path.join(__dirname, '..', '..', folderBase, mealKey);
+  // 朝食/昼食/夕食で画像を分けて管理する必要はない(食事の写真は見た目だけでは
+  // 時間帯を区別できないため)、投稿するタイミング(hour/jitterHours)だけを
+  // mealKeyごとに分け、画像は全mealKeyで共通の1つのフォルダから選ぶ
+  const folderPath = path.join(__dirname, '..', '..', folderBase);
   const images = listImages(folderPath);
   if (images.length === 0) {
     logger.error('MEALPOST', `[${mealKey}] ${folderPath} に画像が無いため投稿をスキップ`);
