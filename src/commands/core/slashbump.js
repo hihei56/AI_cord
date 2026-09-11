@@ -11,7 +11,7 @@ module.exports = {
   name: 'slashbump',
   aliases: ['bump'],
   description:
-    '他BOTへのスラッシュコマンドを自動送信(disssokuのbump機能相当)。!slashbump add <botId> <command> [#channel] [表示名] / remove <botId> [#channel] / list / now [botId] [#channel]',
+    '他BOTへのスラッシュコマンドを自動送信(disssokuのbump機能相当)。!slashbump add <botId> <command> [#channel] [表示名] (同じbotId×チャンネルに再度addするとコマンド/表示名を上書き更新) / remove <botId> [#channel] / list / now [botId] [#channel]',
   async execute(msg, args) {
     const sub = args[0]?.toLowerCase();
 
@@ -32,8 +32,10 @@ module.exports = {
       }
       const name = nameArgs.join(' ') || botId;
 
-      const target = store.addTarget({ botId, command, channelId, name });
-      if (!target) return msg.channel.send('⚠️ 既に同じBOT×チャンネルの組み合わせが登録済みです');
+      const { target, created } = store.addTarget({ botId, command, channelId, name });
+      if (!created) {
+        return msg.channel.send(`♻️ 更新: ${name}(${botId}) を <#${channelId}> で /${command} を自動実行するよう変更しました`);
+      }
 
       bumpHandler.startTarget(target);
       return msg.channel.send(`✅ 追加: ${name}(${botId}) の /${command} を <#${channelId}> で自動実行`);
@@ -70,7 +72,7 @@ module.exports = {
 
     return msg.channel.send(
       '使い方:\n' +
-        '!slashbump add <botId> <command> [#channel] [表示名] (省略時は今のチャンネル)\n' +
+        '!slashbump add <botId> <command> [#channel] [表示名] (省略時は今のチャンネル。既に登録済みなら上書き更新)\n' +
         '!slashbump remove <botId> [#channel]\n' +
         '!slashbump list\n' +
         '!slashbump now [botId] [#channel] (省略時は全対象、クールダウン無視で即時実行)'

@@ -31,11 +31,23 @@ function findTarget(botId, channelId) {
   return state.targets.find((t) => t.botId === botId && t.channelId === channelId);
 }
 
+// 既にbotId×channelIdの組み合わせが登録済みなら、実行中のタイマーが参照している
+// 同じオブジェクトをその場で書き換えて更新する(command/nameの変更を!slashbump add
+// のやり直しだけで反映できるようにするため。以前はこの場合を「登録済みエラー」で
+// 拒否するだけで、コマンドや表示名を変えたい時に一度removeしてからでないと
+// 再設定できず不便だった)。channelIdはキーの一部なので変えられない
+// (別チャンネルにしたい場合はremoveしてから新しい組み合わせでaddする)
 function addTarget(target) {
-  if (findTarget(target.botId, target.channelId)) return null;
+  const existing = findTarget(target.botId, target.channelId);
+  if (existing) {
+    existing.command = target.command;
+    existing.name = target.name;
+    save();
+    return { target: existing, created: false };
+  }
   state.targets.push(target);
   save();
-  return target;
+  return { target, created: true };
 }
 
 function removeTarget(botId, channelId) {
