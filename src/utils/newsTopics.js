@@ -50,4 +50,20 @@ async function getRandomHeadline() {
   return cachedHeadlines[Math.floor(Math.random() * cachedHeadlines.length)];
 }
 
-module.exports = { getRandomHeadline };
+// 会話のお題選定(planConversationTopic)用に、重複無しでcount件をランダムに返す。
+// 1件だけだと話題として弱い(社会面の硬いニュース等)時にLLMが避けようが無いが、
+// 複数候補から選ばせることで「その中で一番雑談にしやすそうなもの」を拾いやすくする
+function getRandomHeadlines(count) {
+  if (cachedHeadlines.length === 0) return [];
+  const shuffled = [...cachedHeadlines].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+async function getHeadlines(count) {
+  if (Date.now() - lastFetchedAt > REFRESH_INTERVAL_MS) {
+    await refreshHeadlines();
+  }
+  return getRandomHeadlines(count);
+}
+
+module.exports = { getRandomHeadline, getHeadlines };

@@ -6,7 +6,7 @@ const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 const aiProvider = require('./aiProvider');
 const { formatNowJST, timeOfDayLabel } = require('./datetime');
-const { getRandomHeadline } = require('./newsTopics');
+const { getRandomHeadline, getHeadlines } = require('./newsTopics');
 
 // 「1行に収める」をプロンプト指示だけに頼らず、コード側で強制的に成形する。
 // 複数行に分かれていたら最初の1行だけを採用する(残りを繋げると逆に長くなるため
@@ -589,12 +589,19 @@ async function generateSelfTalk(accountState = null, topicHint = null, role = nu
 async function planConversationTopic(personaA, personaB) {
   try {
     const dateLine = `【現在日時】${formatNowJST()}`;
-    const headline = await getRandomHeadline();
-    const newsLine = headline ? `\n【最近のニュース見出し】${headline}` : '';
+    // 1件だけだと硬いニュース(政治・事件等)しか無くLLMが結局避けて毎回同じような
+    // 一般的な世間話に流れがちだったため、複数候補から雑談にしやすいものを
+    // 選ばせるようにした。候補が無ければ従来通りニュース抜きで進行する
+    const headlines = await getHeadlines(4);
+    const newsLine =
+      headlines.length > 0 ? `\n【最近のニュース見出し(候補)】\n${headlines.map((h) => `- ${h}`).join('\n')}` : '';
 
     const prompt =
       `${dateLine}${newsLine}\n【キャラクター1の人格】${personaA || '(人格設定なし)'}\n【キャラクター2の人格】${personaB || '(人格設定なし)'}\n\n` +
-      'この2人がDiscordで交わす短い雑談のお題を1つだけ提案してください。日時やニュースを参考にしても、2人の人格に合いそうな全く別の話題でも構いません。' +
+      'この2人がDiscordで交わす短い雑談のお題を1つだけ提案してください。' +
+      (headlines.length > 0
+        ? '上のニュース見出し候補の中に雑談にしやすそうなものがあればそれを優先して膨らませてください。政治・事件・訃報のような重すぎる話題は避け、2人の人格に合いそうな全く別の話題にしても構いません。'
+        : '2人の人格に合いそうな話題を自由に考えてください。') +
       '説明・前置き・理由は書かず、お題そのものだけを15文字以内の名詞句かフレーズで出力すること。';
 
     // gpt-oss-120bのような推論モデルは、reasoning_effort:lowでも本文を出す前に

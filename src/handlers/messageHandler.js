@@ -3,6 +3,7 @@ const logger = require('../utils/logger');
 const { getAIResponse, describeImage, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
+const { pickReactionEmoji } = require('../utils/reactionEmoji');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -82,13 +83,56 @@ function resolveChance(msg, client, state, sortedMessages) {
   return chance * (state.replyChanceMultiplier ?? 1);
 }
 
+// リアクションは返信と違い後続の会話を生まない(新たなメッセージを発生させない)ため、
+// 兄弟アカウント(他の自分のアカウント)の発言に対しても付けてよい。ただし本物の
+// Bot(Dissoku等、自分たちのアカウント以外のbot)には毎回律儀に反応すると
+// 不自然なので除外する。TupperboxのようなWebhookプロキシ経由の発言は実際の
+// ユーザーの発言として扱う(isRealUserと同じ考え方)
+function isReactableMessage(msg) {
+  if (msg.author.bot && !msg.webhookId && !isOwnAccount(msg.author.id)) return false;
+  return true;
+}
+
+const REACTION_CHANCE_JITTER = 0.4;
+
+function resolveReactionChance() {
+  const base = config.reactions?.chance ?? 0;
+  const jitterRatio = config.reactions?.chanceJitter ?? REACTION_CHANCE_JITTER;
+  return Math.min(1, Math.max(0, base * (1 + (Math.random() * 2 - 1) * jitterRatio)));
+}
+
+async function maybeReact(msg, state) {
+  if (!config.reactions?.enabled) return;
+  if (Math.random() > resolveReactionChance()) return;
+  try {
+    await msg.react(pickReactionEmoji(msg.content));
+  } catch (err) {
+    logger.error('REACTION', `[${state.id}] ${err.message}`);
+  }
+}
+
 function registerMessageHandler(client) {
   const state = client.accountState;
 
   client.on('messageCreate', async (msg) => {
     if (msg.author.id === client.user.id) return;
-    // 兄弟アカウント(他の自分のアカウント)の発言には通常の確率ロジックで
-    // 反応しない。両アカウントが互いに際限なく返信し続けるのを防ぐため。
+
+    // リアクションだけは返信ロジック(cooldown・crowdGuard・兄弟アカウント除外等)とは
+    // 独立して判定する。await を挟まないここまでのガードだけ満たせば良い軽量な処理なので、
+    // 返信するかどうかの重い判定より先に済ませてしまう
+    if (
+      !state.lockedDown &&
+      msg.guild?.id === state.allowedGuildId &&
+      isReactableMessage(msg) &&
+      (Boolean(state.testChannelId) && msg.channel.id === state.testChannelId
+        ? true
+        : state.channelStore.isAllowedChannel(msg.channel.id))
+    ) {
+      maybeReact(msg, state).catch((err) => logger.error('REACTION', err));
+    }
+
+    // 兄弟アカウント(他の自分のアカウント)の発言には、ここから先の通常の返信確率
+    // ロジックでは反応しない。両アカウントが互いに際限なく返信し続けるのを防ぐため。
     // 意図的な掛け合いは conversationSeedHandler が専用ルートで行う。
     if (isOwnAccount(msg.author.id)) return;
     if (state.lockedDown) return;

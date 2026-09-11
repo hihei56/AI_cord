@@ -24,7 +24,9 @@ const {
   maxTurns: MAX_TURNS,
   continueChance: CONTINUE_CHANCE,
   turnDelayMinMs: TURN_DELAY_MIN_MS,
-  turnDelayMaxMs: TURN_DELAY_MAX_MS
+  turnDelayMaxMs: TURN_DELAY_MAX_MS,
+  botReplyChance: BOT_REPLY_CHANCE = 0,
+  botReplyCooldownMs: BOT_REPLY_COOLDOWN_MS = 600000
 } = config.conversationSeed;
 
 // 本物のユーザー(botでも自アカウント群でもない)の発言か
@@ -117,57 +119,11 @@ async function humanInterruptedSince(client, channelId, sinceTimestamp) {
 // チャンネル最新メッセージはB由来のものになっているため見た目がズレる)
 const activeChannels = new Set();
 
-// 過疎ぎみのチャンネルでAI同士に何度か掛け合いをさせて連投気味に会話を起こす。
-// 通常のmessageCreateトリガーは経由しない(お互いに際限なく反応し合うのを防ぐため)。
-// 途中でユーザーが発言してきたら打ち切り、通常のmessageHandler(人間には普通に反応する)に譲る
-async function seedConversation(clientA, clientB, channelId) {
-  if (activeChannels.has(channelId)) return;
-
-  const channelA = clientA.channels.cache.get(channelId);
-  if (!channelA) return;
-
-  activeChannels.add(channelId);
-  try {
-    await runSeedConversation(clientA, clientB, channelId, channelA);
-  } finally {
-    activeChannels.delete(channelId);
-  }
-}
-
-async function runSeedConversation(clientA, clientB, channelId, channelA) {
-  await showTyping(channelA, clientA.accountState.id);
-
-  // 各ターンをその場しのぎで生成すると「そうだね」の連発のような浅い応酬に
-  // なりがちなので、会話を始める前に一度お題を決めて全ターンで共有する。
-  // 失敗してもnullのまま(お題無し)で従来通り進行する
-  const topicHint = await planConversationTopic(clientA.accountState.persona, clientB.accountState.persona);
-  if (topicHint) logger.log('SEED', `[${clientA.accountState.id}⇄${clientB.accountState.id}] お題: ${topicHint}`);
-
-  // この会話での役割分担: 両者が同じように話題を出そうとして噛み合わなかったり、
-  // 逆にお互い相槌ばかりで話が広がらなかったりするのを防ぐため、話を切り出す側
-  // (clientA=opener)を「話題を広げる中心役」、受け止める側(clientB)を
-  // 「聞き役・相槌役」に固定する。ペア自体はpickPair/pickRotationPairで毎回
-  // 入れ替わるため、長期的にはどのアカウントも両方の役を経験する
-  const roleOf = (client) => (client === clientA ? 'center' : 'reactor');
-
-  const opener = await generateSelfTalk(clientA.accountState, topicHint, 'center');
-  if (!opener) return;
-
-  const openerMsg = await channelA.send(opener);
-  recordReply(clientA.accountState, opener);
-  logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
-
-  const history = [{ author: { username: resolveBotDisplayName(clientA, channelA) }, content: opener }];
-  let speaker = clientB;
-  let listener = clientA;
-  let lastMsg = opener;
-  let lastActionAt = Date.now();
-  // 直前に送信したメッセージ。次のターンでDiscordのリプライ機能を使って
-  // 参照することで、AI同士の掛け合いも実際の会話らしく繋がって見えるようにする
-  let lastSentMsg = openerMsg;
-
-  const totalTurns = randomTurnCount();
-
+// 掛け合いの2ターン目以降を担う共通ループ。過疎チェック起点のseedConversation
+// (最初の1通はgenerateSelfTalkで新規に切り出す)と、兄弟BOTの発言に割り込む
+// reactToSiblingMessage(最初の1通は割り込み先へのリプライ)の両方から、
+// 「最初の1往復を終えた状態」を渡して呼び出す
+async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSentMsg, lastActionAt, topicHint, totalTurns, roleOf }) {
   for (let turn = 1; turn < totalTurns; turn++) {
     if (speaker.accountState.lockedDown) break;
 
@@ -213,6 +169,149 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
   }
 }
 
+// 過疎ぎみのチャンネルでAI同士に何度か掛け合いをさせて連投気味に会話を起こす。
+// 通常のmessageCreateトリガーは経由しない(お互いに際限なく反応し合うのを防ぐため)。
+// 途中でユーザーが発言してきたら打ち切り、通常のmessageHandler(人間には普通に反応する)に譲る
+async function seedConversation(clientA, clientB, channelId) {
+  if (activeChannels.has(channelId)) return;
+
+  const channelA = clientA.channels.cache.get(channelId);
+  if (!channelA) return;
+
+  activeChannels.add(channelId);
+  try {
+    await runSeedConversation(clientA, clientB, channelId, channelA);
+  } finally {
+    activeChannels.delete(channelId);
+  }
+}
+
+async function runSeedConversation(clientA, clientB, channelId, channelA) {
+  await showTyping(channelA, clientA.accountState.id);
+
+  // 各ターンをその場しのぎで生成すると「そうだね」の連発のような浅い応酬に
+  // なりがちなので、会話を始める前に一度お題を決めて全ターンで共有する。
+  // 失敗してもnullのまま(お題無し)で従来通り進行する
+  const topicHint = await planConversationTopic(clientA.accountState.persona, clientB.accountState.persona);
+  if (topicHint) logger.log('SEED', `[${clientA.accountState.id}⇄${clientB.accountState.id}] お題: ${topicHint}`);
+
+  // この会話での役割分担: 両者が同じように話題を出そうとして噛み合わなかったり、
+  // 逆にお互い相槌ばかりで話が広がらなかったりするのを防ぐため、話を切り出す側
+  // (clientA=opener)を「話題を広げる中心役」、受け止める側(clientB)を
+  // 「聞き役・相槌役」に固定する。ペア自体はpickPair/pickRotationPairで毎回
+  // 入れ替わるため、長期的にはどのアカウントも両方の役を経験する
+  const roleOf = (client) => (client === clientA ? 'center' : 'reactor');
+
+  const opener = await generateSelfTalk(clientA.accountState, topicHint, 'center');
+  if (!opener) return;
+
+  const openerMsg = await channelA.send(opener);
+  recordReply(clientA.accountState, opener);
+  logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
+
+  const history = [{ author: { username: resolveBotDisplayName(clientA, channelA) }, content: opener }];
+
+  await runTurns({
+    channelId,
+    speaker: clientB,
+    listener: clientA,
+    history,
+    lastMsg: opener,
+    // 直前に送信したメッセージ。次のターンでDiscordのリプライ機能を使って
+    // 参照することで、AI同士の掛け合いも実際の会話らしく繋がって見えるようにする
+    lastSentMsg: openerMsg,
+    lastActionAt: Date.now(),
+    topicHint,
+    totalTurns: randomTurnCount(),
+    roleOf
+  });
+}
+
+// チャンネルごとに、直近いつ「割り込みリプライ」を発火させたか。botReplyChance自体は
+// 兄弟BOTの発言のたびに判定するが、これが無いと1つの掛け合いが終わった直後に
+// 別の割り込みがまた始まり…と連鎖して、想定より頻繁にAI同士が喋り続けてしまう
+const lastReactiveTriggerAt = new Map();
+
+function canTriggerReactive(channelId) {
+  const last = lastReactiveTriggerAt.get(channelId) || 0;
+  return Date.now() - last >= BOT_REPLY_COOLDOWN_MS;
+}
+
+// 兄弟BOTの発言(自発投稿・通常の返信・別の掛け合いの一言、いずれも)を見て、
+// 別のアカウントが一定確率でDiscordのリプライとして割り込み、そのまま短い
+// 掛け合いに発展させる。過疎チェック起点のseedConversationとは別のトリガーだが、
+// 進行中の掛け合いと衝突しないよう同じactiveChannelsロックを共有する
+async function reactToSiblingMessage(replierClient, posterClient, channelId, triggerMsg) {
+  if (activeChannels.has(channelId)) return;
+  const channel = replierClient.channels.cache.get(channelId);
+  if (!channel) return;
+
+  activeChannels.add(channelId);
+  lastReactiveTriggerAt.set(channelId, Date.now());
+  try {
+    await showTyping(channel, replierClient.accountState.id);
+
+    const history = [{ author: { username: resolveBotDisplayName(posterClient, channel) }, content: triggerMsg.content }];
+
+    const reply = await getAIResponse(replierClient.accountState, triggerMsg.content, history, null, {
+      partnerIsAi: true,
+      speakerLabelOverride: resolveBotDisplayName(posterClient, channel),
+      role: 'reactor'
+    });
+    if (!reply) return;
+
+    const sentMsg = await channel.send({
+      content: reply,
+      reply: { messageReference: triggerMsg.id, failIfNotExists: false }
+    });
+    recordReply(replierClient.accountState, reply);
+    logger.log('SEED', `[${replierClient.accountState.id}] (割り込み) ${reply}`);
+
+    history.push({ author: { username: resolveBotDisplayName(replierClient, channel) }, content: reply });
+
+    await runTurns({
+      channelId,
+      speaker: posterClient,
+      listener: replierClient,
+      history,
+      lastMsg: reply,
+      lastSentMsg: sentMsg,
+      lastActionAt: Date.now(),
+      topicHint: null,
+      totalTurns: randomTurnCount(),
+      roleOf: (client) => (client === replierClient ? 'reactor' : 'center')
+    });
+  } catch (err) {
+    logger.error('SEED', err);
+  } finally {
+    activeChannels.delete(channelId);
+  }
+}
+
+// 兄弟BOTの発言を監視し、botReplyChanceの確率で割り込みリプライを発火させる。
+// 人間の発言には一切反応しない(通常のmessageHandlerが対応するため)
+function registerBotReplyTrigger(clients) {
+  if (!BOT_REPLY_CHANCE) return;
+
+  for (const client of clients) {
+    client.on('messageCreate', (msg) => {
+      if (msg.author.id === client.user.id) return;
+      if (!isOwnAccount(msg.author.id)) return;
+      if (client.accountState.lockedDown) return;
+      if (msg.guild?.id !== client.accountState.allowedGuildId) return;
+      if (!client.accountState.channelStore.isAllowedChannel(msg.channel.id)) return;
+      if (activeChannels.has(msg.channel.id)) return;
+      if (!canTriggerReactive(msg.channel.id)) return;
+      if (Math.random() > BOT_REPLY_CHANCE) return;
+
+      const posterClient = clients.find((c) => c.user?.id === msg.author.id);
+      if (!posterClient) return;
+
+      reactToSiblingMessage(client, posterClient, msg.channel.id, msg).catch((err) => logger.error('SEED', err));
+    });
+  }
+}
+
 // AIだけで常時チャットを動かす(config/settings.jsonのconversationSeed.alwaysOn)モード。
 // 有効な場合、trigger確率を無視して、より短い間隔(alwaysOnIntervalMs)でチェックする。
 // ただし「ユーザーが一定時間会話しなかったらAI同士が自発的に会話する」という
@@ -223,6 +322,8 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
 // 省略する」ことだけを意味し、ユーザーの発言を待つかどうかには関与しない
 function registerConversationSeedHandler(clients) {
   if (clients.length < 2) return;
+
+  registerBotReplyTrigger(clients);
 
   const intervalMs = ALWAYS_ON ? ALWAYS_ON_INTERVAL_MS || CHECK_INTERVAL_MS : CHECK_INTERVAL_MS;
 
