@@ -157,6 +157,7 @@ module.exports = {
   readPersona,
   corpusPathFor,
   presenceFor,
+  resolveCommandRoleIds,
   nicknames: loadNicknames(),
   accounts: loadAccounts()
 };

@@ -1,6 +1,6 @@
-const store = require('../../utils/slashBumpStore');
-const { parseUserMention, parseChannelMention } = require('../mentionUtils');
-const bumpHandler = require('../../handlers/slashBumpHandler');
+const store = require('../utils/slashBumpStore');
+const { parseUserMention, parseChannelMention } = require('./mentionUtils');
+const bumpHandler = require('../handlers/slashBumpHandler');
 
 // args[index]がチャンネルの指定(<#id>かID)として解決できるか試す。解決できなければnull
 function tryParseChannelArg(arg) {

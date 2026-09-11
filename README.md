@@ -114,10 +114,9 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
 | `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
 | `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
-| `!slashbump add <botId> <command> [#channel] [表示名]` | 他BOT(Dissoku等)へのスラッシュコマンド自動送信を登録(省略時は今のチャンネル) |
-| `!slashbump remove <botId> [#channel]` / `!slashbump list` | 登録解除 / 登録一覧表示 |
-| `!slashbump now [botId] [#channel]` | クールダウンを無視して即時実行(省略時は登録済み全対象) |
 | `!help` | コマンド一覧を表示 |
+
+`!slashbump`(他BOTへのスラッシュコマンド自動送信)はai_cordプロセスのコマンドではなく、[ご飯画像の定期投稿と同じ別プロセス](#スラッシュコマンド自動送信slashbump)側のコマンド。詳細は後述。
 
 ### ユーザーへの呼び方(`config/nicknames.json`)
 
@@ -163,12 +162,16 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 ### スラッシュコマンド自動送信(`!slashbump`)
 
-[disssoku](https://github.com/hihei56/disssoku)のbump(サーバー宣伝BOTへの`/up`等の自動送信)機能をAI_cordに統合したもの。`!slashbump add`で登録した対象(BOTのユーザーID・実行するスラッシュコマンド名・チャンネル)ごとに、`src/handlers/slashBumpHandler.js`が自動で実行し続ける。
+[disssoku](https://github.com/hihei56/disssoku)のbump(サーバー宣伝BOTへの`/up`等の自動送信)機能をAI_cordに統合したもの。`npm run mealpost`(`src/mealPostBot.js`)で動くご飯画像投稿と同じ専用アカウント・同じ別プロセスで動く(ai_cordのメインプロセスとは無関係。詳細は[Oracle Cloudへのデプロイ](#oracle-cloudへのデプロイ)節参照)。`!slashbump add`で登録した対象(BOTのユーザーID・実行するスラッシュコマンド名・チャンネル)ごとに、`src/handlers/slashBumpHandler.js`が自動で実行し続ける。
 
+- コマンドのprefixはai_cord本体(`toku!`/`sui!`等)とは別で、既定`meshi!`(`.env`の`MEALPOST_COMMAND_PREFIX`で変更可)。ロール権限も`MEALPOST_COMMAND_ROLE_ID`で個別に指定できる(未指定時はai_cordと同じ既定ロール)
+- `!slashbump add <botId> <command> [#channel] [表示名]`(省略時は今のチャンネル。同じbotId×チャンネルに再度addするとコマンド/表示名を上書き更新)
+- `!slashbump remove <botId> [#channel]` / `!slashbump list` — 登録解除 / 登録一覧表示
+- `!slashbump now [botId] [#channel]` — クールダウンを無視して即時実行(省略時は登録済み全対象)
 - 対象BOTからの応答メッセージを監視し、`successfully`を含めば成功、`please wait`/`cooldown`/`failed`/`error`等を含めばクールダウン中と判定する。クールダウン応答に`try again in N minutes/hours/days`のような記載があればその時間を読み取って次回実行時刻を調整し、読み取れなければ既定15分後にする
 - 応答が全く無い場合は30〜40分のランダムな間隔で再試行する
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
-- 対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+- 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
 
 ### `config/settings.json`(動作パラメータ)
 

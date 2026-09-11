@@ -89,4 +89,4 @@ function registerCommandHandler(client) {
   });
 }
 
-module.exports = { registerCommandHandler };
+module.exports = { registerCommandHandler, canRunCommands };
