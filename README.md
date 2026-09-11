@@ -216,6 +216,9 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - `order`: マルコフ連鎖のn-gram長(大きいほど元の言い回しに忠実、小さいほど崩れやすい。2〜3推奨)
 - `corpusFile`: `config/corpus/` 内のファイル名
 - `draftMaxWords`: 下書きの最大単語数
+- `directReplyChance` / `directReplyMinLength`: 下書きをLLMを介さずそのまま返信に採用する確率/最低文字数(全アカウント共通の既定値)
+
+ペルソナ(`config/personas/*.txt`)がある場合、通常は下書きを「軽い参考」程度に扱い、LLMが人格の口調で言い換える。逆にコーパスの口調そのものを主役にしたい(=ペルソナを必要最低限にして、LLMの言い換えより下書きの言い回しを優先したい)アカウントは、`.env`で`MARKOV_PRIORITY[_N]=true`にすると、LLM補正時も下書きの言い回しをできるだけそのまま活かすようプロンプトが切り替わり、下書きをそのまま採用する確率/最低文字数も(明示上書きが無ければ)既定0.5/2文字まで緩和される(`MARKOV_DIRECT_REPLY_CHANCE[_N]` / `MARKOV_DIRECT_REPLY_MIN_LENGTH[_N]`で個別上書きも可能)。`discord_cutiest`ペルソナ+`corpus/Cutiest_discord.txt`の組み合わせで使う想定。
 
 Botを起動せずに単体で学習・生成結果を確認したい場合は `scripts/markov-demo.js` を使う。
 

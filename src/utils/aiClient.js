@@ -381,8 +381,11 @@ async function getAIResponseOnce(
   }
 
   // メンション/リプライで直接呼ばれた時以外は、たまにLLMを介さずマルコフ連鎖の
-  // 生成結果をそのまま返信にする(コーパスの口調がLLMの言い換えで薄まるのを防ぐ)
-  const { directReplyChance = 0, directReplyMinLength = 0 } = config.markov || {};
+  // 生成結果をそのまま返信にする(コーパスの口調がLLMの言い換えで薄まるのを防ぐ)。
+  // アカウント単位の上書き(markovPriority等、config.jsのresolveAccounts参照)が
+  // あればそちらを優先し、無ければ全アカウント共通のconfig.markovに従う
+  const directReplyChance = accountState.markovDirectReplyChance ?? config.markov?.directReplyChance ?? 0;
+  const directReplyMinLength = accountState.markovDirectReplyMinLength ?? config.markov?.directReplyMinLength ?? 0;
   if (allowMarkovDirect && draft && draft.length >= directReplyMinLength && Math.random() < directReplyChance) {
     logger.log('MARKOV', `[${accountState.id}] 下書きをそのまま採用: ${draft}`);
     return toSingleLine(draft);
@@ -461,10 +464,16 @@ async function getAIResponseOnce(
   // 人格ありアカウントは下書きを軽い参考程度に格下げし、人格に従って自然に
   // 喋らせる方針に落ち着いた。下書きの単語をそのまま使う義務は無く、会話の
   // 流れに自然に応じてよい(それこそが本来自然な会話であるため)。人格の口調・
-  // キャラクターを保つことだけを最優先にする
+  // キャラクターを保つことだけを最優先にする。
+  // ただしmarkovPriorityが有効なアカウント(discord_cutiest等、ペルソナを
+  // 必要最低限にしてコーパスの口調そのものを主役にしたいケース)は逆に、
+  // 下書きの言い回しをできるだけ活かし、人格は下書きと矛盾しない範囲で軽く
+  // 添える程度に留めるよう指示する
   const draftSection =
     draft && accountState.persona
-      ? `\n【下書き(マルコフ連鎖生成、話題やニュアンスの軽い参考程度)】\n${draft}\nこの下書きはあくまで軽い参考であり、単語をそのまま使う必要は無い。会話の流れに自然に応じつつ、必ず自分の人格設定の口調・キャラクターで喋ること。`
+      ? accountState.markovPriority
+        ? `\n【下書き(マルコフ連鎖生成)】\n${draft}\nこの下書きの言い回し・単語をできるだけそのまま活かして返信を組み立てること。人格設定の口調は、下書きと矛盾しない範囲で軽く滲ませる程度に留め、下書きの雰囲気を上書きしないこと。`
+        : `\n【下書き(マルコフ連鎖生成、話題やニュアンスの軽い参考程度)】\n${draft}\nこの下書きはあくまで軽い参考であり、単語をそのまま使う必要は無い。会話の流れに自然に応じつつ、必ず自分の人格設定の口調・キャラクターで喋ること。`
       : draft
         ? `\n【下書き(マルコフ連鎖生成)】\n${draft}\n人格設定は無いので、上の下書きをベースに最低限の誤字脱字・助詞の修正だけを行って返信すること。単語の言い換え、文の作り直し、新しい話題や説明の追加はしないこと。下書きに無い一人称や主語を勝手に補わないこと。Discordの実際のユーザーの発言のように、丁寧な完全文に整えず、素っ気なく短いままにすること。`
         : '';
