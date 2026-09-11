@@ -50,6 +50,11 @@ function numEnv(name) {
   return process.env[name] !== undefined ? Number(process.env[name]) : undefined;
 }
 
+function boolEnv(name) {
+  if (process.env[name] === undefined) return undefined;
+  return process.env[name].toLowerCase() === 'true' || process.env[name] === '1';
+}
+
 function idListEnv(envVal) {
   if (!envVal) return [];
   return envVal.split(',').map((id) => id.trim()).filter(Boolean);
@@ -112,7 +117,15 @@ function loadAccounts() {
       finetuneBaseUrl: process.env.FINETUNE_BASE_URL,
       finetuneApiKey: process.env.FINETUNE_API_KEY,
       finetuneModel: process.env.FINETUNE_MODEL,
-      aiMode: resolveAiMode(process.env.AI_MODE)
+      aiMode: resolveAiMode(process.env.AI_MODE),
+      // trueにすると、返信生成でLLMによる言い換えよりマルコフ連鎖の下書きを
+      // 優先する(下書きの言い回しをできるだけ活かし、人格の口調は軽く添える
+      // 程度に留める+下書きをそのまま採用する確率/最低文字数も緩和される)。
+      // ペルソナの指示をできるだけ削り、コーパスの口調自体を主役にしたい
+      // アカウント(discord_cutiest等)向け
+      markovPriority: boolEnv('MARKOV_PRIORITY') ?? false,
+      markovDirectReplyChanceOverride: numEnv('MARKOV_DIRECT_REPLY_CHANCE'),
+      markovDirectReplyMinLengthOverride: numEnv('MARKOV_DIRECT_REPLY_MIN_LENGTH')
     });
   }
 
@@ -136,7 +149,10 @@ function loadAccounts() {
       finetuneBaseUrl: process.env[`FINETUNE_BASE_URL_${i}`],
       finetuneApiKey: process.env[`FINETUNE_API_KEY_${i}`],
       finetuneModel: process.env[`FINETUNE_MODEL_${i}`],
-      aiMode: resolveAiMode(process.env[`AI_MODE_${i}`])
+      aiMode: resolveAiMode(process.env[`AI_MODE_${i}`]),
+      markovPriority: boolEnv(`MARKOV_PRIORITY_${i}`) ?? false,
+      markovDirectReplyChanceOverride: numEnv(`MARKOV_DIRECT_REPLY_CHANCE_${i}`),
+      markovDirectReplyMinLengthOverride: numEnv(`MARKOV_DIRECT_REPLY_MIN_LENGTH_${i}`)
     });
     i++;
   }
@@ -147,7 +163,14 @@ function loadAccounts() {
   return accounts.map((acc, index) => ({
     ...acc,
     cooldownSeconds: acc.cooldownSecondsOverride ?? settings.cooldownSeconds + index * 15,
-    replyChanceMultiplier: acc.replyChanceMultiplierOverride ?? 1 - index * 0.1
+    replyChanceMultiplier: acc.replyChanceMultiplierOverride ?? 1 - index * 0.1,
+    // markovPriorityが有効なアカウントは、明示上書きが無ければ下書きをそのまま
+    // 採用する確率/最低文字数も緩め(既定0.5/2文字)、他アカウントの設定
+    // (config/settings.jsonのmarkov.directReplyChance等)には影響しない
+    markovDirectReplyChance:
+      acc.markovDirectReplyChanceOverride ?? (acc.markovPriority ? 0.5 : settings.markov?.directReplyChance ?? 0),
+    markovDirectReplyMinLength:
+      acc.markovDirectReplyMinLengthOverride ?? (acc.markovPriority ? 2 : settings.markov?.directReplyMinLength ?? 0)
   }));
 }
 
@@ -157,6 +180,7 @@ module.exports = {
   readPersona,
   corpusPathFor,
   presenceFor,
+  resolveCommandRoleIds,
   nicknames: loadNicknames(),
   accounts: loadAccounts()
 };

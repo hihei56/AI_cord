@@ -114,10 +114,9 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
 | `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
 | `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
-| `!slashbump add <botId> <command> [#channel] [表示名]` | 他BOT(Dissoku等)へのスラッシュコマンド自動送信を登録(省略時は今のチャンネル) |
-| `!slashbump remove <botId> [#channel]` / `!slashbump list` | 登録解除 / 登録一覧表示 |
-| `!slashbump now [botId] [#channel]` | クールダウンを無視して即時実行(省略時は登録済み全対象) |
 | `!help` | コマンド一覧を表示 |
+
+`!slashbump`(他BOTへのスラッシュコマンド自動送信)はai_cordプロセスのコマンドではなく、[ご飯画像の定期投稿と同じ別プロセス](#スラッシュコマンド自動送信slashbump)側のコマンド。詳細は後述。
 
 ### ユーザーへの呼び方(`config/nicknames.json`)
 
@@ -163,12 +162,16 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 ### スラッシュコマンド自動送信(`!slashbump`)
 
-[disssoku](https://github.com/hihei56/disssoku)のbump(サーバー宣伝BOTへの`/up`等の自動送信)機能をAI_cordに統合したもの。`!slashbump add`で登録した対象(BOTのユーザーID・実行するスラッシュコマンド名・チャンネル)ごとに、`src/handlers/slashBumpHandler.js`が自動で実行し続ける。
+[disssoku](https://github.com/hihei56/disssoku)のbump(サーバー宣伝BOTへの`/up`等の自動送信)機能をAI_cordに統合したもの。`npm run mealpost`(`src/mealPostBot.js`)で動くご飯画像投稿と同じ専用アカウント・同じ別プロセスで動く(ai_cordのメインプロセスとは無関係。詳細は[Oracle Cloudへのデプロイ](#oracle-cloudへのデプロイ)節参照)。`!slashbump add`で登録した対象(BOTのユーザーID・実行するスラッシュコマンド名・チャンネル)ごとに、`src/handlers/slashBumpHandler.js`が自動で実行し続ける。
 
+- コマンドのprefixはai_cord本体(`toku!`/`sui!`等)とは別で、既定`meshi!`(`.env`の`MEALPOST_COMMAND_PREFIX`で変更可)。ロール権限も`MEALPOST_COMMAND_ROLE_ID`で個別に指定できる(未指定時はai_cordと同じ既定ロール)
+- `!slashbump add <botId> <command> [#channel] [表示名]`(省略時は今のチャンネル。同じbotId×チャンネルに再度addするとコマンド/表示名を上書き更新)
+- `!slashbump remove <botId> [#channel]` / `!slashbump list` — 登録解除 / 登録一覧表示
+- `!slashbump now [botId] [#channel]` — クールダウンを無視して即時実行(省略時は登録済み全対象)
 - 対象BOTからの応答メッセージを監視し、`successfully`を含めば成功、`please wait`/`cooldown`/`failed`/`error`等を含めばクールダウン中と判定する。クールダウン応答に`try again in N minutes/hours/days`のような記載があればその時間を読み取って次回実行時刻を調整し、読み取れなければ既定15分後にする
 - 応答が全く無い場合は30〜40分のランダムな間隔で再試行する
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
-- 対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+- 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
 
 ### `config/settings.json`(動作パラメータ)
 
@@ -199,6 +202,12 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - 通常時: `checkIntervalMs`ごとに`triggerChance`の確率で発火し、対象チャンネルが`quietThresholdMs`以上発言が無い(過疎ってる)時だけ会話を始める
 - `alwaysOn: true`にすると、この確率チェックと過疎チェックを両方無視し、より短い`alwaysOnIntervalMs`間隔で必ずどこかのペアが会話を始める(「AIだけで常時チャットを動かす」モード)。常時人間の発言を待たずにサーバーを賑やかに見せたい場合に使う。人間の発言に対する通常の返信ロジック(`messageHandler.js`)はそのまま生きているので、人間が話しかければ普通に反応する
 - 誰も一度も発言していない完全な無人チャンネルも「過疎ってる」判定に含まれる(むしろ最優先で賑やかす対象)。掛け合いの最中にユーザーが発言してきたら検知して打ち切り、そこからは通常の返信ロジックに譲る
+- お題決め(`planConversationTopic`)は、NHKニュースの見出し候補を複数取得してその中から雑談にしやすそうなものを優先させるようにしている(政治・事件・訃報のような重い話題は避ける指示を明示)。候補が無い/全部話題にしにくい時だけ人格に合いそうな別の話題に切り替わる
+- `botReplyChance`(既定0.15)を設定すると、過疎チェックによる定期発火とは別に、兄弟アカウント(自発投稿・通常の返信・別の掛け合いの一言、いずれも)の発言を見て別のアカウントが確率的にDiscordのリプライとして割り込み、そのまま短い掛け合いに発展する。1つの掛け合いが終わった直後に連鎖して発火し続けないよう`botReplyCooldownMs`(既定10分)のクールダウンを挟む。`0`にすると無効化される
+
+### リアクション(`reactions`)
+
+`messageHandler.js`が、人間・兄弟アカウント両方の発言(本物のBotは除く)に対して`reactions.chance`(既定8%、±`chanceJitter`で揺らぎ)の確率で絵文字リアクションを付ける。返信するかどうかの判定(クールダウン・確率等)とは完全に独立しており、返信しない発言にもリアクションだけ付くことがある。絵文字はLLMを呼ばずキーワードの単純なパターンマッチ(`src/utils/reactionEmoji.js`)で選ぶため、追加のAPIコストは発生しない。`reactions.enabled: false`で無効化できる。
 
 ### `config/prompts/self_talk.txt`
 
@@ -213,6 +222,9 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - `order`: マルコフ連鎖のn-gram長(大きいほど元の言い回しに忠実、小さいほど崩れやすい。2〜3推奨)
 - `corpusFile`: `config/corpus/` 内のファイル名
 - `draftMaxWords`: 下書きの最大単語数
+- `directReplyChance` / `directReplyMinLength`: 下書きをLLMを介さずそのまま返信に採用する確率/最低文字数(全アカウント共通の既定値)
+
+ペルソナ(`config/personas/*.txt`)がある場合、通常は下書きを「軽い参考」程度に扱い、LLMが人格の口調で言い換える。逆にコーパスの口調そのものを主役にしたい(=ペルソナを必要最低限にして、LLMの言い換えより下書きの言い回しを優先したい)アカウントは、`.env`で`MARKOV_PRIORITY[_N]=true`にすると、LLM補正時も下書きの言い回しをできるだけそのまま活かすようプロンプトが切り替わり、下書きをそのまま採用する確率/最低文字数も(明示上書きが無ければ)既定0.5/2文字まで緩和される(`MARKOV_DIRECT_REPLY_CHANCE[_N]` / `MARKOV_DIRECT_REPLY_MIN_LENGTH[_N]`で個別上書きも可能)。`discord_cutiest`ペルソナ+`corpus/Cutiest_discord.txt`の組み合わせで使う想定。
 
 Botを起動せずに単体で学習・生成結果を確認したい場合は `scripts/markov-demo.js` を使う。
 
@@ -229,7 +241,8 @@ npm run markov:demo
 - 直近の会話履歴を踏まえた返信生成、連投防止・クールダウン制御
 - 直近の自分の発言と似すぎている返信は再生成し、機械的な連投・似た言い回しの繰り返しを抑える(`aiClient.js`の類似度チェック、messageHandler/selfTalk/conversationSeed全経路共通)
 - 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像+一言)。既定では無効(`config/settings.json`の`selfTalk.enabled`をtrueにすると有効化)
-- 複数アカウント運用時、過疎ってるチャンネルでAI同士に掛け合いをさせる(相手がAIであることはお互い認識した上で会話する)。`alwaysOn`設定で確率・過疎チェックを無視した常時チャットモードにもできる
+- 複数アカウント運用時、過疎ってるチャンネルでAI同士に掛け合いをさせる(相手がAIであることはお互い認識した上で会話する)。`alwaysOn`設定で確率・過疎チェックを無視した常時チャットモードにもできる。`botReplyChance`を設定すると、過疎チェック起点だけでなく兄弟アカウントの発言そのものに別のアカウントが確率的にリプライで割り込むこともある
+- 人間・兄弟アカウント両方の発言に確率的に絵文字リアクションを付ける(`reactions`、LLM不使用)
 - Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
 - `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
 - テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
@@ -306,6 +319,21 @@ git pull
 npm install   # 依存関係が変わっていた場合のみ
 pm2 restart ai_cord
 ```
+
+### 7.5 pushするだけで自動デプロイ(`scripts/auto-deploy.js`)
+
+毎回SSHして`git pull && pm2 restart`を打つ代わりに、GitHubへのpushを検知して自動で反映する常駐プロセスを立てられる。Webhookのようにインスタンス側でポートを開けてインバウンド接続を待ち受ける方式ではなく、一定間隔で`git fetch`してリモートと比較するポーリング方式にしているので、[6.のネットワーク方針](#6-ネットワークファイアウォールについて)(アウトバウンドのみ)を崩さない。
+
+```bash
+cd AI_cord
+pm2 start scripts/auto-deploy.js --name deploy-watch
+pm2 save
+```
+
+- 既定では`main`ブランチを1分間隔でチェックし、新しいコミットを検知したら`git pull`→(`package.json`が変わっていれば)`npm install`→`pm2 restart ai_cord mealpost`まで自動で行う
+- 追跡するブランチ・ポーリング間隔・再起動対象のpm2プロセス名は`.env`の`DEPLOY_BRANCH` / `DEPLOY_CHECK_INTERVAL_MS` / `DEPLOY_PM2_PROCESSES`(カンマ区切り)で変更できる
+- サーバー側で直接ファイルを編集した後や、リモートと競合する変更がある状態だと`git pull`に失敗することがある。その場合はデプロイ自体は成功しないが`deploy-watch`プロセスは落ちずに次回のポーリングで再試行し続けるので、`pm2 logs deploy-watch`でエラー内容を確認して手動で解消する
+- スマホのGitHubアプリ等からpushするだけで、次のポーリングのタイミング(既定最大1分後)で反映される
 
 ### 8. Always Free枠のインスタンス回収について
 

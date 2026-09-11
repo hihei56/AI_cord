@@ -38,14 +38,16 @@
     "checkIntervalMs": 600000,
     "checkIntervalJitter": 0.4,
     "alwaysOn": true,
-    "alwaysOnIntervalMs": 420000,
-    "quietThresholdMs": 600000,
+    "alwaysOnIntervalMs": 120000,
+    "quietThresholdMs": 300000,
     "triggerChance": 0.3,
     "minTurns": 3,
     "maxTurns": 6,
     "continueChance": 0.65,
     "turnDelayMinMs": 3000,
-    "turnDelayMaxMs": 8000
+    "turnDelayMaxMs": 8000,
+    "botReplyChance": 0.15,
+    "botReplyCooldownMs": 600000
   },
   "selfTalk": {
     "enabled": false,
@@ -85,6 +87,11 @@
     }
   },
   "presenceFile": "default.json",
+  "reactions": {
+    "enabled": true,
+    "chance": 0.08,
+    "chanceJitter": 0.4
+  },
   "priceAlert": {
     "enabled": true,
     "defaultSymbols": ["hype", "ponz", "zec", "btc"],
