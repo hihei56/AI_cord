@@ -313,6 +313,21 @@ npm install   # 依存関係が変わっていた場合のみ
 pm2 restart ai_cord
 ```
 
+### 7.5 pushするだけで自動デプロイ(`scripts/auto-deploy.js`)
+
+毎回SSHして`git pull && pm2 restart`を打つ代わりに、GitHubへのpushを検知して自動で反映する常駐プロセスを立てられる。Webhookのようにインスタンス側でポートを開けてインバウンド接続を待ち受ける方式ではなく、一定間隔で`git fetch`してリモートと比較するポーリング方式にしているので、[6.のネットワーク方針](#6-ネットワークファイアウォールについて)(アウトバウンドのみ)を崩さない。
+
+```bash
+cd AI_cord
+pm2 start scripts/auto-deploy.js --name deploy-watch
+pm2 save
+```
+
+- 既定では`main`ブランチを1分間隔でチェックし、新しいコミットを検知したら`git pull`→(`package.json`が変わっていれば)`npm install`→`pm2 restart ai_cord mealpost`まで自動で行う
+- 追跡するブランチ・ポーリング間隔・再起動対象のpm2プロセス名は`.env`の`DEPLOY_BRANCH` / `DEPLOY_CHECK_INTERVAL_MS` / `DEPLOY_PM2_PROCESSES`(カンマ区切り)で変更できる
+- サーバー側で直接ファイルを編集した後や、リモートと競合する変更がある状態だと`git pull`に失敗することがある。その場合はデプロイ自体は成功しないが`deploy-watch`プロセスは落ちずに次回のポーリングで再試行し続けるので、`pm2 logs deploy-watch`でエラー内容を確認して手動で解消する
+- スマホのGitHubアプリ等からpushするだけで、次のポーリングのタイミング(既定最大1分後)で反映される
+
 ### 8. Always Free枠のインスタンス回収について
 
 **課金インスタンスの場合はこの節は無関係。** Always Free枠のインスタンスを使う場合のみ、7日間のCPU使用率(95パーセンタイル)が20%を下回ると回収対象になりうる。このBotは待機中ほとんどCPUを使わないため、Always Free枠を使う場合は軽いcronのヘルスチェックなどを仕込んでおくと安全。

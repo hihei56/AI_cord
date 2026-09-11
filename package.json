@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "mealpost": "node src/mealPostBot.js",
+    "deploy-watch": "node scripts/auto-deploy.js",
     "markov:demo": "node scripts/markov-demo.js"
   },
   "dependencies": {
