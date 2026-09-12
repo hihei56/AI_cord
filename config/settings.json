@@ -102,7 +102,7 @@
   },
   "mealPosts": {
     "enabled": true,
-    "channelId": "1477176667066728518",
+    "channelId": "1540729545194217512",
     "folderBase": "config/mealImages",
     "checkIntervalMs": 300000,
     "meals": {
