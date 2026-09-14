@@ -63,12 +63,17 @@ function itemKey(item) {
   return item.guid || item.link;
 }
 
+// !rssfeed checkコマンド(手動即時チェック)からも呼べるよう、戻り値で結果概要を返す。
+// 定期実行(registerRssTwitterPostHandler)側はこの戻り値を使わずログだけ見ればよいが、
+// コマンド側は「新着0件だったのか、そもそも未設定でスキップしたのか、取得自体に
+// 失敗したのか」を使う側に返してDiscordへそのまま伝えられるようにする
 async function checkOnce(client, account) {
   // feedUrls/postChannelIdは!rssfeedコマンドで実行中に変更されうるので、登録時点では
   // なくチェックしようとするたびに現在の設定を見る(起動時点で未設定でも、後から
   // コマンドで設定すれば再起動不要に効く)
   const feed = account.rssFeed;
-  if (!feed?.enabled || !feed.feedUrls?.length || !feed.postChannelId) return;
+  if (!feed?.enabled) return { skipped: 'disabled' };
+  if (!feed.feedUrls?.length || !feed.postChannelId) return { skipped: 'not-configured' };
 
   const items = await fetchItemsWithFallback(feed.feedUrls);
   const tracker = account.seenTracker;
@@ -77,7 +82,7 @@ async function checkOnce(client, account) {
     const key = itemKey(item);
     return key && !tracker.has(key);
   });
-  if (fresh.length === 0) return;
+  if (fresh.length === 0) return { skipped: 'no-new-items', fetched: items.length };
 
   // 初回チェック時はフィードの既存アイテムを全部「新着」扱いで一気に投稿しないよう、
   // 既読登録だけして投稿はしない(次回以降の本当の新着だけを追いかける)
@@ -85,15 +90,16 @@ async function checkOnce(client, account) {
     for (const item of fresh) tracker.add(itemKey(item));
     tracker.isFirstRun = false;
     logger.log('RSSTWITTER', `[${account.id}] 初回チェックのため既存${fresh.length}件を既読登録(投稿はスキップ)`);
-    return;
+    return { skipped: 'first-run', markedSeen: fresh.length };
   }
 
   const channel = client.channels?.cache.get(feed.postChannelId);
   if (!channel) {
     logger.error('RSSTWITTER', `[${account.id}] 投稿先チャンネル${feed.postChannelId}にアクセスできません`);
-    return;
+    return { error: `投稿先チャンネル${feed.postChannelId}にアクセスできません` };
   }
 
+  let posted = 0;
   // フィードは新しい順のことが多いので、時系列順に投稿されるよう古い方から処理する
   for (const item of fresh.reverse()) {
     tracker.add(itemKey(item));
@@ -107,11 +113,13 @@ async function checkOnce(client, account) {
     try {
       await channel.send(vxUrl);
       logger.log('RSSTWITTER', `[${account.id}] 投稿: ${vxUrl}`);
+      posted++;
     } catch (err) {
       logger.error('RSSTWITTER', `[${account.id}] 投稿失敗: ${err.message}`);
     }
     await sleep(postDelay());
   }
+  return { posted };
 }
 
 // RSS(nitter等)からツイートリンクを定期取得し、vxtwitter.comのURLに変換して投稿する。
@@ -133,4 +141,4 @@ function registerRssTwitterPostHandler(clients) {
   }
 }
 
-module.exports = { registerRssTwitterPostHandler };
+module.exports = { registerRssTwitterPostHandler, checkOnce };
