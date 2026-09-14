@@ -17,7 +17,11 @@ module.exports = {
 
     if (sub === 'add' && args[1] && args[2]) {
       const botId = parseUserMention(args[1]) || args[1];
-      const command = args[2];
+      // Discordのスラッシュコマンド名自体は先頭に"/"を含まない(sendSlashに渡すと
+      // ライブラリ内のバリデーションで弾かれ"Invalid string format"エラーになる)。
+      // "/bump"のようにDiscord上の表示のまま入力してしまうのは自然な間違いなので、
+      // 先頭の"/"だけ許容して自動で取り除く
+      const command = args[2].replace(/^\//, '');
 
       let channelId = msg.channel.id;
       let nameArgs = args.slice(4);
