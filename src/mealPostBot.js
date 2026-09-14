@@ -134,9 +134,17 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function waitReady(client, timeoutMs = 30000) {
+// 30秒では短すぎ、サーバー負荷やDiscord側の応答が重い時にreadyイベントが
+// 間に合わずタイムアウトしてFATAL終了→pm2再起動のクラッシュループになる実例が
+// あったため、ai_cord本体(readyを無期限に待つ)に近い余裕を持たせて2分にする。
+// タイムアウトした場合も原因を追えるよう明示的にログを出す(以前は無言でfalseを
+// 返すだけで、pm2ログに[FATAL ERR]しか残らずタイムアウトが原因だと分からなかった)
+function waitReady(client, timeoutMs = 120000) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs);
+    const timer = setTimeout(() => {
+      logger.error('LOGIN', `[${client.accountState.id}] readyイベントが${timeoutMs / 1000}秒以内に来ませんでした`);
+      resolve(false);
+    }, timeoutMs);
     client.once('ready', () => {
       clearTimeout(timer);
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
