@@ -134,61 +134,51 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 30秒では短すぎ、サーバー負荷やDiscord側の応答が重い時にreadyイベントが
-// 間に合わずタイムアウトしてFATAL終了→pm2再起動のクラッシュループになる実例が
-// あったため、ai_cord本体(readyを無期限に待つ)に近い余裕を持たせて2分にする。
-// タイムアウトした場合も原因を追えるよう明示的にログを出す(以前は無言でfalseを
-// 返すだけで、pm2ログに[FATAL ERR]しか残らずタイムアウトが原因だと分からなかった)
-function waitReady(client, timeoutMs = 120000) {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      logger.error('LOGIN', `[${client.accountState.id}] readyイベントが${timeoutMs / 1000}秒以内に来ませんでした`);
-      resolve(false);
-    }, timeoutMs);
-    client.once('ready', () => {
-      clearTimeout(timer);
-      logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
-      resolve(true);
-    });
+// 以前(readyを一定時間待って来なければプロセスごとFATAL終了→pm2に再起動させる)は、
+// サーバー負荷等でDiscord側のハンドシェイクが長引くケースでタイムアウト→強制終了→
+// pm2再起動(=接続をゼロからやり直し)を繰り返すクラッシュループになってしまった
+// (2分に延ばしても再現した)。login()自体が失敗(トークン不正等)した場合を除き、
+// readyになるまでの時間はプロセスを生かしたまま無期限に待つ(ai_cord本体と同じ方針)。
+// slashbump/relay/rssTwitterPostはチャンネルIDからアクセスできるアカウントを
+// 実行のたびに動的に探す作りなので、登録時点で全アカウントがready済みである
+// 必要は無い(readyになっていないアカウントは単にそのチャンネルにアクセスできない
+// 扱いになるだけで、後から追いつく)
+let handlersRegistered = false;
+function registerSharedHandlersOnce() {
+  if (handlersRegistered) return;
+  handlersRegistered = true;
+  registerMealImageHandler(clients);
+  registerSlashBumpHandler(clients);
+  registerRelayHandler(clients);
+  registerRssTwitterPostHandler(clients);
+}
+
+for (const client of clients) {
+  client.once('ready', () => {
+    logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
+    registerSharedHandlersOnce();
+    // gifPostHandlerはこのアカウント単体のgifGenres/gifPostChannelIdだけを見るので、
+    // 複数アカウントを跨いだ待ち合わせ不要。readyになったアカウントから順次登録する
+    registerGifPostHandler(client);
   });
 }
 
 // ai_cord本体のloginStaggered()と同じ方針: 複数アカウントを同時にlogin()すると
 // 「別々のはずの複数アカウントが寸分違わず同時にオフライン→オンラインを繰り返す」
 // という分かりやすいパターンになってしまうため、1アカウントずつランダムな間隔を
-// 空けて順にログインする
+// 空けて順にログインする。login()自体の失敗(トークン不正等)はここでログに残す
 async function start() {
   const { minMs = 8000, maxMs = 30000 } = config.loginStagger || {};
-  const readyClients = [];
 
   for (let i = 0; i < clients.length; i++) {
     if (i > 0) await sleep(minMs + Math.random() * (maxMs - minMs));
 
-    const client = clients[i];
     try {
-      await client.login(accounts[i].discordToken);
-      const ok = await waitReady(client);
-      if (ok) readyClients.push(client);
+      await clients[i].login(accounts[i].discordToken);
     } catch (err) {
       logger.error('LOGIN', `[${accounts[i].id}] ${err.message}`);
     }
   }
-
-  if (readyClients.length === 0) {
-    logger.error('FATAL', '全アカウントのログインに失敗しました');
-    process.exit(1);
-  }
-
-  // slashbump/relayはチャンネルIDから「どのアカウントがそのチャンネルにアクセスできるか」を
-  // 動的に解決するため、全アカウントのログインが揃ってから登録する
-  registerMealImageHandler(readyClients);
-  registerSlashBumpHandler(readyClients);
-  registerRelayHandler(readyClients);
-  registerRssTwitterPostHandler(readyClients);
-  // gifPostHandlerはai_cord本体と同じくクライアント単体で登録する(このアカウントの
-  // gifGenres/gifPostChannelIdだけを見て投稿するため、複数アカウントを跨いだ
-  // チャンネル解決は不要)
-  for (const client of readyClients) registerGifPostHandler(client);
 }
 
 start();
