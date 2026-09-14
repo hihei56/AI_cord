@@ -219,6 +219,14 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 上記は自発投稿・掛け合いの「発生タイミングに混ざる」形なので、`selfTalk.enabled`がfalseのまま(既定)だったりアカウントが1つしか無かったりすると、GIF投稿自体もほぼ発生しない。他の機能の有効/無効に関係なく単独で一定間隔ごとに必ず投稿したい場合は、`src/handlers/gifPostHandler.js`が`GIF_GENRE[_N]`を設定した各アカウントごとに`gif.postIntervalMs`(既定1時間)±`postIntervalJitter`の間隔で、応答チャンネルの中からランダムに1つ選んでGIFを投稿する(LLM不使用)。
 
+検索キーワードは`.env`の`GIF_GENRE[_N]`は初回起動時の初期値としてのみ使われ、以降は`!gifgenre`コマンド(`src/commands/core/gifgenre.js`)で管理する。追加/削除内容は`data/gif-genres-<アカウントID>.json`に永続化され、再起動不要ですぐ反映される。
+
+| コマンド | 内容 |
+|---|---|
+| `!gifgenre add <キーワード>` | 検索キーワードを追加(スペース区切りでそのまま検索語になる) |
+| `!gifgenre remove <キーワード>` | 削除 |
+| `!gifgenre list` | 登録中のキーワード一覧を表示 |
+
 ### ニュースをネタにした自発投稿(`news`)
 
 `.env`の`NEWS_POST[_N]=true`にしたアカウントは、`src/handlers/newsPostHandler.js`がGIF投稿と同じパターンで`news.postIntervalMs`(既定90分)±`postIntervalJitter`ごとに単独で動き、NHKニュースの見出しを1つ取得して`generateSelfTalk`に話のきっかけ(topicHint)として渡し、ペルソナの口調で短く一言コメントする投稿を生成して送る。記事本文の取得・要約・引用は行わず、見出しの内容をきっかけにした一言をLLMに生成させるだけ(既存のconversationSeedのお題決めと同じ仕組みの再利用)。

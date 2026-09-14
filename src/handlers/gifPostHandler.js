@@ -11,6 +11,9 @@ const { scheduleWithJitter } = require('../utils/scheduler');
 async function gifPost(client) {
   const state = client.accountState;
   if (state.lockedDown) return;
+  // gifGenresは!gifgenreコマンドで実行中に増減しうる配列なので、登録時点ではなく
+  // 投稿しようとするたびに空かどうかを確認する
+  if (state.gifGenres.length === 0) return;
 
   const ids = state.channelStore.listChannels();
   if (ids.length === 0) return;
@@ -29,11 +32,11 @@ async function gifPost(client) {
   }
 }
 
-// gifGenres(.envのGIF_GENRE[_N])を設定したアカウントだけ、config.gif.postIntervalMs
-// ごとにジッター付きで自動投稿する(未設定なら登録自体しない)
+// config.gif.postIntervalMsごとにジッター付きで自動投稿する。起動時点で
+// gifGenresが空でも登録自体は行う(!gifgenreコマンドで後からキーワードを
+// 追加した時に再起動なしで拾えるようにするため。実際に投稿するかどうかは
+// gifPost側でその都度gifGenresの中身を見て判断する)
 function registerGifPostHandler(client) {
-  const state = client.accountState;
-  if (!state.gifGenres?.length) return;
   if (!config.gif?.postIntervalMs) return;
 
   const { postIntervalMs, postIntervalJitter = 0.4 } = config.gif;
