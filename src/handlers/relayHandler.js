@@ -2,13 +2,6 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { convertTweetLinksInText } = require('../utils/vxtwitter');
 
-const SOURCE_GUILD_ID = process.env.RELAY_SOURCE_GUILD_ID;
-const SOURCE_CHANNEL_ID = process.env.RELAY_SOURCE_CHANNEL_ID;
-const DESTINATION_CHANNEL_IDS = (process.env.RELAY_DESTINATION_CHANNEL_IDS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-
 // 転送先チャンネルにアクセスできる(参加している)最初のアカウントを使う。
 // 転送元・転送先は普段の会話用チャンネルと別の場合もあるため、channelStoreには依らない
 function findClientForChannel(clients, channelId) {
@@ -47,11 +40,11 @@ function buildRelayContent(msg) {
   return parts.join('\n');
 }
 
-async function relayMessage(clients, msg) {
+async function relayMessage(clients, destinationChannelIds, msg) {
   const content = buildRelayContent(msg);
   if (!content) return;
 
-  for (const channelId of DESTINATION_CHANNEL_IDS) {
+  for (const channelId of destinationChannelIds) {
     const client = findClientForChannel(clients, channelId);
     if (!client) {
       logger.error('RELAY', `転送先チャンネル${channelId}にアクセスできるアカウントが無い`);
@@ -83,33 +76,26 @@ function alreadySeen(msgId) {
   return false;
 }
 
-// 特定サーバーの特定チャンネルを監視し、投稿(テキストはそのまま、メディアは
-// CDN URLをそのまま)を複数の指定チャンネルへ連続投稿を間隔を空けつつマルチポストする
+// 監視元・転送先・有効/無効はアカウントごとに設定する(client.accountState.relay、
+// !relayコマンドで管理)。どのアカウントがどのチャンネルを監視するかはそのアカウントの
+// 設定次第なので、全クライアントに登録した上でメッセージ受信のたびに「このクライアントの
+// 監視元と一致するか」を都度見る(起動時点で設定が空でも、後から!relay sourceで
+// 設定すれば再起動不要に効く)
 function registerRelayHandler(clients) {
-  if (!config.relay?.enabled) return;
-
-  if (!SOURCE_GUILD_ID || !SOURCE_CHANNEL_ID) {
-    logger.error('RELAY', 'RELAY_SOURCE_GUILD_ID/RELAY_SOURCE_CHANNEL_IDが未設定のため転送機能を無効化します');
-    return;
-  }
-  if (DESTINATION_CHANNEL_IDS.length === 0) {
-    logger.error('RELAY', 'RELAY_DESTINATION_CHANNEL_IDSが未設定のため転送機能を無効化します');
-    return;
-  }
-
   for (const client of clients) {
     client.on('messageCreate', (msg) => {
-      if (msg.guild?.id !== SOURCE_GUILD_ID || msg.channel.id !== SOURCE_CHANNEL_ID) return;
+      const relay = client.accountState?.relay;
+      if (!relay?.enabled || !relay.sourceGuildId || !relay.sourceChannelId) return;
+      if (msg.guild?.id !== relay.sourceGuildId || msg.channel.id !== relay.sourceChannelId) return;
+      if (!relay.destinationChannelIds?.length) return;
       if (alreadySeen(msg.id)) return;
 
       enqueue(async () => {
-        await relayMessage(clients, msg);
+        await relayMessage(clients, relay.destinationChannelIds, msg);
         await new Promise((r) => setTimeout(r, relayDelay()));
       });
     });
   }
-
-  logger.log('RELAY', `転送を有効化: ${SOURCE_GUILD_ID}/${SOURCE_CHANNEL_ID} → [${DESTINATION_CHANNEL_IDS.join(', ')}]`);
 }
 
 module.exports = { registerRelayHandler };

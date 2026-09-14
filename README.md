@@ -177,24 +177,39 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 ### チャンネル転送/マルチポスト(`relay`)
 
-特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`!slashbump`と同じ`mealpost`プロセス(`src/mealPostBot.js`)専用で動く(ai_cordのメインプロセスとは無関係)。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`(監視元)と`RELAY_DESTINATION_CHANNEL_IDS`(カンマ区切りで転送先を複数指定可)、および`config/settings.json`の`relay.enabled`をtrueにすると有効化される(いずれか欠けていれば無効のまま)。
+特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`!slashbump`と同じ`mealpost`プロセス(`src/mealPostBot.js`)専用で動く(ai_cordのメインプロセスとは無関係)。設定は**コマンドを実行したアカウントに紐づく**(`client.accountState.relay`、`data/relay-<アカウントID>.json`に永続化)。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`/`RELAY_DESTINATION_CHANNEL_IDS`は初回起動時の初期値としてのみ使われ、以降は`!relay`コマンドで再起動不要に変更できる。
 
-- `src/handlers/relayHandler.js`が`mealpost`アカウントで動く。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
+- `src/handlers/relayHandler.js`が各アカウントの設定を見る。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
 - 本文中にtwitter.com/x.com/nitter等のツイートリンクが含まれていれば、`src/utils/vxtwitter.js`でvxtwitter.com形式に変換してから転送する(生のツイートリンクはDiscordの埋め込みプレビューが展開されないため)。それ以外のURL・テキストはそのまま
-- 転送元・転送先チャンネルには`mealpost`アカウントが参加している必要がある
+- 転送元・転送先チャンネルには、監視を担当するアカウント(転送先は`mealpost`プロセスのいずれかのアカウント)が参加している必要がある
 - 連続投稿があっても即座に全部転送せず、1件ずつ`relay.delayMs`(既定5秒)±`delayJitter`の間隔を空けて順番に転送する(機械的な連投に見えないようにするため)
+
+| コマンド | 内容 |
+|---|---|
+| `!relay source [#channel]` | 監視元チャンネルを設定(省略時は今のチャンネル) |
+| `!relay adddest [#channel]` / `removedest [#channel]` | 転送先の追加/削除(複数可、省略時は今のチャンネル) |
+| `!relay on` / `off` | 有効化/無効化 |
+| `!relay list` | 現在の設定確認 |
 
 ### RSSフィード経由のツイートリンク自動投稿(`rssTwitterPost`)
 
-nitter等のRSSフィードを定期的にポーリングし、フィード内のツイートリンク(nitterインスタンス経由が主だが`/ユーザー名/status/ID`の形式ならtwitter.com/x.comのリンクでも可)を埋め込みプレビューの展開されるvxtwitter.com形式のURLに変換して指定チャンネルへ投稿する機能。`!slashbump`/`relay`と同じ`mealpost`プロセス専用(`.env`の`RSS_FEED_URL`/`RSS_POST_CHANNEL_ID`を設定したアカウントだけがオプトインで動く)。
+nitter等のRSSフィードを定期的にポーリングし、フィード内のツイートリンク(nitterインスタンス経由が主だが`/ユーザー名/status/ID`の形式ならtwitter.com/x.comのリンクでも可)を埋め込みプレビューの展開されるvxtwitter.com形式のURLに変換して指定チャンネルへ投稿する機能。`!slashbump`/`relay`と同じ`mealpost`プロセス専用。設定は**コマンドを実行したアカウントに紐づく**(`client.accountState.rssFeed`、`data/rss-feed-<アカウントID>.json`に永続化)。`.env`の`RSS_FEED_URL`/`RSS_POST_CHANNEL_ID`は初回起動時の初期値としてのみ使われ、以降は`!rssfeed`コマンドで再起動不要に変更できる。
 
 - `src/handlers/rssTwitterPostHandler.js`が`config/settings.json`の`rssTwitterPost.checkIntervalMs`(既定10分)±`checkIntervalJitter`ごとにフィードを取得し、`src/utils/rssTwitterStore.js`(`data/rss-twitter-seen-<アカウントID>.json`)で既に見たアイテムを記録して新着だけを拾う
 - **初回起動時だけ**、フィードの既存アイテムを全部「新着」として一気に投稿してしまわないよう、既読登録のみ行い投稿はスキップする。2回目以降のチェックで見つかった本当の新着だけを投稿する
 - 変換は`src/utils/vxtwitter.js`が担当。リンクのパスが`/ユーザー名/status/ID`の形式でなければ(リツイートの一覧ページ等、ツイート個別リンクでない場合)そのアイテムはスキップする
 - 新着が複数件あっても連続投稿せず、`rssTwitterPost.postDelayMs`(既定4秒)±`postDelayJitter`の間隔を空けて古い順に1件ずつ投稿する
 - 一部のNitterミラーはUser-Agent無しのリクエストを拒否するため、`User-Agent: Mozilla/5.0`を付けて取得する
-- `RSS_FEED_URL`はカンマ区切りで複数のミラーURLを指定でき、先頭から順に試して最初に成功したものを使う(1つのミラーが落ちていても他のミラーで拾えるフォールバック。単独の外部プロキシサーバーを別途立てる必要が無いよう、このフォールバック自体をBot側に持たせている)
-- `MEALPOST_DISCORD_TOKEN_2`のような2体目以降のアカウント追加と組み合わせれば、ご飯画像投稿用アカウントとは別のアカウントでこの機能だけを動かすこともできる(`RSS_FEED_URL_2`/`RSS_POST_CHANNEL_ID_2`)
+- ミラーURLはカンマ区切り(または`!rssfeed add`)で複数指定でき、先頭から順に試して最初に成功したものを使う(1つのミラーが落ちていても他のミラーで拾えるフォールバック。単独の外部プロキシサーバーを別途立てる必要が無いよう、このフォールバック自体をBot側に持たせている)
+
+| コマンド | 内容 |
+|---|---|
+| `!rssfeed add <URL>` / `remove <URL>` | ミラーURLの追加/削除 |
+| `!rssfeed channel [#channel]` | 投稿先チャンネルを設定(省略時は今のチャンネル) |
+| `!rssfeed on` / `off` | 有効化/無効化 |
+| `!rssfeed list` | 現在の設定確認(`!rss`でも可) |
+
+> `!relay`/`!rssfeed`/`!slashbump`/`!gifgenre`はいずれも**コマンドを実行したアカウント**に紐づくため、`MEALPOST_DISCORD_TOKEN_2`のような2体目以降のアカウントを追加すれば、「1体目のアカウントで`!relay`を管理、2体目のアカウントで`!rssfeed`を管理」のように役割を分けられる。ただし2体目以降のコマンドprefix(`MEALPOST_COMMAND_PREFIX_2`)を1体目と同じにすると、同じチャンネルで打った1つのコマンドを両方のアカウントが受信して二重に実行してしまうため、複数アカウントを使う場合は必ず別々のprefixにすること。
 
 ### `config/settings.json`(動作パラメータ)
 

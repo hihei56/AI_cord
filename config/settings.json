@@ -100,7 +100,6 @@
   },
   "presenceFile": "default.json",
   "relay": {
-    "enabled": false,
     "delayMs": 5000,
     "delayJitter": 0.4
   },

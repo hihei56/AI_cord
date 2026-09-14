@@ -64,7 +64,13 @@ function itemKey(item) {
 }
 
 async function checkOnce(client, account) {
-  const items = await fetchItemsWithFallback(account.rssFeedUrls);
+  // feedUrls/postChannelIdは!rssfeedコマンドで実行中に変更されうるので、登録時点では
+  // なくチェックしようとするたびに現在の設定を見る(起動時点で未設定でも、後から
+  // コマンドで設定すれば再起動不要に効く)
+  const feed = account.rssFeed;
+  if (!feed?.enabled || !feed.feedUrls?.length || !feed.postChannelId) return;
+
+  const items = await fetchItemsWithFallback(feed.feedUrls);
   const tracker = account.seenTracker;
 
   const fresh = items.filter((item) => {
@@ -82,9 +88,9 @@ async function checkOnce(client, account) {
     return;
   }
 
-  const channel = client.channels?.cache.get(account.rssPostChannelId);
+  const channel = client.channels?.cache.get(feed.postChannelId);
   if (!channel) {
-    logger.error('RSSTWITTER', `[${account.id}] 投稿先チャンネル${account.rssPostChannelId}にアクセスできません`);
+    logger.error('RSSTWITTER', `[${account.id}] 投稿先チャンネル${feed.postChannelId}にアクセスできません`);
     return;
   }
 
@@ -108,21 +114,22 @@ async function checkOnce(client, account) {
   }
 }
 
-// RSS(nitter等)からツイートリンクを定期取得し、vxtwitter.comのURLに変換して
-// 投稿する。rssFeedUrls/rssPostChannelIdを設定したアカウントだけが対象(オプトイン)
+// RSS(nitter等)からツイートリンクを定期取得し、vxtwitter.comのURLに変換して投稿する。
+// accountState.rssFeed(!rssfeedコマンドで管理)が設定されたアカウントだけが対象。
+// 起動時点で未設定でも後からコマンドで設定できるよう、全クライアントに無条件で
+// スケジュール登録し、実際にチェックするかどうかはcheckOnce側でそのつど判断する
 function registerRssTwitterPostHandler(clients) {
+  const { checkIntervalMs = 600000, checkIntervalJitter = 0.3 } = config.rssTwitterPost || {};
+
   for (const client of clients) {
     const account = client.accountState;
-    if (!account?.rssFeedUrls?.length || !account?.rssPostChannelId) continue;
+    if (!account?.rssFeed) continue;
 
     account.seenTracker = createSeenTracker(account.id);
 
-    const { checkIntervalMs = 600000, checkIntervalJitter = 0.3 } = config.rssTwitterPost || {};
     scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () =>
       checkOnce(client, account).catch((err) => logger.error('RSSTWITTER', `[${account.id}] ${err.message}`))
     );
-
-    logger.log('RSSTWITTER', `[${account.id}] 監視開始: [${account.rssFeedUrls.join(', ')}] → <#${account.rssPostChannelId}>`);
   }
 }
 

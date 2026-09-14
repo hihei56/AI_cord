@@ -20,9 +20,13 @@ const { registerRelayHandler } = require('./handlers/relayHandler');
 const { registerRssTwitterPostHandler } = require('./handlers/rssTwitterPostHandler');
 const { registerGifPostHandler } = require('./handlers/gifPostHandler');
 const gifGenreStore = require('./utils/gifGenreStore');
+const relayStore = require('./utils/relayStore');
+const rssFeedStore = require('./utils/rssFeedStore');
 const { canRunCommands } = require('./commands/handler');
 const slashBumpCommand = require('./commands/slashbumpCommand');
 const gifgenreCommand = require('./commands/core/gifgenre');
+const relayCommand = require('./commands/relayCommand');
+const rssfeedCommand = require('./commands/rssfeedCommand');
 
 function idListEnv(envVal) {
   if (!envVal) return [];
@@ -42,6 +46,9 @@ function loadMealpostAccounts() {
       commandRoleIds: config.resolveCommandRoleIds(process.env.MEALPOST_COMMAND_ROLE_ID),
       rssFeedUrls: idListEnv(process.env.RSS_FEED_URL),
       rssPostChannelId: process.env.RSS_POST_CHANNEL_ID,
+      relaySourceGuildId: process.env.RELAY_SOURCE_GUILD_ID,
+      relaySourceChannelId: process.env.RELAY_SOURCE_CHANNEL_ID,
+      relayDestinationChannelIds: idListEnv(process.env.RELAY_DESTINATION_CHANNEL_IDS),
       // 注意: ai_cord本体のアカウント1もGIF_GENRE(無印)を使うため、mealpost側は
       // 同じ.envを共有しても衝突しないようMEALPOST_プレフィックス付きの専用変数にする
       gifGenres: idListEnv(process.env.MEALPOST_GIF_GENRE),
@@ -58,6 +65,9 @@ function loadMealpostAccounts() {
       commandRoleIds: config.resolveCommandRoleIds(process.env[`MEALPOST_COMMAND_ROLE_ID_${i}`]),
       rssFeedUrls: idListEnv(process.env[`RSS_FEED_URL_${i}`]),
       rssPostChannelId: process.env[`RSS_POST_CHANNEL_ID_${i}`],
+      relaySourceGuildId: process.env[`RELAY_SOURCE_GUILD_ID_${i}`],
+      relaySourceChannelId: process.env[`RELAY_SOURCE_CHANNEL_ID_${i}`],
+      relayDestinationChannelIds: idListEnv(process.env[`RELAY_DESTINATION_CHANNEL_IDS_${i}`]),
       gifGenres: idListEnv(process.env[`MEALPOST_GIF_GENRE_${i}`]),
       gifPostChannelId: process.env[`MEALPOST_GIF_POST_CHANNEL_ID_${i}`]
     });
@@ -85,32 +95,55 @@ const clients = accounts.map((account) => {
   });
 
   // このプロセスにはメインのai_cordのようなペルソナ・会話履歴等の状態は無いため、
-  // !slashbumpコマンドの権限判定(canRunCommands)・rssTwitterPostHandler・
-  // gifPostHandlerに必要な最小限の項目だけを持たせる。gifGenresは初回起動時の
-  // .env値を初期値としてdata/gif-genres-<id>.jsonに永続化し、以降は!gifgenre
-  // コマンドで管理する(ai_cord本体のアカウントと同じ仕組み)
+  // !slashbumpコマンドの権限判定(canRunCommands)・rssTwitterPostHandler・relayHandler・
+  // gifPostHandlerに必要な最小限の項目だけを持たせる。gifGenres/relay/rssFeedは
+  // いずれも初回起動時の.env値を初期値としてdata/配下に永続化し、以降はコマンドで
+  // 管理する(ai_cord本体のアカウントと同じ仕組み)
   client.accountState = {
     id: account.id,
     commandPrefix: account.commandPrefix,
     commandRoleIds: account.commandRoleIds,
     lockedDown: false,
-    rssFeedUrls: account.rssFeedUrls,
-    rssPostChannelId: account.rssPostChannelId,
+    rssFeed: rssFeedStore.loadOrInit(account.id, {
+      enabled: true,
+      feedUrls: account.rssFeedUrls || [],
+      postChannelId: account.rssPostChannelId || null
+    }),
+    relay: relayStore.loadOrInit(account.id, {
+      enabled: Boolean(account.relaySourceGuildId && account.relaySourceChannelId),
+      sourceGuildId: account.relaySourceGuildId || null,
+      sourceChannelId: account.relaySourceChannelId || null,
+      destinationChannelIds: account.relayDestinationChannelIds || []
+    }),
     gifGenres: gifGenreStore.loadOrInit(account.id, account.gifGenres || []),
     gifPostChannelId: account.gifPostChannelId
   };
 
-  // !slashbump/!gifgenreコマンドだけを受け付ける専用リスナー。ai_cordの
-  // commands/handler.jsが持つ汎用コマンドディスパッチ(全コマンドをロード)は
+  // !slashbump/!gifgenre/!relay/!rssfeedコマンドだけを受け付ける専用リスナー。
+  // ai_cordのcommands/handler.jsが持つ汎用コマンドディスパッチ(全コマンドをロード)は
   // 使わず、このプロセスに実際に関係するコマンドだけを直接呼ぶ(channel/nickname/
-  // pricealert等の他コマンドはこのアカウントの状態を前提にしておらず対応する意味が無いため)
+  // pricealert等の他コマンドはこのアカウントの状態を前提にしておらず対応する意味が無いため)。
+  // コマンドを実行したアカウント自身のclient.accountStateに紐づくため、「特定チャンネル
+  // 監視は1個目のアカウントで、RSSは2個目のアカウントで」のように、コマンドを打つ
+  // アカウント(prefixで区別)ごとに別々の設定を持たせられる
+  const COMMANDS = {
+    slashbump: slashBumpCommand,
+    bump: slashBumpCommand,
+    gifgenre: gifgenreCommand,
+    gif: gifgenreCommand,
+    relay: relayCommand,
+    rssfeed: rssfeedCommand,
+    rss: rssfeedCommand
+  };
+
   client.on('messageCreate', async (msg) => {
     const prefix = client.accountState.commandPrefix;
     if (!msg.content.startsWith(prefix)) return;
 
     const args = msg.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
-    if (commandName !== 'slashbump' && commandName !== 'bump' && commandName !== 'gifgenre' && commandName !== 'gif') return;
+    const command = COMMANDS[commandName];
+    if (!command) return;
 
     const permission = await canRunCommands(msg, client, client.accountState);
     if (!permission.allowed) {
@@ -119,7 +152,6 @@ const clients = accounts.map((account) => {
     }
 
     try {
-      const command = commandName === 'gifgenre' || commandName === 'gif' ? gifgenreCommand : slashBumpCommand;
       await command.execute(msg, args, client);
       logger.log('COMMAND', `[${client.accountState.id}] ${msg.author.username}が実行: ${commandName}`);
     } catch (err) {
