@@ -173,6 +173,14 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
 - 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
 
+### チャンネル転送/マルチポスト(`relay`)
+
+特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`!slashbump`と同じ`mealpost`プロセス(`src/mealPostBot.js`)専用で動く(ai_cordのメインプロセスとは無関係)。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`(監視元)と`RELAY_DESTINATION_CHANNEL_IDS`(カンマ区切りで転送先を複数指定可)、および`config/settings.json`の`relay.enabled`をtrueにすると有効化される(いずれか欠けていれば無効のまま)。
+
+- `src/handlers/relayHandler.js`が`mealpost`アカウントで動く。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
+- 転送元・転送先チャンネルには`mealpost`アカウントが参加している必要がある
+- 連続投稿があっても即座に全部転送せず、1件ずつ`relay.delayMs`(既定5秒)±`delayJitter`の間隔を空けて順番に転送する(機械的な連投に見えないようにするため)
+
 ### `config/settings.json`(動作パラメータ)
 
 | セクション | 内容 |
@@ -233,15 +241,6 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 `.env`の`NEWS_POST[_N]=true`にしたアカウントは、`src/handlers/newsPostHandler.js`がGIF投稿と同じパターンで`news.postIntervalMs`(既定90分)±`postIntervalJitter`ごとに単独で動き、NHKニュースの見出しを1つ取得して`generateSelfTalk`に話のきっかけ(topicHint)として渡し、ペルソナの口調で短く一言コメントする投稿を生成して送る。記事本文の取得・要約・引用は行わず、見出しの内容をきっかけにした一言をLLMに生成させるだけ(既存のconversationSeedのお題決めと同じ仕組みの再利用)。
 
-### チャンネル転送/マルチポスト(`relay`)
-
-特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`(監視元)と`RELAY_DESTINATION_CHANNEL_IDS`(カンマ区切りで転送先を複数指定可)、および`config/settings.json`の`relay.enabled`をtrueにすると有効化される(いずれか欠けていれば無効のまま)。
-
-- `src/handlers/relayHandler.js`が全アカウント共通で動く。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
-- 転送先はチャンネルIDごとに、そのチャンネルへアクセスできる(参加している)アカウントを自動で選んで送信する
-- 連続投稿があっても即座に全部転送せず、1件ずつ`relay.delayMs`(既定5秒)±`delayJitter`の間隔を空けて順番に転送する(機械的な連投に見えないようにするため)
-- 複数アカウントが同じ監視元チャンネルに参加していても二重転送しないよう、処理済みメッセージIDで重複を防いでいる
-
 ### `config/prompts/self_talk.txt`
 
 一定間隔で自発的につぶやく際のプロンプトテンプレート。
@@ -282,7 +281,7 @@ npm run markov:demo
 - テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)
 - 仮想通貨の価格アラート(`!pricealert`)。指定チャンネルで監視銘柄を一定間隔でチェックし、前回アラート時から±5%(既定)以上動いたら通知する
 - 他BOTへのスラッシュコマンド自動送信(`!slashbump`)。サーバー宣伝BOT等への`/up`を対象BOTの応答(成功/クールダウン)に応じて自動でスケジュールし続ける
-- 特定サーバーの特定チャンネルの投稿を、間隔を空けつつ複数チャンネルへそのまま転送するミラー機能(`relay`、テキストはコピペ・メディアはDiscord CDN URLをそのまま使用)
+- 特定サーバーの特定チャンネルの投稿を、間隔を空けつつ複数チャンネルへそのまま転送するミラー機能(`relay`、`mealpost`プロセス専用。テキストはコピペ・メディアはDiscord CDN URLをそのまま使用)
 - 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)。返信までの間も`typingDelay.longPauseChance`の確率でたまに長考(既定15〜90秒)を挟み、毎回同じテンポで即レスしないようにしている
 - メッセージへの添付画像・URL貼り付け時のembed画像を読み取り、内容を踏まえて返信する(vision対応モデル経由。複数枚添付にも対応)
 - (任意)マルコフ連鎖による口調の下書き生成

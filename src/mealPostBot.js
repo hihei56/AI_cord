@@ -13,6 +13,7 @@ const logger = require('./utils/logger');
 const config = require('./utils/config');
 const { registerMealImageHandler } = require('./handlers/mealImageHandler');
 const { registerSlashBumpHandler } = require('./handlers/slashBumpHandler');
+const { registerRelayHandler } = require('./handlers/relayHandler');
 const { canRunCommands } = require('./commands/handler');
 const slashBumpCommand = require('./commands/slashbumpCommand');
 
@@ -71,6 +72,7 @@ client.once('ready', () => {
   logger.log('READY', `[MEALPOST] ${client.user.tag}`);
   registerMealImageHandler([client]);
   registerSlashBumpHandler([client]);
+  registerRelayHandler([client]);
 });
 
 client.login(token).catch((err) => {
