@@ -1,29 +1,63 @@
-// Tenor(Google)の公式GIF検索APIからキーワードに合うGIFをランダムに1つ取得する。
-// 無料・公式提供のAPIで、チャットアプリへの埋め込みは想定された利用方法そのもの
-// (要 .env の TENOR_API_KEY。https://developers.google.com/tenor/guides/quickstart で取得)
+// Klipy(https://klipy.com)のGIF検索APIからキーワードに合うGIFをランダムに1つ取得する。
+// 元々はTenor(Google)を使っていたが、Tenor APIは2026年6月30日付で完全に終了した
+// (2026年1月13日以降は新規APIキー発行も停止)。KlipyはTenor社の元社員が立ち上げた
+// 後継サービスで、エンドポイント構成がTenorとほぼ互換(ドロップイン移行を謳っている)、
+// 無料枠に利用上限が無い。要 .env の KLIPY_API_KEY(https://klipy.com/developers で取得)。
 const logger = require('./logger');
 
-const BASE_URL = 'https://tenor.googleapis.com/v2/search';
+const BASE_URL = 'https://api.klipy.com/api/v1';
 
 // キーワードごとに直近選んだGIFのidを覚えておき、同じ検索結果プールから
 // 短期間に同じGIFを繰り返し選んでしまうのを緩和する
 const recentByQuery = new Map();
 const RECENT_MAX = 8;
 
+// KlipyのレスポンスはTenorから移行しやすいよう近い構造になっているとされるが、
+// 公式ドキュメントに直接アクセスできない環境だったため、実際に確認できるまでは
+// 複数の想定パターンを順に試す防御的な実装にしておく。全て外れた場合は生の
+// レスポンスをログに残し、実際の形が分かり次第ここを1箇所直せば済むようにする
+function extractResults(data) {
+  if (Array.isArray(data?.data?.data)) return data.data.data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.results)) return data.results;
+  return null;
+}
+
+function extractGifUrl(item) {
+  return (
+    item?.files?.gif?.url ||
+    item?.files?.md?.gif?.url ||
+    item?.files?.sm?.gif?.url ||
+    item?.media_formats?.gif?.url ||
+    item?.media_formats?.mediumgif?.url ||
+    item?.url ||
+    item?.src ||
+    item?.file ||
+    null
+  );
+}
+
 async function fetchRandomGif(query) {
-  const apiKey = process.env.TENOR_API_KEY;
+  const apiKey = process.env.KLIPY_API_KEY;
   if (!apiKey || !query) return null;
 
   try {
-    const url = `${BASE_URL}?q=${encodeURIComponent(query)}&key=${apiKey}&limit=20&media_filter=gif&contentfilter=medium&locale=ja_JP`;
+    // customer_idは「アプリ側で決める安定したユーザー識別子」として要求される
+    // (Klipy側の重複排除・パーソナライズ用)。人間のユーザー単位の概念が無い
+    // botなので、固定値で構わない
+    const url = `${BASE_URL}/${apiKey}/gifs/search?q=${encodeURIComponent(query)}&customer_id=ai_cord&per_page=20&content_filter=medium`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) {
-      logger.error('GIF', `Tenor HTTP ${res.status} ${res.statusText} (query=${query})`);
+      logger.error('GIF', `Klipy HTTP ${res.status} ${res.statusText} (query=${query})`);
       return null;
     }
 
     const data = await res.json();
-    const results = data.results || [];
+    const results = extractResults(data);
+    if (!results) {
+      logger.error('GIF', `Klipy応答の形式が想定と異なるため解析できません(query=${query}): ${JSON.stringify(data).slice(0, 500)}`);
+      return null;
+    }
     if (results.length === 0) return null;
 
     const recent = recentByQuery.get(query) || [];
@@ -31,11 +65,17 @@ async function fetchRandomGif(query) {
     const pool = candidates.length > 0 ? candidates : results;
     const picked = pool[Math.floor(Math.random() * pool.length)];
 
+    const gifUrl = extractGifUrl(picked);
+    if (!gifUrl) {
+      logger.error('GIF', `Klipyの結果からGIF URLを取り出せませんでした(query=${query}): ${JSON.stringify(picked).slice(0, 500)}`);
+      return null;
+    }
+
     recent.push(picked.id);
     if (recent.length > RECENT_MAX) recent.shift();
     recentByQuery.set(query, recent);
 
-    return picked.media_formats?.gif?.url || picked.media_formats?.mediumgif?.url || null;
+    return gifUrl;
   } catch (err) {
     logger.error('GIF', err);
     return null;
@@ -47,10 +87,10 @@ function resolveChance(base, jitterRatio) {
   return Math.min(1, Math.max(0, chance));
 }
 
-// accountState.gifGenres(.envのGIF_GENRE[_N]、カンマ区切りで複数可)が設定されて
-// いるアカウントだけ対象。確率(base±jitterRatio)に当たったら、複数キーワードから
-// ランダムに1つ選んでGIFを取得する。未設定/ハズレ/取得失敗ならnullを返し、
-// 呼び出し側は従来通りテキスト生成にフォールバックする
+// accountState.gifGenres(.envのGIF_GENRE[_N]初期値+!gifgenreコマンドでの追加分)が
+// 設定されているアカウントだけ対象。確率(base±jitterRatio)に当たったら、複数
+// キーワードからランダムに1つ選んでGIFを取得する。未設定/ハズレ/取得失敗ならnullを
+// 返し、呼び出し側は従来通りテキスト生成にフォールバックする
 async function tryFetchGenreGif(accountState, base, jitterRatio = 0.4) {
   if (!base || !accountState?.gifGenres?.length) return null;
   if (Math.random() > resolveChance(base, jitterRatio)) return null;

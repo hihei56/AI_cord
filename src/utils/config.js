@@ -127,7 +127,7 @@ function loadAccounts() {
       markovDirectReplyChanceOverride: numEnv('MARKOV_DIRECT_REPLY_CHANCE'),
       markovDirectReplyMinLengthOverride: numEnv('MARKOV_DIRECT_REPLY_MIN_LENGTH'),
       // 自発投稿(selfTalk)・AI同士の掛け合いの一部を、LLM生成のテキストの代わりに
-      // Tenorで検索したGIFをそのまま貼るだけの投稿にする機能用。カンマ区切りで
+      // Klipyで検索したGIFをそのまま貼るだけの投稿にする機能用。カンマ区切りで
       // 複数指定でき、投稿のたびにランダムに1つ選んで検索する。未指定ならこの
       // アカウントはGIF投稿を一切しない(オプトイン)
       gifGenres: idListEnv(process.env.GIF_GENRE),

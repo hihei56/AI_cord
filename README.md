@@ -211,7 +211,9 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 ### GIF投稿(`gif`)
 
-自発投稿・AI同士の掛け合いは、LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、アカウントに`.env`の`GIF_GENRE[_N]`(カンマ区切りで検索キーワードを複数指定可)を設定すると、一部の投稿をTenor(Google)のGIF検索APIで見つけたGIFをキャプション無しでそのまま貼るだけの投稿に置き換える(LLM呼び出しをしないのでAPIコストもかからない)。要`TENOR_API_KEY`(無料、[公式クイックスタート](https://developers.google.com/tenor/guides/quickstart)で取得)。
+自発投稿・AI同士の掛け合いは、LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、アカウントに`.env`の`GIF_GENRE[_N]`(カンマ区切りで検索キーワードを複数指定可)を設定すると、一部の投稿をKlipyのGIF検索APIで見つけたGIFをキャプション無しでそのまま貼るだけの投稿に置き換える(LLM呼び出しをしないのでAPIコストもかからない)。要`KLIPY_API_KEY`(無料、[klipy.com/developers](https://klipy.com/developers)で取得)。
+
+> **注:** 以前はTenor(Google)のAPIを使っていたが、Tenor APIは2026年6月30日付で完全に終了した(1月13日以降は新規APIキー発行も停止)ため、Tenorの元社員が立ち上げた後継サービスKlipyに移行した。
 
 - `config/settings.json`の`gif.chance`(既定35%、±`chanceJitter`)が自発投稿・掛け合いの話し始めに、`gif.turnChance`(既定20%)が掛け合いの2ターン目以降・割り込みリプライに適用される
 - 投稿のたびに設定した複数キーワードからランダムに1つ選んで検索し、直近選んだGIFは同じキーワードでは避けるようにしている
@@ -265,7 +267,7 @@ npm run markov:demo
 - 一定間隔でのランダムな自発投稿(テキストのみ、または動物画像+一言)。既定では無効(`config/settings.json`の`selfTalk.enabled`をtrueにすると有効化)
 - 複数アカウント運用時、過疎ってるチャンネルでAI同士に掛け合いをさせる(相手がAIであることはお互い認識した上で会話する)。`alwaysOn`設定で確率・過疎チェックを無視した常時チャットモードにもできる。`botReplyChance`を設定すると、過疎チェック起点だけでなく兄弟アカウントの発言そのものに別のアカウントが確率的にリプライで割り込むこともある
 - 人間・兄弟アカウント両方の発言に確率的に絵文字リアクションを付ける(`reactions`、LLM不使用)
-- アカウントに検索キーワードを設定すると、自発投稿・掛け合いの一部をLLM生成テキストの代わりにTenor検索したGIFに置き換える(`gif`、LLM不使用)
+- アカウントに検索キーワードを設定すると、自発投稿・掛け合いの一部をLLM生成テキストの代わりにKlipy検索したGIFに置き換える(`gif`、LLM不使用)
 - Spotify再生中/動画視聴中を模したPresence(RPC)のローテーション更新
 - `!lockdown all` / `!channel add|remove|list all` による全アカウント一括操作
 - テスト用チャンネル(`TEST_CHANNEL_ID`)、応答相手を制限する許可リスト(`ALLOWED_REPLY_USER_IDS`)

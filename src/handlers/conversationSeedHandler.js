@@ -4,7 +4,7 @@ const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply } = 
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
-const { tryFetchGenreGif } = require('../utils/tenorGif');
+const { tryFetchGenreGif } = require('../utils/klipyGif');
 
 // 会話履歴に「実際は何を送ったか」をそのまま積むと、GIFのURLをLLMがテキストとして
 // 解釈しようとして不自然になるため、GIFを送った時の履歴には代わりにこのプレース
@@ -225,7 +225,7 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
 
   // LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、切り出し役の
   // アカウントにGIF_GENRE[_N]の設定があれば一定確率で、話し始めをテキストではなく
-  // Tenor検索したGIFそのものにする(LLM呼び出しをしない)
+  // Klipy検索したGIFそのものにする(LLM呼び出しをしない)
   const openerGifUrl = await tryFetchGenreGif(clientA.accountState, config.gif?.chance, config.gif?.chanceJitter);
   let opener, openerMsg;
   if (openerGifUrl) {

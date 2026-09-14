@@ -1,6 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { fetchRandomGif } = require('../utils/tenorGif');
+const { fetchRandomGif } = require('../utils/klipyGif');
 const { scheduleWithJitter } = require('../utils/scheduler');
 
 // selfTalk/conversationSeedのGIF混在(config.gif.chance等)は「たまに」の演出用だが、

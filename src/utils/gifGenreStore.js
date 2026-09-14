@@ -31,7 +31,7 @@ function loadOrInit(accountId, envGenres) {
 }
 
 // genres配列はaccountState.gifGenresと同じ参照を渡してもらい、その場でpush/spliceする。
-// こうすることで、既にこの配列を読んでいる側(tenorGif.js等)は何も変更せずに
+// こうすることで、既にこの配列を読んでいる側(klipyGif.js等)は何も変更せずに
 // 追加/削除をすぐ反映できる
 function addGenre(accountId, genres, keyword) {
   if (genres.includes(keyword)) return false;

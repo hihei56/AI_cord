@@ -44,7 +44,7 @@ function buildAccountState(account) {
     markovPriority: account.markovPriority,
     markovDirectReplyChance: account.markovDirectReplyChance,
     markovDirectReplyMinLength: account.markovDirectReplyMinLength,
-    // 自発投稿・AI同士の掛け合いの一部をTenor GIF検索でそのまま貼るだけの投稿にする
+    // 自発投稿・AI同士の掛け合いの一部をKlipy GIF検索でそのまま貼るだけの投稿にする
     // 機能用の検索キーワード一覧。初回起動時は.envのGIF_GENRE[_N](カンマ区切り)を
     // 初期値としてdata/gif-genres-<id>.jsonに永続化し、以降は!gifgenreコマンドで
     // 追加/削除した内容を使う(.envを書き換えず再起動不要でキーワードを管理できる)。
