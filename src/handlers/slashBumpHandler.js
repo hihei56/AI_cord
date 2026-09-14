@@ -25,6 +25,28 @@ function findClientForChannel(clients, channelId) {
   return clients.find((c) => c.channels?.cache.get(channelId));
 }
 
+// 自動bump実行のたびに、!slashbump notifyで指定した人間のユーザーをメンションして
+// bumpを喚起する。毎回同じ文言だと機械的に見えるため、「bump確認してください」を
+// ベースにいくつか言い回しを散らす
+const BUMP_REMINDER_PHRASES = [
+  'bump確認してください',
+  'そろそろbumpの時間っぽいので確認お願いします',
+  'bumpできてるか確認してもらえますか',
+  'bump番、よろしくお願いします',
+  'bumpの確認そろそろお願いします〜',
+  'bumpのお時間です、確認よろしくです'
+];
+
+async function notifyMentionUser(channel, target) {
+  if (!channel || !target.mentionUserId) return;
+  try {
+    const phrase = BUMP_REMINDER_PHRASES[Math.floor(Math.random() * BUMP_REMINDER_PHRASES.length)];
+    await channel.send(`<@${target.mentionUserId}> ${phrase}`);
+  } catch (err) {
+    logger.error('SLASHBUMP', `[${target.name}] メンション通知に失敗: ${err.message}`);
+  }
+}
+
 async function executeBump(clients, target) {
   const state = getState(target.botId, target.channelId);
   const now = Date.now();
@@ -39,8 +61,8 @@ async function executeBump(clients, target) {
     return;
   }
 
+  const channel = client.channels.cache.get(target.channelId);
   try {
-    const channel = client.channels.cache.get(target.channelId);
     await channel.sendSlash(target.botId, target.command);
     logger.log('SLASHBUMP', `[${target.name}] /${target.command} を ${channel.name ?? target.channelId} に送信`);
   } catch (err) {
@@ -48,6 +70,10 @@ async function executeBump(clients, target) {
     // どれが原因か分からない(実例: botIdがDiscordのスノーフレークID形式になっておらず
     // "Invalid string format"とだけ表示され特定に手間取った)ため、target情報を含める
     logger.error('SLASHBUMP', `[${target.name}] botId=${target.botId} command=${target.command} channelId=${target.channelId}: ${err.message}`);
+  } finally {
+    // 自動送信が成功しても失敗しても、bumpを試みたタイミング自体は人間に伝える価値が
+    // あるため(自動送信がAPI側の都合で失敗した時ほど、人間による手動確認が重要になる)
+    await notifyMentionUser(channel, target);
   }
 }
 
