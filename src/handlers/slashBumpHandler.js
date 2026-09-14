@@ -44,7 +44,10 @@ async function executeBump(clients, target) {
     await channel.sendSlash(target.botId, target.command);
     logger.log('SLASHBUMP', `[${target.name}] /${target.command} を ${channel.name ?? target.channelId} に送信`);
   } catch (err) {
-    logger.error('SLASHBUMP', err);
+    // エラーメッセージだけだとdata/slash-bump.jsonに複数targetが登録されている時に
+    // どれが原因か分からない(実例: botIdがDiscordのスノーフレークID形式になっておらず
+    // "Invalid string format"とだけ表示され特定に手間取った)ため、target情報を含める
+    logger.error('SLASHBUMP', `[${target.name}] botId=${target.botId} command=${target.command} channelId=${target.channelId}: ${err.message}`);
   }
 }
 
@@ -61,7 +64,7 @@ async function forceBump(target) {
     await channel.sendSlash(target.botId, target.command);
     logger.log('SLASHBUMP', `[${target.name}] (手動)/${target.command} を送信`);
   } catch (err) {
-    logger.error('SLASHBUMP', err);
+    logger.error('SLASHBUMP', `[${target.name}] botId=${target.botId} command=${target.command} channelId=${target.channelId}: ${err.message}`);
   }
 }
 
