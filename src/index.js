@@ -13,6 +13,7 @@ const { registerConversationSeedHandler } = require('./handlers/conversationSeed
 const { registerPriceAlertHandler } = require('./handlers/priceAlertHandler');
 const { registerGifPostHandler } = require('./handlers/gifPostHandler');
 const { registerNewsPostHandler } = require('./handlers/newsPostHandler');
+const { registerRelayHandler } = require('./handlers/relayHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
 const { initMarkov } = require('./utils/aiClient');
 
@@ -46,6 +47,7 @@ async function start() {
 
   registerConversationSeedHandler(clients);
   registerPriceAlertHandler(clients);
+  registerRelayHandler(clients);
 
   const results = await loginStaggered(clients);
 
