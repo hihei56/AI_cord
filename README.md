@@ -180,6 +180,7 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`!slashbump`と同じ`mealpost`プロセス(`src/mealPostBot.js`)専用で動く(ai_cordのメインプロセスとは無関係)。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`(監視元)と`RELAY_DESTINATION_CHANNEL_IDS`(カンマ区切りで転送先を複数指定可)、および`config/settings.json`の`relay.enabled`をtrueにすると有効化される(いずれか欠けていれば無効のまま)。
 
 - `src/handlers/relayHandler.js`が`mealpost`アカウントで動く。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
+- 本文中にtwitter.com/x.com/nitter等のツイートリンクが含まれていれば、`src/utils/vxtwitter.js`でvxtwitter.com形式に変換してから転送する(生のツイートリンクはDiscordの埋め込みプレビューが展開されないため)。それ以外のURL・テキストはそのまま
 - 転送元・転送先チャンネルには`mealpost`アカウントが参加している必要がある
 - 連続投稿があっても即座に全部転送せず、1件ずつ`relay.delayMs`(既定5秒)±`delayJitter`の間隔を空けて順番に転送する(機械的な連投に見えないようにするため)
 

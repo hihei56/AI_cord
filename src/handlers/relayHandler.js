@@ -1,5 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
+const { convertTweetLinksInText } = require('../utils/vxtwitter');
 
 const SOURCE_GUILD_ID = process.env.RELAY_SOURCE_GUILD_ID;
 const SOURCE_CHANNEL_ID = process.env.RELAY_SOURCE_CHANNEL_ID;
@@ -30,10 +31,12 @@ function enqueue(fn) {
 
 // テキストはそのまま(コピペ)、添付ファイル・embed画像はDiscordのCDN URLを
 // そのまま使う(ダウンロード/再アップロードは一切しない)。URLを本文に含めておけば
-// Discord側が自動でプレビュー展開してくれる
+// Discord側が自動でプレビュー展開してくれる。ただしtwitter.com/x.com/nitter等の
+// ツイートリンクだけはvxtwitter.com形式に変換する(生のツイートリンクだとDiscordの
+// 埋め込みプレビューが展開されないため)
 function buildRelayContent(msg) {
   const parts = [];
-  if (msg.content) parts.push(msg.content);
+  if (msg.content) parts.push(convertTweetLinksInText(msg.content));
   for (const a of msg.attachments.values()) {
     if (a.url) parts.push(a.url);
   }
