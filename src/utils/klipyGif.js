@@ -12,10 +12,12 @@ const BASE_URL = 'https://api.klipy.com/api/v1';
 const recentByQuery = new Map();
 const RECENT_MAX = 8;
 
-// KlipyのレスポンスはTenorから移行しやすいよう近い構造になっているとされるが、
-// 公式ドキュメントに直接アクセスできない環境だったため、実際に確認できるまでは
-// 複数の想定パターンを順に試す防御的な実装にしておく。全て外れた場合は生の
-// レスポンスをログに残し、実際の形が分かり次第ここを1箇所直せば済むようにする
+// 実機での動作確認により、実際のレスポンス形式は以下だと確認できた:
+// { result: true, data: { data: [ { id, slug, title, file: { hd|md|sm: { gif|webp|jpg|mp4|webm: { url, width, height, size } } } } ] } }
+// (公式ドキュメントに直接アクセスできない環境だったため、当初は"files"(複数形)
+// 等の推測混じりの実装だったが、実際のフィールド名は"file"(単数形)だった。
+// 万が一レスポンス形式が将来変わった場合にも壊れにくいよう、フォールバックの
+// 候補は残しつつ確認済みの形を優先する)
 function extractResults(data) {
   if (Array.isArray(data?.data?.data)) return data.data.data;
   if (Array.isArray(data?.data)) return data.data;
@@ -25,14 +27,13 @@ function extractResults(data) {
 
 function extractGifUrl(item) {
   return (
+    item?.file?.md?.gif?.url ||
+    item?.file?.sm?.gif?.url ||
+    item?.file?.hd?.gif?.url ||
     item?.files?.gif?.url ||
     item?.files?.md?.gif?.url ||
-    item?.files?.sm?.gif?.url ||
-    item?.media_formats?.gif?.url ||
-    item?.media_formats?.mediumgif?.url ||
     item?.url ||
     item?.src ||
-    item?.file ||
     null
   );
 }
