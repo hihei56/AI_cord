@@ -104,6 +104,12 @@
     "delayMs": 5000,
     "delayJitter": 0.4
   },
+  "rssTwitterPost": {
+    "checkIntervalMs": 600000,
+    "checkIntervalJitter": 0.3,
+    "postDelayMs": 4000,
+    "postDelayJitter": 0.4
+  },
   "reactions": {
     "enabled": true,
     "chance": 0.08,

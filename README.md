@@ -164,6 +164,8 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 [disssoku](https://github.com/hihei56/disssoku)のbump(サーバー宣伝BOTへの`/up`等の自動送信)機能をAI_cordに統合したもの。`npm run mealpost`(`src/mealPostBot.js`)で動くご飯画像投稿と同じ専用アカウント・同じ別プロセスで動く(ai_cordのメインプロセスとは無関係。詳細は[Oracle Cloudへのデプロイ](#oracle-cloudへのデプロイ)節参照)。`!slashbump add`で登録した対象(BOTのユーザーID・実行するスラッシュコマンド名・チャンネル)ごとに、`src/handlers/slashBumpHandler.js`が自動で実行し続ける。
 
+> `mealpost`プロセスも、ai_cord本体の`DISCORD_TOKEN[_N]`と同じ考え方で`MEALPOST_DISCORD_TOKEN_2`のように番号を付ければ2体目以降のアカウントを同一プロセスに追加できる(`MEALPOST_COMMAND_PREFIX_2`/`MEALPOST_COMMAND_ROLE_ID_2`も個別指定可)。slashbump/relayはチャンネルIDからどのアカウントが担当するか自動で解決するため、複数アカウントを足しても既存の対象設定に影響しない。
+
 - コマンドのprefixはai_cord本体(`toku!`/`sui!`等)とは別で、既定`meshi!`(`.env`の`MEALPOST_COMMAND_PREFIX`で変更可)。ロール権限も`MEALPOST_COMMAND_ROLE_ID`で個別に指定できる(未指定時はai_cordと同じ既定ロール)
 - `!slashbump add <botId> <command> [#channel] [表示名]`(省略時は今のチャンネル。同じbotId×チャンネルに再度addするとコマンド/表示名を上書き更新)
 - `!slashbump remove <botId> [#channel]` / `!slashbump list` — 登録解除 / 登録一覧表示
@@ -180,6 +182,16 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - `src/handlers/relayHandler.js`が`mealpost`アカウントで動く。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
 - 転送元・転送先チャンネルには`mealpost`アカウントが参加している必要がある
 - 連続投稿があっても即座に全部転送せず、1件ずつ`relay.delayMs`(既定5秒)±`delayJitter`の間隔を空けて順番に転送する(機械的な連投に見えないようにするため)
+
+### RSSフィード経由のツイートリンク自動投稿(`rssTwitterPost`)
+
+RSSサーバーを定期的にポーリングし、フィード内のツイートリンク(nitterインスタンス経由が主だが`/ユーザー名/status/ID`の形式ならtwitter.com/x.comのリンクでも可)を埋め込みプレビューの展開されるvxtwitter.com形式のURLに変換して指定チャンネルへ投稿する機能。`!slashbump`/`relay`と同じ`mealpost`プロセス専用(`.env`の`RSS_FEED_URL`/`RSS_POST_CHANNEL_ID`を設定したアカウントだけがオプトインで動く)。
+
+- `src/handlers/rssTwitterPostHandler.js`が`config/settings.json`の`rssTwitterPost.checkIntervalMs`(既定10分)±`checkIntervalJitter`ごとにフィードを取得し、`src/utils/rssTwitterStore.js`(`data/rss-twitter-seen-<アカウントID>.json`)で既に見たアイテムを記録して新着だけを拾う
+- **初回起動時だけ**、フィードの既存アイテムを全部「新着」として一気に投稿してしまわないよう、既読登録のみ行い投稿はスキップする。2回目以降のチェックで見つかった本当の新着だけを投稿する
+- 変換は`src/utils/vxtwitter.js`が担当。リンクのパスが`/ユーザー名/status/ID`の形式でなければ(リツイートの一覧ページ等、ツイート個別リンクでない場合)そのアイテムはスキップする
+- 新着が複数件あっても連続投稿せず、`rssTwitterPost.postDelayMs`(既定4秒)±`postDelayJitter`の間隔を空けて古い順に1件ずつ投稿する
+- `MEALPOST_DISCORD_TOKEN_2`のような2体目以降のアカウント追加と組み合わせれば、ご飯画像投稿用アカウントとは別のアカウントでこの機能だけを動かすこともできる(`RSS_FEED_URL_2`/`RSS_POST_CHANNEL_ID_2`)
 
 ### `config/settings.json`(動作パラメータ)
 
@@ -282,6 +294,7 @@ npm run markov:demo
 - 仮想通貨の価格アラート(`!pricealert`)。指定チャンネルで監視銘柄を一定間隔でチェックし、前回アラート時から±5%(既定)以上動いたら通知する
 - 他BOTへのスラッシュコマンド自動送信(`!slashbump`)。サーバー宣伝BOT等への`/up`を対象BOTの応答(成功/クールダウン)に応じて自動でスケジュールし続ける
 - 特定サーバーの特定チャンネルの投稿を、間隔を空けつつ複数チャンネルへそのまま転送するミラー機能(`relay`、`mealpost`プロセス専用。テキストはコピペ・メディアはDiscord CDN URLをそのまま使用)
+- RSSフィードを定期ポーリングし、ツイートリンクをvxtwitter.com形式に変換して自動投稿する機能(`rssTwitterPost`、`mealpost`プロセス専用)
 - 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)。返信までの間も`typingDelay.longPauseChance`の確率でたまに長考(既定15〜90秒)を挟み、毎回同じテンポで即レスしないようにしている
 - メッセージへの添付画像・URL貼り付け時のembed画像を読み取り、内容を踏まえて返信する(vision対応モデル経由。複数枚添付にも対応)
 - (任意)マルコフ連鎖による口調の下書き生成
