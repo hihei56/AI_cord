@@ -40,7 +40,7 @@ function loadMealpostAccounts() {
       discordToken: firstToken,
       commandPrefix: process.env.MEALPOST_COMMAND_PREFIX || 'meshi!',
       commandRoleIds: config.resolveCommandRoleIds(process.env.MEALPOST_COMMAND_ROLE_ID),
-      rssFeedUrl: process.env.RSS_FEED_URL,
+      rssFeedUrls: idListEnv(process.env.RSS_FEED_URL),
       rssPostChannelId: process.env.RSS_POST_CHANNEL_ID,
       // 注意: ai_cord本体のアカウント1もGIF_GENRE(無印)を使うため、mealpost側は
       // 同じ.envを共有しても衝突しないようMEALPOST_プレフィックス付きの専用変数にする
@@ -56,7 +56,7 @@ function loadMealpostAccounts() {
       discordToken: process.env[`MEALPOST_DISCORD_TOKEN_${i}`],
       commandPrefix: process.env[`MEALPOST_COMMAND_PREFIX_${i}`] || 'meshi!',
       commandRoleIds: config.resolveCommandRoleIds(process.env[`MEALPOST_COMMAND_ROLE_ID_${i}`]),
-      rssFeedUrl: process.env[`RSS_FEED_URL_${i}`],
+      rssFeedUrls: idListEnv(process.env[`RSS_FEED_URL_${i}`]),
       rssPostChannelId: process.env[`RSS_POST_CHANNEL_ID_${i}`],
       gifGenres: idListEnv(process.env[`MEALPOST_GIF_GENRE_${i}`]),
       gifPostChannelId: process.env[`MEALPOST_GIF_POST_CHANNEL_ID_${i}`]
@@ -94,7 +94,7 @@ const clients = accounts.map((account) => {
     commandPrefix: account.commandPrefix,
     commandRoleIds: account.commandRoleIds,
     lockedDown: false,
-    rssFeedUrl: account.rssFeedUrl,
+    rssFeedUrls: account.rssFeedUrls,
     rssPostChannelId: account.rssPostChannelId,
     gifGenres: gifGenreStore.loadOrInit(account.id, account.gifGenres || []),
     gifPostChannelId: account.gifPostChannelId

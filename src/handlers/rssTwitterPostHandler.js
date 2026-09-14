@@ -32,11 +32,31 @@ function parseItems(xml) {
     });
 }
 
+// User-Agent無指定だと弾く(403/接続拒否になる)Nitterミラーがあるため、
+// ブラウザからのアクセスに見えるようUser-Agentを付ける
 async function fetchItems(feedUrl) {
-  const res = await fetch(feedUrl, { signal: AbortSignal.timeout(10000) });
+  const res = await fetch(feedUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(10000)
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
   const xml = await res.text();
   return parseItems(xml);
+}
+
+// 複数ミラーを順番に試し、最初に成功したものを使う(1つのNitterミラーが落ちて
+// いても他のミラーで拾えるようにするため。個別サーバーを別途プロキシとして
+// 立てる必要が無いよう、このフォールバック自体をBot側に持たせている)
+async function fetchItemsWithFallback(feedUrls) {
+  const errors = [];
+  for (const feedUrl of feedUrls) {
+    try {
+      return await fetchItems(feedUrl);
+    } catch (err) {
+      errors.push(`${feedUrl}: ${err.message}`);
+    }
+  }
+  throw new Error(`全ミラーで取得失敗 - ${errors.join(' / ')}`);
 }
 
 function itemKey(item) {
@@ -44,7 +64,7 @@ function itemKey(item) {
 }
 
 async function checkOnce(client, account) {
-  const items = await fetchItems(account.rssFeedUrl);
+  const items = await fetchItemsWithFallback(account.rssFeedUrls);
   const tracker = account.seenTracker;
 
   const fresh = items.filter((item) => {
@@ -88,12 +108,12 @@ async function checkOnce(client, account) {
   }
 }
 
-// RSSサーバーからnitter等のツイートリンクを定期取得し、vxtwitter.comのURLに変換して
-// 投稿する。rssFeedUrl/rssPostChannelIdを設定したアカウントだけが対象(オプトイン)
+// RSS(nitter等)からツイートリンクを定期取得し、vxtwitter.comのURLに変換して
+// 投稿する。rssFeedUrls/rssPostChannelIdを設定したアカウントだけが対象(オプトイン)
 function registerRssTwitterPostHandler(clients) {
   for (const client of clients) {
     const account = client.accountState;
-    if (!account?.rssFeedUrl || !account?.rssPostChannelId) continue;
+    if (!account?.rssFeedUrls?.length || !account?.rssPostChannelId) continue;
 
     account.seenTracker = createSeenTracker(account.id);
 
@@ -102,7 +122,7 @@ function registerRssTwitterPostHandler(clients) {
       checkOnce(client, account).catch((err) => logger.error('RSSTWITTER', `[${account.id}] ${err.message}`))
     );
 
-    logger.log('RSSTWITTER', `[${account.id}] 監視開始: ${account.rssFeedUrl} → <#${account.rssPostChannelId}>`);
+    logger.log('RSSTWITTER', `[${account.id}] 監視開始: [${account.rssFeedUrls.join(', ')}] → <#${account.rssPostChannelId}>`);
   }
 }
 
