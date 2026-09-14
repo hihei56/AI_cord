@@ -22,17 +22,17 @@
     "minGapMs": 2000
   },
   "typingDelay": {
-    "minMs": 3000,
-    "maxMs": 7000,
+    "minMs": 6000,
+    "maxMs": 14000,
     "longPauseChance": 0.12,
     "longPauseMinMs": 15000,
     "longPauseMaxMs": 90000
   },
   "replyDelay": {
-    "minMs": 2500,
-    "perCharMs": 40,
-    "capMs": 12000,
-    "jitterMs": 3000
+    "minMs": 5000,
+    "perCharMs": 70,
+    "capMs": 20000,
+    "jitterMs": 5000
   },
   "conversationSeed": {
     "checkIntervalMs": 600000,
