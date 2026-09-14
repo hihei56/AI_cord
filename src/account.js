@@ -43,6 +43,10 @@ function buildAccountState(account) {
     markovPriority: account.markovPriority,
     markovDirectReplyChance: account.markovDirectReplyChance,
     markovDirectReplyMinLength: account.markovDirectReplyMinLength,
+    // 自発投稿・AI同士の掛け合いの一部をTenor GIF検索でそのまま貼るだけの投稿にする
+    // 機能用の検索キーワード一覧(.envのGIF_GENRE[_N]、カンマ区切りで複数可)。
+    // 空配列ならこのアカウントはGIF投稿をしない
+    gifGenres: account.gifGenres || [],
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる

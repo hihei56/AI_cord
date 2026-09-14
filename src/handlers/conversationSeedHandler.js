@@ -4,6 +4,12 @@ const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply } = 
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
+const { tryFetchGenreGif } = require('../utils/tenorGif');
+
+// 会話履歴に「実際は何を送ったか」をそのまま積むと、GIFのURLをLLMがテキストとして
+// 解釈しようとして不自然になるため、GIFを送った時の履歴には代わりにこのプレース
+// ホルダーを積む。次の話者はこれを見て「相手がGIFを送ってきた」ことだけ分かればよい
+const GIF_HISTORY_PLACEHOLDER = '(GIFを送った)';
 
 // AI同士の掛け合いで、相手を生のDiscordユーザー名(ログインハンドル)ではなく
 // あだ名で呼び合わせる。優先順位はresolveDisplayNameと同じ
@@ -139,24 +145,39 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
 
     await showTyping(channel, speaker.accountState.id);
 
-    // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する。
-    // 呼びかける名前は生のusernameではなくあだ名(サーバーニックネーム等)を使う
-    const reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
-      partnerIsAi: true,
-      speakerLabelOverride: resolveBotDisplayName(listener, channel),
-      topicHint,
-      role: roleOf(speaker)
-    });
-    if (!reply) break;
+    // ここも一定確率(turnChance、opener/選定より控えめ)でテキスト生成をせず
+    // GIFだけの返信にする。掛け合いの途中に挟まることで「LLM生成の言葉の
+    // 応酬」一色にならず、ぎこちなさが和らぐ
+    const turnGifUrl = await tryFetchGenreGif(speaker.accountState, config.gif?.turnChance, config.gif?.chanceJitter);
 
-    // 直前のメッセージへのリプライとして送る(失敗しても普通の投稿として送れれば良いので
-    // failIfNotExists: falseにし、参照先が既に削除されていてもエラーにしない)
-    lastSentMsg = await channel.send({
-      content: reply,
-      reply: { messageReference: lastSentMsg.id, failIfNotExists: false }
-    });
-    recordReply(speaker.accountState, reply);
-    logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
+    let reply;
+    if (turnGifUrl) {
+      lastSentMsg = await channel.send({
+        content: turnGifUrl,
+        reply: { messageReference: lastSentMsg.id, failIfNotExists: false }
+      });
+      reply = GIF_HISTORY_PLACEHOLDER;
+      logger.log('SEED', `[${speaker.accountState.id}] (GIF) ${turnGifUrl}`);
+    } else {
+      // 相手(listener)は人間ではなく別のAIアカウントなので、それをプロンプトに明示する。
+      // 呼びかける名前は生のusernameではなくあだ名(サーバーニックネーム等)を使う
+      reply = await getAIResponse(speaker.accountState, lastMsg, history, null, {
+        partnerIsAi: true,
+        speakerLabelOverride: resolveBotDisplayName(listener, channel),
+        topicHint,
+        role: roleOf(speaker)
+      });
+      if (!reply) break;
+
+      // 直前のメッセージへのリプライとして送る(失敗しても普通の投稿として送れれば良いので
+      // failIfNotExists: falseにし、参照先が既に削除されていてもエラーにしない)
+      lastSentMsg = await channel.send({
+        content: reply,
+        reply: { messageReference: lastSentMsg.id, failIfNotExists: false }
+      });
+      recordReply(speaker.accountState, reply);
+      logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
+    }
 
     history.push({ author: { username: resolveBotDisplayName(speaker, channel) }, content: reply });
     lastMsg = reply;
@@ -202,12 +223,22 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
   // 入れ替わるため、長期的にはどのアカウントも両方の役を経験する
   const roleOf = (client) => (client === clientA ? 'center' : 'reactor');
 
-  const opener = await generateSelfTalk(clientA.accountState, topicHint, 'center');
-  if (!opener) return;
-
-  const openerMsg = await channelA.send(opener);
-  recordReply(clientA.accountState, opener);
-  logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
+  // LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、切り出し役の
+  // アカウントにGIF_GENRE[_N]の設定があれば一定確率で、話し始めをテキストではなく
+  // Tenor検索したGIFそのものにする(LLM呼び出しをしない)
+  const openerGifUrl = await tryFetchGenreGif(clientA.accountState, config.gif?.chance, config.gif?.chanceJitter);
+  let opener, openerMsg;
+  if (openerGifUrl) {
+    openerMsg = await channelA.send(openerGifUrl);
+    opener = GIF_HISTORY_PLACEHOLDER;
+    logger.log('SEED', `[${clientA.accountState.id}] (GIF) ${openerGifUrl}`);
+  } else {
+    opener = await generateSelfTalk(clientA.accountState, topicHint, 'center');
+    if (!opener) return;
+    openerMsg = await channelA.send(opener);
+    recordReply(clientA.accountState, opener);
+    logger.log('SEED', `[${clientA.accountState.id}] ${opener}`);
+  }
 
   const history = [{ author: { username: resolveBotDisplayName(clientA, channelA) }, content: opener }];
 
@@ -253,19 +284,32 @@ async function reactToSiblingMessage(replierClient, posterClient, channelId, tri
 
     const history = [{ author: { username: resolveBotDisplayName(posterClient, channel) }, content: triggerMsg.content }];
 
-    const reply = await getAIResponse(replierClient.accountState, triggerMsg.content, history, null, {
-      partnerIsAi: true,
-      speakerLabelOverride: resolveBotDisplayName(posterClient, channel),
-      role: 'reactor'
-    });
-    if (!reply) return;
+    // 割り込みリプライもGIF_GENRE設定があれば一定確率でGIFだけの反応にする
+    const interruptGifUrl = await tryFetchGenreGif(replierClient.accountState, config.gif?.turnChance, config.gif?.chanceJitter);
 
-    const sentMsg = await channel.send({
-      content: reply,
-      reply: { messageReference: triggerMsg.id, failIfNotExists: false }
-    });
-    recordReply(replierClient.accountState, reply);
-    logger.log('SEED', `[${replierClient.accountState.id}] (割り込み) ${reply}`);
+    let reply, sentMsg;
+    if (interruptGifUrl) {
+      sentMsg = await channel.send({
+        content: interruptGifUrl,
+        reply: { messageReference: triggerMsg.id, failIfNotExists: false }
+      });
+      reply = GIF_HISTORY_PLACEHOLDER;
+      logger.log('SEED', `[${replierClient.accountState.id}] (割り込みGIF) ${interruptGifUrl}`);
+    } else {
+      reply = await getAIResponse(replierClient.accountState, triggerMsg.content, history, null, {
+        partnerIsAi: true,
+        speakerLabelOverride: resolveBotDisplayName(posterClient, channel),
+        role: 'reactor'
+      });
+      if (!reply) return;
+
+      sentMsg = await channel.send({
+        content: reply,
+        reply: { messageReference: triggerMsg.id, failIfNotExists: false }
+      });
+      recordReply(replierClient.accountState, reply);
+      logger.log('SEED', `[${replierClient.accountState.id}] (割り込み) ${reply}`);
+    }
 
     history.push({ author: { username: resolveBotDisplayName(replierClient, channel) }, content: reply });
 

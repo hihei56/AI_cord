@@ -125,7 +125,12 @@ function loadAccounts() {
       // アカウント(discord_cutiest等)向け
       markovPriority: boolEnv('MARKOV_PRIORITY') ?? false,
       markovDirectReplyChanceOverride: numEnv('MARKOV_DIRECT_REPLY_CHANCE'),
-      markovDirectReplyMinLengthOverride: numEnv('MARKOV_DIRECT_REPLY_MIN_LENGTH')
+      markovDirectReplyMinLengthOverride: numEnv('MARKOV_DIRECT_REPLY_MIN_LENGTH'),
+      // 自発投稿(selfTalk)・AI同士の掛け合いの一部を、LLM生成のテキストの代わりに
+      // Tenorで検索したGIFをそのまま貼るだけの投稿にする機能用。カンマ区切りで
+      // 複数指定でき、投稿のたびにランダムに1つ選んで検索する。未指定ならこの
+      // アカウントはGIF投稿を一切しない(オプトイン)
+      gifGenres: idListEnv(process.env.GIF_GENRE)
     });
   }
 
@@ -152,7 +157,8 @@ function loadAccounts() {
       aiMode: resolveAiMode(process.env[`AI_MODE_${i}`]),
       markovPriority: boolEnv(`MARKOV_PRIORITY_${i}`) ?? false,
       markovDirectReplyChanceOverride: numEnv(`MARKOV_DIRECT_REPLY_CHANCE_${i}`),
-      markovDirectReplyMinLengthOverride: numEnv(`MARKOV_DIRECT_REPLY_MIN_LENGTH_${i}`)
+      markovDirectReplyMinLengthOverride: numEnv(`MARKOV_DIRECT_REPLY_MIN_LENGTH_${i}`),
+      gifGenres: idListEnv(process.env[`GIF_GENRE_${i}`])
     });
     i++;
   }

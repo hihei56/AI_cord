@@ -49,6 +49,11 @@
     "botReplyChance": 0.15,
     "botReplyCooldownMs": 600000
   },
+  "gif": {
+    "chance": 0.35,
+    "chanceJitter": 0.4,
+    "turnChance": 0.2
+  },
   "selfTalk": {
     "enabled": false,
     "intervalMs": 3600000,

@@ -3,11 +3,26 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
+const { tryFetchGenreGif } = require('../utils/tenorGif');
 const { scheduleWithJitter } = require('../utils/scheduler');
 
 async function selfPost(channel, accountState) {
   if (!channel) return;
   if (Math.random() > config.selfTalk.chance) return;
+
+  // LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、
+  // アカウントにGIF_GENRE[_N]の設定があれば一定確率でTenor検索したGIFを
+  // キャプション無しでそのまま貼るだけの投稿にする(LLM呼び出し自体をしない)
+  const gifUrl = await tryFetchGenreGif(accountState, config.gif?.chance, config.gif?.chanceJitter);
+  if (gifUrl) {
+    try {
+      await channel.send(gifUrl);
+      logger.log('SELF', `(GIF) ${gifUrl}`);
+      return;
+    } catch (err) {
+      logger.error('SELF', err);
+    }
+  }
 
   const withImage = Math.random() < config.selfTalk.imageChance;
 
