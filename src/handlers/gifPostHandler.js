@@ -3,6 +3,18 @@ const logger = require('../utils/logger');
 const { fetchRandomGif } = require('../utils/klipyGif');
 const { scheduleWithJitter } = require('../utils/scheduler');
 
+// ai_cordの会話用アカウントは複数の応答チャンネルを持つため、そこからランダムに
+// 1つ選ぶ(channelStore)。mealpostのような機能特化アカウントはそもそも「応答チャンネル」
+// という概念を持たず、代わりに固定の投稿先(gifPostChannelId)を1つだけ設定する運用
+function pickChannelId(state) {
+  if (state.channelStore) {
+    const ids = state.channelStore.listChannels();
+    if (ids.length === 0) return null;
+    return ids[Math.floor(Math.random() * ids.length)];
+  }
+  return state.gifPostChannelId || null;
+}
+
 // selfTalk/conversationSeedのGIF混在(config.gif.chance等)は「たまに」の演出用だが、
 // selfTalk.enabledがfalseだと一切発火しない・複数アカウント運用でないと
 // conversationSeed側も発火しないため、「アカウント1つでも定期的に必ず投稿する」
@@ -15,9 +27,8 @@ async function gifPost(client) {
   // 投稿しようとするたびに空かどうかを確認する
   if (state.gifGenres.length === 0) return;
 
-  const ids = state.channelStore.listChannels();
-  if (ids.length === 0) return;
-  const channelId = ids[Math.floor(Math.random() * ids.length)];
+  const channelId = pickChannelId(state);
+  if (!channelId) return;
   const channel = client.channels.cache.get(channelId);
   if (!channel) return;
 

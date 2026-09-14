@@ -1,6 +1,7 @@
 // ご飯画像の定期投稿、他BOTへのスラッシュコマンド自動送信(!slashbump)、
-// チャンネル転送(relay)、RSSフィード経由のツイートリンク自動投稿(rssTwitterPost)を
-// 行う独立プロセス用エントリポイント。メインのai_cordプロセス(src/index.js)とは
+// チャンネル転送(relay)、RSSフィード経由のツイートリンク自動投稿(rssTwitterPost)、
+// 検索キーワードのGIFを定期投稿(gifPost)を行う独立プロセス用エントリポイント。
+// メインのai_cordプロセス(src/index.js)とは
 // プロセス間通信を一切しない(どちらもアカウント固有のペルソナ・会話機能に
 // 依存しない、完結した機能のため)。pm2でai_cordとは別プロセスとして起動する
 // ことで、片方のクラッシュ・再起動がもう片方に波及しないようにする。
@@ -17,8 +18,16 @@ const { registerMealImageHandler } = require('./handlers/mealImageHandler');
 const { registerSlashBumpHandler } = require('./handlers/slashBumpHandler');
 const { registerRelayHandler } = require('./handlers/relayHandler');
 const { registerRssTwitterPostHandler } = require('./handlers/rssTwitterPostHandler');
+const { registerGifPostHandler } = require('./handlers/gifPostHandler');
+const gifGenreStore = require('./utils/gifGenreStore');
 const { canRunCommands } = require('./commands/handler');
 const slashBumpCommand = require('./commands/slashbumpCommand');
+const gifgenreCommand = require('./commands/core/gifgenre');
+
+function idListEnv(envVal) {
+  if (!envVal) return [];
+  return envVal.split(',').map((id) => id.trim()).filter(Boolean);
+}
 
 function loadMealpostAccounts() {
   const accounts = [];
@@ -32,7 +41,11 @@ function loadMealpostAccounts() {
       commandPrefix: process.env.MEALPOST_COMMAND_PREFIX || 'meshi!',
       commandRoleIds: config.resolveCommandRoleIds(process.env.MEALPOST_COMMAND_ROLE_ID),
       rssFeedUrl: process.env.RSS_FEED_URL,
-      rssPostChannelId: process.env.RSS_POST_CHANNEL_ID
+      rssPostChannelId: process.env.RSS_POST_CHANNEL_ID,
+      // 注意: ai_cord本体のアカウント1もGIF_GENRE(無印)を使うため、mealpost側は
+      // 同じ.envを共有しても衝突しないようMEALPOST_プレフィックス付きの専用変数にする
+      gifGenres: idListEnv(process.env.MEALPOST_GIF_GENRE),
+      gifPostChannelId: process.env.MEALPOST_GIF_POST_CHANNEL_ID
     });
   }
 
@@ -44,7 +57,9 @@ function loadMealpostAccounts() {
       commandPrefix: process.env[`MEALPOST_COMMAND_PREFIX_${i}`] || 'meshi!',
       commandRoleIds: config.resolveCommandRoleIds(process.env[`MEALPOST_COMMAND_ROLE_ID_${i}`]),
       rssFeedUrl: process.env[`RSS_FEED_URL_${i}`],
-      rssPostChannelId: process.env[`RSS_POST_CHANNEL_ID_${i}`]
+      rssPostChannelId: process.env[`RSS_POST_CHANNEL_ID_${i}`],
+      gifGenres: idListEnv(process.env[`MEALPOST_GIF_GENRE_${i}`]),
+      gifPostChannelId: process.env[`MEALPOST_GIF_POST_CHANNEL_ID_${i}`]
     });
     i++;
   }
@@ -70,28 +85,32 @@ const clients = accounts.map((account) => {
   });
 
   // このプロセスにはメインのai_cordのようなペルソナ・会話履歴等の状態は無いため、
-  // !slashbumpコマンドの権限判定(canRunCommands)とrssTwitterPostHandlerに
-  // 必要な最小限の項目だけを持たせる
+  // !slashbumpコマンドの権限判定(canRunCommands)・rssTwitterPostHandler・
+  // gifPostHandlerに必要な最小限の項目だけを持たせる。gifGenresは初回起動時の
+  // .env値を初期値としてdata/gif-genres-<id>.jsonに永続化し、以降は!gifgenre
+  // コマンドで管理する(ai_cord本体のアカウントと同じ仕組み)
   client.accountState = {
     id: account.id,
     commandPrefix: account.commandPrefix,
     commandRoleIds: account.commandRoleIds,
     lockedDown: false,
     rssFeedUrl: account.rssFeedUrl,
-    rssPostChannelId: account.rssPostChannelId
+    rssPostChannelId: account.rssPostChannelId,
+    gifGenres: gifGenreStore.loadOrInit(account.id, account.gifGenres || []),
+    gifPostChannelId: account.gifPostChannelId
   };
 
-  // !slashbumpコマンドだけを受け付ける専用リスナー。ai_cordのcommands/handler.jsが
-  // 持つ汎用コマンドディスパッチ(全コマンドをロード)は使わず、このプロセスに
-  // 実際に関係するコマンドだけを直接呼ぶ(channel/nickname/pricealert等の
-  // 他コマンドはこのアカウントの状態を前提にしておらず対応する意味が無いため)
+  // !slashbump/!gifgenreコマンドだけを受け付ける専用リスナー。ai_cordの
+  // commands/handler.jsが持つ汎用コマンドディスパッチ(全コマンドをロード)は
+  // 使わず、このプロセスに実際に関係するコマンドだけを直接呼ぶ(channel/nickname/
+  // pricealert等の他コマンドはこのアカウントの状態を前提にしておらず対応する意味が無いため)
   client.on('messageCreate', async (msg) => {
     const prefix = client.accountState.commandPrefix;
     if (!msg.content.startsWith(prefix)) return;
 
     const args = msg.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
-    if (commandName !== 'slashbump' && commandName !== 'bump') return;
+    if (commandName !== 'slashbump' && commandName !== 'bump' && commandName !== 'gifgenre' && commandName !== 'gif') return;
 
     const permission = await canRunCommands(msg, client, client.accountState);
     if (!permission.allowed) {
@@ -100,7 +119,8 @@ const clients = accounts.map((account) => {
     }
 
     try {
-      await slashBumpCommand.execute(msg, args, client);
+      const command = commandName === 'gifgenre' || commandName === 'gif' ? gifgenreCommand : slashBumpCommand;
+      await command.execute(msg, args, client);
       logger.log('COMMAND', `[${client.accountState.id}] ${msg.author.username}が実行: ${commandName}`);
     } catch (err) {
       logger.error('COMMAND', err);
@@ -157,6 +177,10 @@ async function start() {
   registerSlashBumpHandler(readyClients);
   registerRelayHandler(readyClients);
   registerRssTwitterPostHandler(readyClients);
+  // gifPostHandlerはai_cord本体と同じくクライアント単体で登録する(このアカウントの
+  // gifGenres/gifPostChannelIdだけを見て投稿するため、複数アカウントを跨いだ
+  // チャンネル解決は不要)
+  for (const client of readyClients) registerGifPostHandler(client);
 }
 
 start();

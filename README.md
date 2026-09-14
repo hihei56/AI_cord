@@ -243,6 +243,8 @@ RSSサーバーを定期的にポーリングし、フィード内のツイー�
 
 検索キーワードは`.env`の`GIF_GENRE[_N]`は初回起動時の初期値としてのみ使われ、以降は`!gifgenre`コマンド(`src/commands/core/gifgenre.js`)で管理する。追加/削除内容は`data/gif-genres-<アカウントID>.json`に永続化され、再起動不要ですぐ反映される。
 
+> `mealpost`プロセスのアカウントでもこの定期投稿だけを単独で使える。`mealpost`には会話用の応答チャンネル(`channelStore`)という概念が無いため、代わりに`.env`の`MEALPOST_GIF_GENRE[_N]`(ai_cord本体の`GIF_GENRE[_N]`とは別のキーなので衝突しない)と固定の投稿先`MEALPOST_GIF_POST_CHANNEL_ID[_N]`を設定する。`meshi!gifgenre add/remove/list`でキーワードを管理できる(自発投稿・掛け合いへのGIF混在はai_cord本体専用の機能なので、`mealpost`側は単独の定期投稿のみ)。
+
 | コマンド | 内容 |
 |---|---|
 | `!gifgenre add <キーワード>` | 検索キーワードを追加(スペース区切りでそのまま検索語になる) |
@@ -295,6 +297,7 @@ npm run markov:demo
 - 他BOTへのスラッシュコマンド自動送信(`!slashbump`)。サーバー宣伝BOT等への`/up`を対象BOTの応答(成功/クールダウン)に応じて自動でスケジュールし続ける
 - 特定サーバーの特定チャンネルの投稿を、間隔を空けつつ複数チャンネルへそのまま転送するミラー機能(`relay`、`mealpost`プロセス専用。テキストはコピペ・メディアはDiscord CDN URLをそのまま使用)
 - RSSフィードを定期ポーリングし、ツイートリンクをvxtwitter.com形式に変換して自動投稿する機能(`rssTwitterPost`、`mealpost`プロセス専用)
+- Klipy検索キーワードのGIFを固定チャンネルへ一定間隔で投稿する機能(`gif`、`mealpost`プロセスのアカウントでも`MEALPOST_GIF_GENRE[_N]`設定でオプトイン可能)
 - 自発投稿・AI同士の掛け合いチェック・Presence更新・返信クールダウンは全て`setInterval`の完全固定周期ではなく`src/utils/scheduler.js`でランダムな揺らぎ(ジッター)を持たせたスケジューリングにしている(投稿タイミングが規則的になりbotだとバレやすくなるのを防ぐため)。返信までの間も`typingDelay.longPauseChance`の確率でたまに長考(既定15〜90秒)を挟み、毎回同じテンポで即レスしないようにしている
 - メッセージへの添付画像・URL貼り付け時のembed画像を読み取り、内容を踏まえて返信する(vision対応モデル経由。複数枚添付にも対応)
 - (任意)マルコフ連鎖による口調の下書き生成
