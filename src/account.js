@@ -47,6 +47,8 @@ function buildAccountState(account) {
     // 機能用の検索キーワード一覧(.envのGIF_GENRE[_N]、カンマ区切りで複数可)。
     // 空配列ならこのアカウントはGIF投稿をしない
     gifGenres: account.gifGenres || [],
+    // ニュース見出しをネタにした定期の自発投稿(.envのNEWS_POST[_N])をするか
+    newsPostEnabled: account.newsPostEnabled || false,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる

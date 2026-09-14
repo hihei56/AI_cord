@@ -56,6 +56,10 @@
     "postIntervalMs": 3600000,
     "postIntervalJitter": 0.4
   },
+  "news": {
+    "postIntervalMs": 5400000,
+    "postIntervalJitter": 0.4
+  },
   "selfTalk": {
     "enabled": false,
     "intervalMs": 3600000,

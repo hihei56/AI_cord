@@ -219,6 +219,10 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 上記は自発投稿・掛け合いの「発生タイミングに混ざる」形なので、`selfTalk.enabled`がfalseのまま(既定)だったりアカウントが1つしか無かったりすると、GIF投稿自体もほぼ発生しない。他の機能の有効/無効に関係なく単独で一定間隔ごとに必ず投稿したい場合は、`src/handlers/gifPostHandler.js`が`GIF_GENRE[_N]`を設定した各アカウントごとに`gif.postIntervalMs`(既定1時間)±`postIntervalJitter`の間隔で、応答チャンネルの中からランダムに1つ選んでGIFを投稿する(LLM不使用)。
 
+### ニュースをネタにした自発投稿(`news`)
+
+`.env`の`NEWS_POST[_N]=true`にしたアカウントは、`src/handlers/newsPostHandler.js`がGIF投稿と同じパターンで`news.postIntervalMs`(既定90分)±`postIntervalJitter`ごとに単独で動き、NHKニュースの見出しを1つ取得して`generateSelfTalk`に話のきっかけ(topicHint)として渡し、ペルソナの口調で短く一言コメントする投稿を生成して送る。記事本文の取得・要約・引用は行わず、見出しの内容をきっかけにした一言をLLMに生成させるだけ(既存のconversationSeedのお題決めと同じ仕組みの再利用)。
+
 ### `config/prompts/self_talk.txt`
 
 一定間隔で自発的につぶやく際のプロンプトテンプレート。
