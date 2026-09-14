@@ -52,7 +52,9 @@
   "gif": {
     "chance": 0.35,
     "chanceJitter": 0.4,
-    "turnChance": 0.2
+    "turnChance": 0.2,
+    "postIntervalMs": 3600000,
+    "postIntervalJitter": 0.4
   },
   "selfTalk": {
     "enabled": false,
