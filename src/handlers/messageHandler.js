@@ -197,7 +197,11 @@ function registerMessageHandler(client) {
       const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
 
       let userMsg = msg.content;
-      const imageUrls = extractImageUrls(msg);
+      // visionモデルに一度に投げる画像枚数には上限がある(モデルによって受付枚数の
+      // 上限が違い、4枚を超えるとエラーになったり後半が無視されたりする)ため、
+      // 添付が多い時は先頭maxImages枚だけ読み取る
+      const maxImages = config.ai.vision?.maxImages ?? 4;
+      const imageUrls = extractImageUrls(msg).slice(0, maxImages);
       if (imageUrls.length > 0) {
         const description = await describeImage(imageUrls);
         if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();

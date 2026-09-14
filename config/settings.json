@@ -88,7 +88,8 @@
     "vision": {
       "enabled": true,
       "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-      "maxTokens": 200
+      "maxTokens": 200,
+      "maxImages": 4
     }
   },
   "presenceFile": "default.json",
