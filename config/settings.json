@@ -37,7 +37,7 @@
   "conversationSeed": {
     "checkIntervalMs": 600000,
     "checkIntervalJitter": 0.4,
-    "alwaysOn": true,
+    "alwaysOn": false,
     "alwaysOnIntervalMs": 120000,
     "quietThresholdMs": 300000,
     "triggerChance": 0.3,
@@ -110,7 +110,7 @@
     "postDelayJitter": 0.4
   },
   "reactions": {
-    "enabled": true,
+    "enabled": false,
     "chance": 0.08,
     "chanceJitter": 0.4
   },
