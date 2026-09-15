@@ -4,6 +4,7 @@ const { getAIResponse, describeImage, recordReply, recordMemory, compressUserMem
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
 const { pickReactionEmoji } = require('../utils/reactionEmoji');
+const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -197,20 +198,26 @@ function registerMessageHandler(client) {
       const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
 
       let userMsg = msg.content;
-      // visionモデルに一度に投げる画像枚数には上限がある(モデルによって受付枚数の
-      // 上限が違い、4枚を超えるとエラーになったり後半が無視されたりする)ため、
-      // 添付が多い時は先頭maxImages枚だけ読み取る
-      const maxImages = config.ai.vision?.maxImages ?? 4;
-      const imageUrls = extractImageUrls(msg).slice(0, maxImages);
-      if (imageUrls.length > 0) {
-        const description = await describeImage(imageUrls);
-        if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
+      // 絵文字/GIFのみモードではLLMを一切呼ばないため、画像読み取り(vision API)も
+      // 不要(読み取った説明文はLLMへの返信生成にしか使っていないため)
+      if (!isEmojiGifOnlyMode()) {
+        // visionモデルに一度に投げる画像枚数には上限がある(モデルによって受付枚数の
+        // 上限が違い、4枚を超えるとエラーになったり後半が無視されたりする)ため、
+        // 添付が多い時は先頭maxImages枚だけ読み取る
+        const maxImages = config.ai.vision?.maxImages ?? 4;
+        const imageUrls = extractImageUrls(msg).slice(0, maxImages);
+        if (imageUrls.length > 0) {
+          const description = await describeImage(imageUrls);
+          if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
+        }
       }
 
       // メンション/リプライで直接呼ばれた時はマルコフ直接採用を避け、ちゃんと文脈に沿った返信にする
       const isMention = msg.mentions.has(client.user.id);
       const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
-      const reply = await getAIResponse(state, userMsg, ctxMsgs, msg, { allowMarkovDirect: !isMention && !isReply });
+      const reply = isEmojiGifOnlyMode()
+        ? await pickEmojiOrGif(state, userMsg)
+        : await getAIResponse(state, userMsg, ctxMsgs, msg, { allowMarkovDirect: !isMention && !isReply });
       if (!reply) return;
 
       const { minMs: replyMinMs, perCharMs, capMs, jitterMs } = config.replyDelay;

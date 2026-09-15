@@ -114,6 +114,10 @@
     "chance": 0.08,
     "chanceJitter": 0.4
   },
+  "emojiGifOnlyMode": {
+    "enabled": false,
+    "gifChance": 0.5
+  },
   "priceAlert": {
     "enabled": true,
     "defaultSymbols": ["hype", "ponz", "zec", "btc"],

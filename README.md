@@ -233,6 +233,14 @@ nitter等のRSSフィードを定期的にポーリングし、フィード内�
 
 `.env`の`PERSONA[_N]`を空文字(`PERSONA=`)か`none`にすると、そのアカウントは人格プロンプト無しで動く。人格・口調の指示が一切無い状態で、マルコフ下書き(有効な場合)を「最低限の誤字脱字修正+会話の流れへの整合」だけで補正した返信になる(`src/utils/aiClient.js`のdraftSection参照)。コーパスの口調をLLMの解釈で上書きさせたくない場合に使う。
 
+### 絵文字/GIFのみモード(`emojiGifOnlyMode`)
+
+`config/settings.json`の`emojiGifOnlyMode.enabled`をtrueにすると、ai_cord本体の返信生成経路(人間への通常返信・自発投稿・AI同士の掛け合い、全て)がLLMを一切呼ばなくなり、代わりに絵文字1つかGIF1つのどちらかだけを送るようになる(ペルソナ・マルコフ下書きによる文章生成を完全に止める、いわば「自我を消す」モード)。
+
+- `src/utils/emojiGifReply.js`が本体。アカウントに`gifGenres`(`!gifgenre`で管理)が設定されていれば`emojiGifOnlyMode.gifChance`(既定50%)の確率でKlipy検索したGIFを、それ以外は`src/utils/reactionEmoji.js`のキーワードパターンマッチ絵文字(該当無しならランダムプールから)を返す
+- LLM呼び出し(`getAIResponse`/`generateSelfTalk`/`planConversationTopic`)は該当箇所で丸ごとスキップされるため、この間はAPIコストが一切発生しない。画像添付の読み取り(vision API)もLLM返信にしか使わないため合わせてスキップする
+- `false`に戻せば、既存の通常のLLM返信(+ときどきGIFを混ぜる従来の`gif`セクションの挙動)にそのまま戻る
+
 ### AI同士の掛け合い・常時チャットモード(`conversationSeed`)
 
 2アカウント以上動かしている時、`conversationSeedHandler.js`が定期的にランダムな2アカウントのペアを選び、共通の応答チャンネルで会話の掛け合いを起こす(`minTurns`〜`maxTurns`ターン、`continueChance`の確率で早めに切り上げ)。この掛け合いでは、相手のアカウントが人間ではなく別のAIチャットボットであることをプロンプトに明示しているので、AI同士が互いを人間だと誤認したような受け答えにはならない。
