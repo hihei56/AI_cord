@@ -58,4 +58,16 @@ function removeTarget(botId, channelId) {
   return removed;
 }
 
-module.exports = { getTargets, findTarget, addTarget, removeTarget };
+// 対象BOTのbump実行のたびに、指定した人間のユーザーをメンションして
+// 「bump確認してください」ベースのランダムな一言で喚起する機能用の設定。
+// userIdがfalsyならメンション通知をオフにする(キー自体を削除する)
+function setMentionUser(botId, channelId, userId) {
+  const target = findTarget(botId, channelId);
+  if (!target) return null;
+  if (userId) target.mentionUserId = userId;
+  else delete target.mentionUserId;
+  save();
+  return target;
+}
+
+module.exports = { getTargets, findTarget, addTarget, removeTarget, setMentionUser };
