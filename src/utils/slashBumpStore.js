@@ -45,9 +45,12 @@ function addTarget(target) {
     save();
     return { target: existing, created: false };
   }
-  state.targets.push(target);
+  // mode未指定なら従来通りの「クールダウンを見ながら繰り返し実行」(continuous)を既定にする。
+  // 1日1回ランダムな時刻に実行したいだけの対象は!slashbump modeで後からdailyに切り替える
+  const newTarget = { mode: 'continuous', ...target };
+  state.targets.push(newTarget);
   save();
-  return { target, created: true };
+  return { target: newTarget, created: true };
 }
 
 function removeTarget(botId, channelId) {
@@ -70,4 +73,14 @@ function setMentionUser(botId, channelId, userId) {
   return target;
 }
 
-module.exports = { getTargets, findTarget, addTarget, removeTarget, setMentionUser };
+// mode: 'continuous'(既定、クールダウンを見ながら繰り返し実行) / 'daily'(1日1回、
+// 日中活動時間帯からランダムな時刻に1回だけ実行)。切り替えは!slashbump modeコマンドから
+function setMode(botId, channelId, mode) {
+  const target = findTarget(botId, channelId);
+  if (!target) return null;
+  target.mode = mode;
+  save();
+  return target;
+}
+
+module.exports = { getTargets, findTarget, addTarget, removeTarget, setMentionUser, setMode };

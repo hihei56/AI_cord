@@ -175,6 +175,8 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
 - 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
 
+**`mode`(1日1回モード):** `!slashbump mode <botId> <daily|continuous> [#channel]`で、対象ごとに実行方式を切り替えられる。既定(`continuous`)は上記の「クールダウンを見ながら繰り返し実行」だが、`daily`にすると**1日1回、`config/settings.json`の`slashBumpDaily`(既定8時〜23時、日中活動時間帯のイメージ)からランダムに選んだ時刻に1回だけ**実行するようになる(Discord側の応答・クールダウンは一切見ない)。`mealImageHandler.js`のご飯画像投稿と同じ「その日の予定時刻を一度だけ抽選し、日付が変わるまで固定する」方式(`data/daily-bump.json`に永続化、再起動を挟んでも同じ日なら再抽選しない・二重実行しない)。
+
 ### チャンネル転送/マルチポスト(`relay`)
 
 特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`!slashbump`と同じ`mealpost`プロセス(`src/mealPostBot.js`)専用で動く(ai_cordのメインプロセスとは無関係)。設定は**コマンドを実行したアカウントに紐づく**(`client.accountState.relay`、`data/relay-<アカウントID>.json`に永続化)。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`/`RELAY_DESTINATION_CHANNEL_IDS`は初回起動時の初期値としてのみ使われ、以降は`!relay`コマンドで再起動不要に変更できる。

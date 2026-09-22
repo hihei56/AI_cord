@@ -118,6 +118,11 @@
     "enabled": false,
     "gifChance": 0.5
   },
+  "slashBumpDaily": {
+    "windowStartHour": 8,
+    "windowEndHour": 23,
+    "checkIntervalMs": 300000
+  },
   "priceAlert": {
     "enabled": true,
     "defaultSymbols": ["hype", "ponz", "zec", "btc"],
