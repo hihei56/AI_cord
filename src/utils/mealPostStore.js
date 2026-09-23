@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// アカウント1は従来通り data/meal-posts.json、2つ目以降は data/meal-posts-<id>.json
+// アカウント1(mealpost)は従来通り data/meal-posts.json、2つ目以降(mealpost2...)は
+// data/meal-posts-<番号>.json
 function storePath(accountId) {
-  const suffix = accountId === '1' ? '' : `-${accountId}`;
+  const n = String(accountId).replace(/^mealpost/, '') || '1';
+  const suffix = n === '1' ? '' : `-${n}`;
   return path.join(__dirname, '..', '..', 'data', `meal-posts${suffix}.json`);
 }
 

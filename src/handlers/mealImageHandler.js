@@ -77,7 +77,7 @@ async function checkOnce(client, store) {
     const warnKey = `${id}:${channelId}`;
     if (!warnedChannels.has(warnKey)) {
       warnedChannels.add(warnKey);
-      logger.error('MEALPOST', `[${id}] 投稿先チャンネル${channelId}にアクセスできない(未参加のサーバー? MEALPOST_CHANNEL_ID_${id}で変更可)`);
+      logger.error('MEALPOST', `[${id}] 投稿先チャンネル${channelId}にアクセスできない(未参加のサーバー? .envのMEALPOST_CHANNEL_ID[_N]で変更可)`);
     }
     return;
   }
