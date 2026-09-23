@@ -73,6 +73,17 @@ function resolveGuildIds(envVal) {
 
 const DEFAULT_COMMAND_ROLE_IDS = ['1495971497016164492', '1543226849788825620'];
 
+// アカウントごとに返信の言語を固定する(日本語圏でなじみの無い言語で喋らせる用)。
+// キーはアカウント番号。.envのREPLY_LANGUAGE[_N]で上書きでき、offを指定すると
+// 固定しない(通常通り日本語で喋る)
+const DEFAULT_REPLY_LANGUAGES = { 2: 'ヒンディー語' };
+
+function resolveReplyLanguage(envVal, index) {
+  const value = envVal ?? DEFAULT_REPLY_LANGUAGES[index];
+  if (!value || value.toLowerCase() === 'off') return null;
+  return value;
+}
+
 function resolveCommandRoleIds(envVal) {
   if (!envVal) return DEFAULT_COMMAND_ROLE_IDS;
   return envVal.split(',').map((id) => id.trim()).filter(Boolean);
@@ -141,7 +152,8 @@ function loadAccounts() {
       gifGenres: idListEnv(process.env.GIF_GENRE),
       // trueにすると、他機能の有効/無効に関係なく単独で一定間隔ごとに、直近の
       // ニュース見出しをネタにした自発投稿(newsPostHandler.js)をする
-      newsPostEnabled: boolEnv('NEWS_POST') ?? false
+      newsPostEnabled: boolEnv('NEWS_POST') ?? false,
+      replyLanguage: resolveReplyLanguage(process.env.REPLY_LANGUAGE, 1)
     });
   }
 
@@ -170,7 +182,8 @@ function loadAccounts() {
       markovDirectReplyChanceOverride: numEnv(`MARKOV_DIRECT_REPLY_CHANCE_${i}`),
       markovDirectReplyMinLengthOverride: numEnv(`MARKOV_DIRECT_REPLY_MIN_LENGTH_${i}`),
       gifGenres: idListEnv(process.env[`GIF_GENRE_${i}`]),
-      newsPostEnabled: boolEnv(`NEWS_POST_${i}`) ?? false
+      newsPostEnabled: boolEnv(`NEWS_POST_${i}`) ?? false,
+      replyLanguage: resolveReplyLanguage(process.env[`REPLY_LANGUAGE_${i}`], i)
     });
     i++;
   }

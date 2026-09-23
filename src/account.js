@@ -54,6 +54,8 @@ function buildAccountState(account) {
     gifGenres: gifGenreStore.loadOrInit(account.id, account.gifGenres || []),
     // ニュース見出しをネタにした定期の自発投稿(.envのNEWS_POST[_N])をするか
     newsPostEnabled: account.newsPostEnabled || false,
+    // 返信・自発投稿をこの言語に固定する(.envのREPLY_LANGUAGE[_N]、nullなら日本語のまま)
+    replyLanguage: account.replyLanguage || null,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる
