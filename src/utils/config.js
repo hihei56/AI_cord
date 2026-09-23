@@ -63,6 +63,10 @@ function idListEnv(envVal) {
 // !pause/!set channel等をロール経由で実行できる既定のロールID。サーバーによって
 // 持ってるロールが違うので複数許可する。ロールIDは秘密情報ではないのでハードコードしてよく、
 // .envで ALLOWED_COMMAND_ROLE_ID[_N] にカンマ区切りで指定すれば上書きできる
+// 動作サーバーの既定値。.envのALLOWED_GUILD_ID[_N]が未設定のアカウントはここを使う。
+// 実行中の移動は !guild set で行う(data/guild-<id>.jsonに保存され、.envより優先)
+const DEFAULT_GUILD_ID = '1551952305958424616';
+
 const DEFAULT_COMMAND_ROLE_IDS = ['1495971497016164492', '1543226849788825620'];
 
 function resolveCommandRoleIds(envVal) {
@@ -100,7 +104,7 @@ function loadAccounts() {
     accounts.push({
       id: '1',
       discordToken: process.env.DISCORD_TOKEN,
-      allowedGuildId: process.env.ALLOWED_GUILD_ID,
+      allowedGuildId: process.env.ALLOWED_GUILD_ID || DEFAULT_GUILD_ID,
       allowedChannelId: process.env.ALLOWED_CHANNEL_ID,
       testChannelId: process.env.TEST_CHANNEL_ID,
       allowedReplyUserIds: idListEnv(process.env.ALLOWED_REPLY_USER_IDS),
@@ -134,7 +138,7 @@ function loadAccounts() {
     accounts.push({
       id: String(i),
       discordToken: process.env[`DISCORD_TOKEN_${i}`],
-      allowedGuildId: process.env[`ALLOWED_GUILD_ID_${i}`],
+      allowedGuildId: process.env[`ALLOWED_GUILD_ID_${i}`] || DEFAULT_GUILD_ID,
       allowedChannelId: process.env[`ALLOWED_CHANNEL_ID_${i}`],
       testChannelId: process.env[`TEST_CHANNEL_ID_${i}`],
       allowedReplyUserIds: idListEnv(process.env[`ALLOWED_REPLY_USER_IDS_${i}`]),

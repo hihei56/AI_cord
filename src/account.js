@@ -1,5 +1,6 @@
 const config = require('./utils/config');
 const { createChannelStore } = require('./utils/channelStore');
+const { loadGuildId } = require('./utils/guildStore');
 const { createReminderStore } = require('./utils/reminderStore');
 const { createMemoryStore } = require('./utils/memoryStore');
 
@@ -13,7 +14,8 @@ function buildAccountState(account) {
   return {
     id: account.id,
     discordToken: account.discordToken,
-    allowedGuildId: account.allowedGuildId,
+    // !guild set で切り替えた値(data/guild-<id>.json)があればそちらを優先する
+    allowedGuildId: loadGuildId(account.id, account.allowedGuildId),
     // テスト用チャンネル(任意)。設定すると応答チャンネル登録・クールダウン・
     // 確率・crowdGuardを無視して常に即応答する(動作確認用)
     testChannelId: account.testChannelId,
