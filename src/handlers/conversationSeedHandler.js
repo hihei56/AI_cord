@@ -298,7 +298,7 @@ function registerBotReplyTrigger(clients) {
       if (msg.author.id === client.user.id) return;
       if (!isOwnAccount(msg.author.id)) return;
       if (client.accountState.lockedDown) return;
-      if (msg.guild?.id !== client.accountState.allowedGuildId) return;
+      if (!client.accountState.guildStore.isAllowedGuild(msg.guild?.id)) return;
       if (!client.accountState.channelStore.isAllowedChannel(msg.channel.id)) return;
       if (activeChannels.has(msg.channel.id)) return;
       if (!canTriggerReactive(msg.channel.id)) return;

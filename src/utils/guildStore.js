@@ -2,25 +2,45 @@ const fs = require('fs');
 const path = require('path');
 
 function storePath(accountId) {
-  return path.join(__dirname, '..', '..', 'data', `guild-${accountId}.json`);
+  return path.join(__dirname, '..', '..', 'data', `guilds-${accountId}.json`);
 }
 
-// アカウントごとの動作サーバーID。!guild set で実行中に切り替えられるようにし、
-// data/guild-<accountId>.json に永続化する(.envを書き換えずにサーバーを移動するため)。
-// ファイルが無ければ .env の ALLOWED_GUILD_ID[_N](無ければ既定値)を使う
-function loadGuildId(accountId, fallbackGuildId) {
-  try {
-    const saved = JSON.parse(fs.readFileSync(storePath(accountId), 'utf-8'));
-    return saved.guildId || fallbackGuildId;
-  } catch {
-    return fallbackGuildId;
-  }
-}
-
-function saveGuildId(accountId, guildId) {
+// アカウントごとに動作してよいサーバー一覧を持つ(複数サーバー掛け持ち用)。
+// !guild add/remove で実行中に変更でき、data/guilds-<accountId>.json に永続化する。
+// ファイルが無い初回だけ .env の ALLOWED_GUILD_ID[_N] と既定値(config.js)を初期値にする
+function createGuildStore(accountId, seedGuildIds) {
   const filePath = storePath(accountId);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify({ guildId }, null, 2));
+
+  function load() {
+    try {
+      return new Set(JSON.parse(fs.readFileSync(filePath, 'utf-8')));
+    } catch {
+      return new Set(seedGuildIds.filter(Boolean));
+    }
+  }
+
+  const guilds = load();
+
+  function save() {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify([...guilds], null, 2));
+  }
+
+  return {
+    isAllowedGuild: (guildId) => Boolean(guildId) && guilds.has(guildId),
+    addGuild: (guildId) => {
+      const added = !guilds.has(guildId);
+      guilds.add(guildId);
+      if (added) save();
+      return added;
+    },
+    removeGuild: (guildId) => {
+      const removed = guilds.delete(guildId);
+      if (removed) save();
+      return removed;
+    },
+    listGuilds: () => [...guilds]
+  };
 }
 
-module.exports = { loadGuildId, saveGuildId };
+module.exports = { createGuildStore };

@@ -64,7 +64,7 @@ npm start
 | `DISCORD_TOKEN` | Discordアカウントのトークン |
 | `AI_BASE_URL` | Chat Completions APIのベースURL(OpenAI互換なら何でも可。省略時Groq) |
 | `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
-| `ALLOWED_GUILD_ID` | 動作させるサーバーID(省略時は`src/utils/config.js`の`DEFAULT_GUILD_ID`。実行中は`!guild set [all]`で移動でき、そちらが優先される) |
+| `ALLOWED_GUILD_ID` | 動作させるサーバーID(カンマ区切りで複数可)。`src/utils/config.js`の`DEFAULT_GUILD_IDS`と合わせて掛け持ちする。初回起動時の初期値で、以降は`!guild add\|remove\|list [all]`で変更する |
 | `ALLOWED_CHANNEL_ID` | 初回起動時の初期応答チャンネルID(以降は`!channel`コマンドで動的に追加/削除可能) |
 | `TEST_CHANNEL_ID` | (任意)テスト用チャンネルID。設定すると、このチャンネルでは応答チャンネル登録・クールダウン・返信確率・crowdGuardを全部無視して常に即応答する(動作確認用) |
 | `ALLOWED_REPLY_USER_IDS` | (任意、カンマ区切り)応答してよい相手を制限したい場合のユーザーID一覧。未設定なら今まで通り誰にでも反応する |
