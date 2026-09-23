@@ -21,19 +21,22 @@ function loadCommands() {
   logger.log('COMMANDS', `${files.length}個のコマンドファイルを読み込み (${commands.size}エントリ)`);
 }
 
-// 本人(アカウント所有者)、または.envのALLOWED_COMMAND_ROLE_ID[_N](カンマ区切りで複数可)で
-// 指定したロールのどれかを持つメンバーだけコマンドを実行できる。
+// 本人(アカウント所有者)、そのサーバーのオーナー/管理者権限持ち、または.envの
+// ALLOWED_COMMAND_ROLE_ID[_N](カンマ区切りで複数可)で指定したロールのどれかを持つ
+// メンバーだけコマンドを実行できる。ロールIDはサーバーごとに違うので、掛け持ちした
+// 新しいサーバーでもロール設定なしで使えるよう、オーナー/管理者は常に許可する。
 // msg.memberはギルドのメンバーキャッシュ頼みで、selfbotはメンバーキャッシュが薄いことが
 // 多く(全メンバーキャッシュは重すぎるため)、キャッシュに無いと本当はロールを持っていても
 // nullになってしまう。そのためキャッシュに無ければ明示的にfetchして確実に判定する
 async function canRunCommands(msg, client, state) {
   if (msg.author.id === client.user.id) return { allowed: true };
-  if (!state.commandRoleIds?.length) return { allowed: false, reason: 'commandRoleIds未設定' };
   if (!msg.guild) return { allowed: false, reason: 'DM(サーバー外)' };
+  if (msg.guild.ownerId === msg.author.id) return { allowed: true };
 
   try {
     const member = msg.member ?? (await msg.guild.members.fetch(msg.author.id));
-    const allowed = state.commandRoleIds.some((id) => member.roles.cache.has(id));
+    if (member.permissions?.has('ADMINISTRATOR')) return { allowed: true };
+    const allowed = (state.commandRoleIds || []).some((id) => member.roles.cache.has(id));
     return {
       allowed,
       reason: allowed
