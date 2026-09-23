@@ -64,7 +64,7 @@ npm start
 | `DISCORD_TOKEN` | Discordアカウントのトークン |
 | `AI_BASE_URL` | Chat Completions APIのベースURL(OpenAI互換なら何でも可。省略時Groq) |
 | `AI_API_KEY` | 上記APIのキー(未設定時は`GROQ_API_KEY`にフォールバック) |
-| `ALLOWED_GUILD_ID` | 動作させるサーバーID |
+| `ALLOWED_GUILD_ID` | 動作させるサーバーID(カンマ区切りで複数可)。`src/utils/config.js`の`DEFAULT_GUILD_IDS`と合わせて掛け持ちする。初回起動時の初期値で、以降は`!guild add\|remove\|list [all]`で変更する |
 | `ALLOWED_CHANNEL_ID` | 初回起動時の初期応答チャンネルID(以降は`!channel`コマンドで動的に追加/削除可能) |
 | `TEST_CHANNEL_ID` | (任意)テスト用チャンネルID。設定すると、このチャンネルでは応答チャンネル登録・クールダウン・返信確率・crowdGuardを全部無視して常に即応答する(動作確認用) |
 | `ALLOWED_REPLY_USER_IDS` | (任意、カンマ区切り)応答してよい相手を制限したい場合のユーザーID一覧。未設定なら今まで通り誰にでも反応する |
@@ -95,7 +95,7 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 ### コマンド
 
-アカウント本人(そのDiscordアカウント自身)に加えて、`src/utils/config.js`の`DEFAULT_COMMAND_ROLE_IDS`(複数指定可)で指定したロールのどれかを持つサーバーメンバーもコマンドを実行できる。別のロールに変えたい/アカウントごとに分けたい場合は`.env`で`ALLOWED_COMMAND_ROLE_ID`(カンマ区切りで複数可、2つ目以降は`_2`など)を指定すれば上書きされる。
+アカウント本人(そのDiscordアカウント自身)と、コマンドを打ったサーバーのオーナー・管理者権限(Administrator)を持つメンバーは、どのサーバーでも常にコマンドを実行できる(掛け持ちした新しいサーバーでもロール設定なしで使えるように)。それに加えて、`src/utils/config.js`の`DEFAULT_COMMAND_ROLE_IDS`(複数指定可)で指定したロールのどれかを持つサーバーメンバーもコマンドを実行できる。別のロールに変えたい/アカウントごとに分けたい場合は`.env`で`ALLOWED_COMMAND_ROLE_ID`(カンマ区切りで複数可、2つ目以降は`_2`など)を指定すれば上書きされる。
 
 コマンドのprefixもアカウントごとに別々(どのアカウント宛てか紛らわしくならないよう)。既定値は`src/utils/config.js`の`DEFAULT_COMMAND_PREFIXES`(1つ目`toku!`、2つ目`sui!`)で、`.env`の`COMMAND_PREFIX`(2つ目以降`_2`など)で上書きできる。例: `sui!lockdown`はsuisui(2つ目)アカウントだけに効く。
 
@@ -171,7 +171,8 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - 対象BOTからの応答メッセージを監視し、`successfully`を含めば成功、`please wait`/`cooldown`/`failed`/`error`等を含めばクールダウン中と判定する。クールダウン応答に`try again in N minutes/hours/days`のような記載があればその時間を読み取って次回実行時刻を調整し、読み取れなければ既定15分後にする
 - 応答が全く無い場合は30〜40分のランダムな間隔で再試行する
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
-- 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+- `mealpost`アカウントは`MEALPOST_DISCORD_TOKEN_2`, `_3`...で複数動かせる。どのアカウントが実行するかは`!slashbump assign <アカウント番号> [serverId]`でサーバーごとに割り当てる(省略時は今のサーバー、`!slashbump unassign`で解除、`!slashbump list`で確認)。割り当てが無いサーバーでは、対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+- ご飯画像の定期投稿もアカウントごとに独立して行う。投稿先・画像フォルダは`MEALPOST_CHANNEL_ID[_N]` / `MEALPOST_IMAGE_FOLDER[_N]`で変更でき、未設定なら`config/settings.json`の`mealPosts.channelId` / `folderBase`を使う
 
 ### `config/settings.json`(動作パラメータ)
 

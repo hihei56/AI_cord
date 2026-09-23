@@ -54,7 +54,10 @@ module.exports = {
       const targets = store.getTargets();
       if (targets.length === 0) return msg.channel.send('(登録なし。!slashbump add <botId> <command> で追加して)');
       const lines = targets.map((t) => `**${t.name}**(${t.botId}) /${t.command} → <#${t.channelId}>`);
-      return msg.channel.send(`登録済みbump対象:\n${lines.join('\n')}`);
+      const assigns = Object.entries(store.getGuildAccounts()).map(([g, a]) => `サーバー${g} → アカウント${a}`);
+      return msg.channel.send(
+        `登録済みbump対象:\n${lines.join('\n')}` + (assigns.length ? `\n\n実行アカウントの割り当て:\n${assigns.join('\n')}` : '')
+      );
     }
 
     if (sub === 'now') {
@@ -70,12 +73,38 @@ module.exports = {
       return msg.channel.send(`📡 ${targets.length}件のbumpを即時実行しました(クールダウンは無視)`);
     }
 
+    if (sub === 'assign') {
+      const accountId = args[1];
+      const guildId = args[2] || msg.guild?.id;
+      if (!accountId || !guildId) return msg.channel.send('使い方: !slashbump assign <アカウント番号> [serverId] (省略時は今のサーバー)');
+      const clients = bumpHandler.getClients();
+      const target = clients.find((c) => c.accountState?.id === accountId);
+      if (!target) {
+        const ids = clients.map((c) => `${c.accountState?.id}(${c.user?.username ?? '?'})`).join(', ');
+        return msg.channel.send(`アカウント${accountId}はログインしていません(使えるのは: ${ids})`);
+      }
+      store.setGuildAccount(guildId, accountId);
+      return msg.channel.send(`✅ サーバー${guildId}のスラッシュコマンド実行をアカウント${accountId}(${target.user?.username ?? '?'})に割り当てました`);
+    }
+
+    if (sub === 'unassign') {
+      const guildId = args[1] || msg.guild?.id;
+      if (!guildId) return msg.channel.send('使い方: !slashbump unassign [serverId]');
+      return msg.channel.send(
+        store.removeGuildAccount(guildId)
+          ? `🗑️ サーバー${guildId}の割り当てを解除(アクセスできる最初のアカウントが実行)`
+          : `サーバー${guildId}には割り当てがありません`
+      );
+    }
+
     return msg.channel.send(
       '使い方:\n' +
         '!slashbump add <botId> <command> [#channel] [表示名] (省略時は今のチャンネル。既に登録済みなら上書き更新)\n' +
         '!slashbump remove <botId> [#channel]\n' +
         '!slashbump list\n' +
-        '!slashbump now [botId] [#channel] (省略時は全対象、クールダウン無視で即時実行)'
+        '!slashbump now [botId] [#channel] (省略時は全対象、クールダウン無視で即時実行)\n' +
+        '!slashbump assign <アカウント番号> [serverId] (そのサーバーで実行するアカウントを割り当て。省略時は今のサーバー)\n' +
+        '!slashbump unassign [serverId]'
     );
   }
 };

@@ -19,10 +19,21 @@ function getState(botId, channelId) {
   return runtimeStates.get(key);
 }
 
-// 対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントを使う。
+// !slashbump assign でそのサーバーに割り当てたアカウントがあればそれを使い、
+// 無ければ対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントを使う。
 // bumpするチャンネルは通常の会話チャンネルと別の場合もあるため、channelStoreには依らない
 function findClientForChannel(clients, channelId) {
-  return clients.find((c) => c.channels?.cache.get(channelId));
+  const accessible = clients.filter((c) => c.channels?.cache.get(channelId));
+  if (accessible.length === 0) return undefined;
+
+  const guildId = accessible[0].channels.cache.get(channelId).guild?.id;
+  const assignedId = guildId ? store.getGuildAccount(guildId) : null;
+  if (!assignedId) return accessible[0];
+
+  const assigned = accessible.find((c) => c.accountState?.id === assignedId);
+  if (assigned) return assigned;
+  logger.error('SLASHBUMP', `サーバー${guildId}の割り当てアカウント${assignedId}が使えないため、アカウント${accessible[0].accountState?.id}で代わりに実行`);
+  return accessible[0];
 }
 
 async function executeBump(clients, target) {
@@ -159,6 +170,7 @@ function registerSlashBumpHandler(clients) {
 
 module.exports = {
   registerSlashBumpHandler,
+  getClients: () => clientsRef || [],
   startTarget: (target) => startTarget(clientsRef || [], target),
   stopTarget,
   forceBump

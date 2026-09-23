@@ -122,7 +122,7 @@ function registerMessageHandler(client) {
     // 返信するかどうかの重い判定より先に済ませてしまう
     if (
       !state.lockedDown &&
-      msg.guild?.id === state.allowedGuildId &&
+      state.guildStore.isAllowedGuild(msg.guild?.id) &&
       isReactableMessage(msg) &&
       (Boolean(state.testChannelId) && msg.channel.id === state.testChannelId
         ? true
@@ -136,7 +136,7 @@ function registerMessageHandler(client) {
     // 意図的な掛け合いは conversationSeedHandler が専用ルートで行う。
     if (isOwnAccount(msg.author.id)) return;
     if (state.lockedDown) return;
-    if (msg.guild?.id !== state.allowedGuildId) return;
+    if (!state.guildStore.isAllowedGuild(msg.guild?.id)) return;
     if (!isRealUser(msg)) return;
     if (state.allowedReplyUserIds?.length && !state.allowedReplyUserIds.includes(msg.author.id)) return;
 

@@ -17,6 +17,8 @@ function load() {
 
 const state = load();
 state.targets = state.targets || [];
+// サーバーID → そのサーバーでスラッシュコマンドを実行するmealpostアカウント番号
+state.guildAccounts = state.guildAccounts || {};
 
 function save() {
   fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
@@ -58,4 +60,34 @@ function removeTarget(botId, channelId) {
   return removed;
 }
 
-module.exports = { getTargets, findTarget, addTarget, removeTarget };
+// !slashbump assign で、サーバーごとにどのmealpostアカウントが実行するかを割り当てる
+function getGuildAccount(guildId) {
+  return state.guildAccounts[guildId] || null;
+}
+
+function setGuildAccount(guildId, accountId) {
+  state.guildAccounts[guildId] = accountId;
+  save();
+}
+
+function removeGuildAccount(guildId) {
+  if (!state.guildAccounts[guildId]) return false;
+  delete state.guildAccounts[guildId];
+  save();
+  return true;
+}
+
+function getGuildAccounts() {
+  return { ...state.guildAccounts };
+}
+
+module.exports = {
+  getTargets,
+  findTarget,
+  addTarget,
+  removeTarget,
+  getGuildAccount,
+  setGuildAccount,
+  removeGuildAccount,
+  getGuildAccounts
+};
