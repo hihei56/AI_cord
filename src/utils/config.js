@@ -75,11 +75,13 @@ const DEFAULT_COMMAND_ROLE_IDS = ['1495971497016164492', '1543226849788825620'];
 
 // アカウントごとに返信の言語を固定する(日本語圏でなじみの無い言語で喋らせる用)。
 // キーはアカウント番号。.envのREPLY_LANGUAGE[_N]で上書きでき、offを指定すると
-// 固定しない(通常通り日本語で喋る)
+// 固定しない(通常通り日本語で喋る)。DEFAULT_REPLY_LANGUAGE_ALLを設定すると、
+// .envで個別指定していない全アカウントがその言語になる(nullで無効)
+const DEFAULT_REPLY_LANGUAGE_ALL = 'タミル語';
 const DEFAULT_REPLY_LANGUAGES = { 2: 'ヒンディー語' };
 
 function resolveReplyLanguage(envVal, index) {
-  const value = envVal ?? DEFAULT_REPLY_LANGUAGES[index];
+  const value = envVal ?? DEFAULT_REPLY_LANGUAGE_ALL ?? DEFAULT_REPLY_LANGUAGES[index];
   if (!value || value.toLowerCase() === 'off') return null;
   return value;
 }
