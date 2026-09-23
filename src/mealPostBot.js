@@ -137,6 +137,10 @@ function loginAndWaitReady(account) {
     client.once('ready', () => {
       clearTimeout(timer);
       logger.log('READY', `[MEALPOST ${account.id}] ${client.user.tag}`);
+      // コマンドに無反応な時、そもそもそのサーバーに参加していない(メッセージを
+      // 受信できていない)のかを切り分けられるよう、参加サーバーを出しておく
+      const guilds = [...client.guilds.cache.values()].map((g) => `${g.name}(${g.id})`);
+      logger.log('READY', `[MEALPOST ${account.id}] 参加サーバー${guilds.length}件: ${guilds.join(', ')}`);
       resolve(client);
     });
     client.login(account.token).catch((err) => {
