@@ -22,22 +22,22 @@
     "minGapMs": 2000
   },
   "typingDelay": {
-    "minMs": 3000,
-    "maxMs": 7000,
+    "minMs": 6000,
+    "maxMs": 14000,
     "longPauseChance": 0.12,
     "longPauseMinMs": 15000,
     "longPauseMaxMs": 90000
   },
   "replyDelay": {
-    "minMs": 2500,
-    "perCharMs": 40,
-    "capMs": 12000,
-    "jitterMs": 3000
+    "minMs": 5000,
+    "perCharMs": 70,
+    "capMs": 20000,
+    "jitterMs": 5000
   },
   "conversationSeed": {
     "checkIntervalMs": 600000,
     "checkIntervalJitter": 0.4,
-    "alwaysOn": true,
+    "alwaysOn": false,
     "alwaysOnIntervalMs": 120000,
     "quietThresholdMs": 300000,
     "triggerChance": 0.3,
@@ -48,6 +48,17 @@
     "turnDelayMaxMs": 8000,
     "botReplyChance": 0.15,
     "botReplyCooldownMs": 600000
+  },
+  "gif": {
+    "chance": 0.35,
+    "chanceJitter": 0.4,
+    "turnChance": 0.2,
+    "postIntervalMs": 3600000,
+    "postIntervalJitter": 0.4
+  },
+  "news": {
+    "postIntervalMs": 5400000,
+    "postIntervalJitter": 0.4
   },
   "selfTalk": {
     "enabled": false,
@@ -83,14 +94,34 @@
     "vision": {
       "enabled": true,
       "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-      "maxTokens": 200
+      "maxTokens": 200,
+      "maxImages": 4
     }
   },
   "presenceFile": "default.json",
+  "relay": {
+    "delayMs": 5000,
+    "delayJitter": 0.4
+  },
+  "rssTwitterPost": {
+    "checkIntervalMs": 600000,
+    "checkIntervalJitter": 0.3,
+    "postDelayMs": 4000,
+    "postDelayJitter": 0.4
+  },
   "reactions": {
-    "enabled": true,
+    "enabled": false,
     "chance": 0.08,
     "chanceJitter": 0.4
+  },
+  "emojiGifOnlyMode": {
+    "enabled": false,
+    "gifChance": 0.5
+  },
+  "slashBumpDaily": {
+    "windowStartHour": 8,
+    "windowEndHour": 23,
+    "checkIntervalMs": 300000
   },
   "priceAlert": {
     "enabled": true,
