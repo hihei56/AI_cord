@@ -171,7 +171,8 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - 対象BOTからの応答メッセージを監視し、`successfully`を含めば成功、`please wait`/`cooldown`/`failed`/`error`等を含めばクールダウン中と判定する。クールダウン応答に`try again in N minutes/hours/days`のような記載があればその時間を読み取って次回実行時刻を調整し、読み取れなければ既定15分後にする
 - 応答が全く無い場合は30〜40分のランダムな間隔で再試行する
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
-- 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+- `mealpost`アカウントは`MEALPOST_DISCORD_TOKEN_2`, `_3`...で複数動かせる。どのアカウントが実行するかは`!slashbump assign <アカウント番号> [serverId]`でサーバーごとに割り当てる(省略時は今のサーバー、`!slashbump unassign`で解除、`!slashbump list`で確認)。割り当てが無いサーバーでは、対象チャンネルにアクセスできる(そのギルドに参加している)最初のアカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
+- ご飯画像の定期投稿もアカウントごとに独立して行う。投稿先・画像フォルダは`MEALPOST_CHANNEL_ID[_N]` / `MEALPOST_IMAGE_FOLDER[_N]`で変更でき、未設定なら`config/settings.json`の`mealPosts.channelId` / `folderBase`を使う
 
 ### `config/settings.json`(動作パラメータ)
 
