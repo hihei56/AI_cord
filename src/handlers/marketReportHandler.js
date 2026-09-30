@@ -47,8 +47,8 @@ function describeIndex(label, data, s) {
   const line = `${label} ${fmt(close, 0)} (${signed(change)}%)${data.provisional ? ' ※取引中' : ''}`;
 
   const events = detectDips(closes, s.maPeriods, s.touchPercent).map((d) => formatDip(label, d));
-  if (r !== null && r >= 70) events.push(`⚠️ ${label} RSI ${fmt(r, 0)} 買われすぎ`);
-  else if (r !== null && r <= 30) events.push(`⚠️ ${label} RSI ${fmt(r, 0)} 売られすぎ`);
+  if (r !== null && r >= 70) events.push(`🔥${label} RSI${fmt(r, 0)}`);
+  else if (r !== null && r <= 30) events.push(`🧊${label} RSI${fmt(r, 0)}`);
 
   return { line, events, change, tradingDay: tradingDayOf(data.bars[data.bars.length - 1].time) };
 }
@@ -102,9 +102,8 @@ async function buildReport() {
 
   const events = described.flatMap((d) => d.events);
   const vix = vixData ? vixData.bars[vixData.bars.length - 1].close : null;
-  const extras = [vix !== null ? `VIX ${fmt(vix, 1)}` : null, per ? `PER ${fmt(per, 1)}` : null].filter(Boolean);
+  const extras = [vix !== null ? `VIX ${fmt(vix, 1)}${vix >= s.vixAlert ? '!' : ''}` : null, per ? `PER ${fmt(per, 1)}` : null].filter(Boolean);
   if (extras.length) lines.push(extras.join(' / '));
-  if (vix !== null && vix >= s.vixAlert) events.push(`⚠️ VIX ${fmt(vix, 1)} 警戒水準`);
 
   if (headlines.length) {
     const moves = described.map((d) => d.line).join(', ');

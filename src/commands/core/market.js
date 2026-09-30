@@ -42,7 +42,8 @@ module.exports = {
         '!market channel (今のチャンネルを毎朝の投稿先に設定)\n' +
         '!market off (毎朝の投稿を停止)\n' +
         '!market now (今すぐ表示)\n' +
-        '!market status'
+        '!market status\n' +
+        '凡例: 🎯押し目(50/120日線) 🎯🎯深い押し目(200日線) 💀200日線割れ / 数字=線の日数と高値からの下落率 / 🔥RSI70以上 🧊RSI30以下 / VIX!=30以上'
     );
   }
 };
