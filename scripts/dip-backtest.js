@@ -5,7 +5,7 @@
 // 使い方:
 //   node scripts/dip-backtest.js ^NDX          # Yahoo Financeから全期間を取得
 //   node scripts/dip-backtest.js BTC-USD --touch 3 --ddmin 15 --ddmax 40
-//   node scripts/dip-backtest.js --csv data.csv # 日付,終値 のCSV(ヘッダ行は数値でなければ無視)
+//   node scripts/dip-backtest.js --csv data.csv # 日付,終値[,高値,安値] のCSV(ヘッダ行は数値でなければ無視)
 // ^NDX/^GSPC等の米国株はVIXも取得してスコアの加点に使う(--novixで無効)
 const fs = require('fs');
 const { fetchDailyCloses, detectDips } = require('../src/utils/marketData');
@@ -36,7 +36,12 @@ function loadCsv(file) {
     .split(/\r?\n/)
     .map((line) => line.split(','))
     .filter((cols) => cols.length >= 2 && Number.isFinite(Number(cols[1])))
-    .map((cols) => ({ day: cols[0].trim(), close: Number(cols[1]) }));
+    .map((cols) => {
+      const close = Number(cols[1]);
+      const high = Number(cols[2]);
+      const low = Number(cols[3]);
+      return { day: cols[0].trim(), close, high: Number.isFinite(high) ? high : close, low: Number.isFinite(low) ? low : close };
+    });
 }
 
 function summarize(returns) {
@@ -64,7 +69,7 @@ async function main() {
   } else if (opts.symbol) {
     const data = await fetchDailyCloses(opts.symbol, 'max');
     if (!data) throw new Error(`${opts.symbol}の取得に失敗(Yahoo Financeに接続できない場合は--csvで渡して)`);
-    bars = data.bars.map((b) => ({ day: dayKey(b.time), close: b.close }));
+    bars = data.bars.map((b) => ({ day: dayKey(b.time), close: b.close, high: b.high, low: b.low }));
   } else {
     console.log('使い方: node scripts/dip-backtest.js <Yahooのシンボル> | --csv <ファイル> [--touch 1] [--ddmin 5] [--ddmax 15] [--rsimax 40]');
     return;
@@ -77,6 +82,8 @@ async function main() {
   }
 
   const closes = bars.map((b) => b.close);
+  const highs = bars.map((b) => b.high);
+  const lows = bars.map((b) => b.low);
   const horizons = [20, 60, 120];
   const groups = new Map();
   const add = (key, i) => {
@@ -100,20 +107,23 @@ async function main() {
       drawdownMin: opts.ddmin,
       drawdownMax: opts.ddmax,
       rsiMax: opts.rsimax,
-      fearBonus: Number.isFinite(vix) && vix >= opts.vixmin
+      fearBonus: Number.isFinite(vix) && vix >= opts.vixmin,
+      highs: highs.slice(0, i + 1),
+      lows: lows.slice(0, i + 1)
     });
     for (const d of dips) {
       if (d.kind === 'trend_break') add('💀200日線割れ', i);
       else {
         add(d.kind === 'deep_dip' ? '🎯🎯深い押し目' : '🎯押し目', i);
         add(`★${d.score}`, i);
+        add(d.onCloud ? '☁雲で支え あり' : '☁雲で支え なし', i);
       }
     }
   }
 
   console.log(`対象: ${opts.symbol || opts.csv}  期間: ${bars[0].day} 〜 ${bars[bars.length - 1].day}  (${bars.length}日)`);
   console.log(`条件: touch ±${opts.touch}% / 下落率${opts.ddmin}〜${opts.ddmax}% / RSI≤${opts.rsimax}${vixByDay ? ` / VIX≥${opts.vixmin}` : ''}\n`);
-  const order = ['全日(毎日買った場合)', '🎯押し目', '🎯🎯深い押し目', '★1', '★2', '★3', '★4', '💀200日線割れ'];
+  const order = ['全日(毎日買った場合)', '🎯押し目', '🎯🎯深い押し目', '★1', '★2', '★3', '★4', '★5', '☁雲で支え あり', '☁雲で支え なし', '💀200日線割れ'];
   for (const key of order) {
     const g = groups.get(key);
     if (!g) continue;

@@ -51,7 +51,11 @@ function describeIndex(label, data, s, vix) {
 
   const { vixMin, ...dipOpts } = s.dipScore;
   const fearBonus = Number.isFinite(vix) && vix >= vixMin;
-  const events = detectDips(closes, s.maPeriods, s.touchPercent, { ...dipOpts, fearBonus }).map((d) => formatDip(label, d));
+  const highs = data.bars.map((b) => b.high);
+  const lows = data.bars.map((b) => b.low);
+  const events = detectDips(closes, s.maPeriods, s.touchPercent, { ...dipOpts, fearBonus, highs, lows }).map((d) =>
+    formatDip(label, d)
+  );
   if (r !== null && r >= 70) events.push(`🔥${label} RSI${fmt(r, 0)}`);
   else if (r !== null && r <= 30) events.push(`🧊${label} RSI${fmt(r, 0)}`);
 

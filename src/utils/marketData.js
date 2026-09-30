@@ -18,12 +18,18 @@ async function fetchDailyCloses(symbol, range = '2y') {
     const data = await res.json();
     const result = data.chart?.result?.[0];
     const timestamps = result?.timestamp || [];
-    const rawCloses = result?.indicators?.quote?.[0]?.close || [];
+    const quote = result?.indicators?.quote?.[0] || {};
+    const rawCloses = quote.close || [];
 
-    // 休場・データ欠損日はcloseがnullで返るので、日付とセットで除外する
+    // 休場・データ欠損日はcloseがnullで返るので、日付とセットで除外する。
+    // 高値・安値(一目均衡表に使う)が欠けている日は終値で代用する
     const bars = [];
     for (let i = 0; i < timestamps.length; i++) {
-      if (Number.isFinite(rawCloses[i])) bars.push({ time: timestamps[i] * 1000, close: rawCloses[i] });
+      const close = rawCloses[i];
+      if (!Number.isFinite(close)) continue;
+      const high = Number.isFinite(quote.high?.[i]) ? quote.high[i] : close;
+      const low = Number.isFinite(quote.low?.[i]) ? quote.low[i] : close;
+      bars.push({ time: timestamps[i] * 1000, close, high, low });
     }
     if (bars.length === 0) {
       logger.error('MARKET', `Yahoo chart: 終値データが空 (${symbol})`);
@@ -151,6 +157,19 @@ function analyzeMovingAverages(closes, periods, touchPercent) {
   });
 }
 
+// 一目均衡表の「今日の雲」(先行スパンA/B)。先行スパンは26本先にずらして描くので、
+// 今日の位置にある雲は26本前の時点で計算した値になる。
+// 転換線=9本の(最高値+最安値)/2、基準線=26本の同、先行A=(転換線+基準線)/2、先行B=52本の同。
+// データ不足ならnull
+function ichimokuCloud(highs, lows) {
+  const at = highs.length - 1 - 26;
+  if (at + 1 < 52) return null;
+  const mid = (n) => (Math.max(...highs.slice(at - n + 1, at + 1)) + Math.min(...lows.slice(at - n + 1, at + 1))) / 2;
+  const spanA = (mid(9) + mid(26)) / 2;
+  const spanB = mid(52);
+  return { top: Math.max(spanA, spanB), bottom: Math.min(spanA, spanB) };
+}
+
 // 「押し目」の判定。上昇トレンド中(200日線が上向き・終値が200日線より上)に、
 // 上から下がってきて短中期の移動平均線(50/120日)に±touchPercent以内まで近づいた、
 // または割り込んだ日を押し目とみなす。200日線への上からの接近は「深い押し目」、
@@ -164,11 +183,15 @@ function analyzeMovingAverages(closes, periods, touchPercent) {
 //   深すぎる=暴落の途中の可能性が高いので、どちらも加点しない)
 // - RSIがrsiMax以下(上昇トレンド中のRSIは30まで下がらず40前後で反発しやすいため40を既定にしている)
 // - fearBonus(呼び出し側で判定。米国株ならVIXが高い=投げ売りが出ている)
+// - 一目均衡表の雲の上限付近〜雲の中まで下がってきた(雲が支えとして機能しやすい位置)。
+//   highs/lowsを渡さなければ終値で代用する(CoinGeckoの日足は終値しか無いため近似になる)
 // 配点は根拠データ無しで決めたもので、各条件は「下がった」ことの言い換えで
 // 相関も強い。scripts/dip-backtest.jsで過去の成績を確認してから信用すること
 // 戻り値: 0件か1件の配列 [{ kind: 'dip'|'deep_dip'|'trend_break', period, drawdownPercent, score }]
 function detectDips(closes, periods, touchPercent, opts = {}) {
   const { highLookback = 250, drawdownMin = 5, drawdownMax = 15, rsiMax = 40, rsiPeriod = 14, fearBonus = false } = opts;
+  const highs = opts.highs || closes;
+  const lows = opts.lows || closes;
   const mas = analyzeMovingAverages(closes, periods, touchPercent);
   const longest = mas.reduce((a, m) => (m.ma !== null && (!a || m.period > a.period) ? m : a), null);
   if (!longest || longest.slope !== 'up') return [];
@@ -193,20 +216,28 @@ function detectDips(closes, periods, touchPercent, opts = {}) {
   if (picked[0] && picked[0].kind !== 'trend_break') {
     const r = rsi(closes, rsiPeriod);
     const dd = -drawdownPercent;
+    const cloud = ichimokuCloud(highs, lows);
+    const onCloud = cloud !== null && close >= cloud.bottom && close <= cloud.top * (1 + touchPercent / 100);
+    picked[0].onCloud = onCloud;
     picked[0].score =
-      1 + (dd >= drawdownMin && dd <= drawdownMax ? 1 : 0) + (r !== null && r <= rsiMax ? 1 : 0) + (fearBonus ? 1 : 0);
+      1 +
+      (dd >= drawdownMin && dd <= drawdownMax ? 1 : 0) +
+      (r !== null && r <= rsiMax ? 1 : 0) +
+      (fearBonus ? 1 : 0) +
+      (onCloud ? 1 : 0);
   }
   return picked;
 }
 
 // 本人にだけ分かれば良い短い記号表記(凡例は!market helpに載せている)。
-// 🎯=押し目(50/120日線) 🎯🎯=深い押し目(200日線) 💀=200日線割れ、数字は線の期間と高値からの下落率、★=押し目スコア
+// 🎯=押し目(50/120日線) 🎯🎯=深い押し目(200日線) 💀=200日線割れ、数字は線の期間と高値からの下落率、
+// ★=押し目スコア、☁=一目均衡表の雲で支えられる位置
 function formatDip(label, dip) {
   const dd = dip.drawdownPercent.toFixed(1);
   if (dip.kind === 'trend_break') return `💀${label} ${dip.period} ${dd}`;
-  const stars = '★'.repeat(dip.score || 1);
+  const stars = '★'.repeat(dip.score || 1) + (dip.onCloud ? '☁' : '');
   if (dip.kind === 'deep_dip') return `🎯🎯${label} ${dip.period} ${dd} ${stars}`;
   return `🎯${label} ${dip.period} ${dd} ${stars}`;
 }
 
-module.exports = { formatDip, detectDips, fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, sma, rsi, analyzeMovingAverages };
+module.exports = { ichimokuCloud, formatDip, detectDips, fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, sma, rsi, analyzeMovingAverages };
