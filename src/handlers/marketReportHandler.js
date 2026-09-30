@@ -1,7 +1,7 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const store = require('../utils/marketReportStore');
-const { fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, rsi, analyzeMovingAverages } = require('../utils/marketData');
+const { fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, rsi, detectDips, formatDip } = require('../utils/marketData');
 const { callChatCompletion } = require('../utils/aiClient');
 const { hourOfDayJST, todayJST } = require('../utils/datetime');
 
@@ -36,27 +36,17 @@ function signed(v, digits = 1) {
   return Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(digits)}` : '?';
 }
 
-const EVENT_TEXT = {
-  cross_up: 'を上抜け',
-  cross_down: 'を割り込み',
-  approach_from_above: 'に上から接近',
-  approach_from_below: 'に下から接近'
-};
-
-// 平常時は「終値と前日比」の1行だけ。移動平均線・RSIは何か起きた時だけ⚠️行で出す
+// 平常時は「終値と前日比」の1行だけ。押し目・RSIの過熱は起きた日だけ行を足す
 function describeIndex(label, data, s) {
   const closes = data.bars.map((b) => b.close);
   const close = closes[closes.length - 1];
   const prev = closes[closes.length - 2];
   const change = ((close - prev) / prev) * 100;
-  const mas = analyzeMovingAverages(closes, s.maPeriods, s.touchPercent);
   const r = rsi(closes, s.rsiPeriod);
 
   const line = `${label} ${fmt(close, 0)} (${signed(change)}%)${data.provisional ? ' ※取引中' : ''}`;
 
-  const events = mas
-    .filter((m) => m.event)
-    .map((m) => `⚠️ ${label} ${m.period}日線${EVENT_TEXT[m.event]}${m.slope === 'down' ? '(線は下向き)' : ''}`);
+  const events = detectDips(closes, s.maPeriods, s.touchPercent).map((d) => formatDip(label, d));
   if (r !== null && r >= 70) events.push(`⚠️ ${label} RSI ${fmt(r, 0)} 買われすぎ`);
   else if (r !== null && r <= 30) events.push(`⚠️ ${label} RSI ${fmt(r, 0)} 売られすぎ`);
 

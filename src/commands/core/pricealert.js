@@ -1,12 +1,13 @@
 const store = require('../../utils/priceAlertStore');
 const { fetchPrices } = require('../../utils/priceApi');
 const config = require('../../utils/config');
+const { findCryptoDips } = require('../../handlers/priceAlertHandler');
 
 module.exports = {
   name: 'pricealert',
   aliases: ['price', 'ねだん'],
   description:
-    '仮想通貨の価格アラート。!pricealert channel(今のチャンネルを通知先に設定) / add|remove <銘柄> / list / now(即時チェック) / setid <銘柄> <CoinGecko id か チェーン:ペアアドレス>(自動解決に失敗した銘柄を手動指定)',
+    '仮想通貨の価格アラート。!pricealert channel(今のチャンネルを通知先に設定) / add|remove <銘柄> / list / now(即時チェック) / dip(押し目を今すぐ判定) / setid <銘柄> <CoinGecko id か チェーン:ペアアドレス>(自動解決に失敗した銘柄を手動指定)',
   async execute(msg, args) {
     const sub = args[0]?.toLowerCase();
 
@@ -45,6 +46,13 @@ module.exports = {
       );
     }
 
+    if (sub === 'dip') {
+      await msg.channel.send('📡 日足を取得中...');
+      const { lines, fetched } = await findCryptoDips();
+      if (fetched === 0) return msg.channel.send('❌ 日足を取得できませんでした');
+      return msg.channel.send(lines.length ? lines.join('\n') : '今日は押し目なし');
+    }
+
     if (sub === 'now') {
       const symbols = store.getSymbols();
       if (symbols.length === 0) return msg.channel.send('監視銘柄が未設定です。!pricealert add <銘柄> で追加して');
@@ -71,6 +79,7 @@ module.exports = {
         '!pricealert add|remove <銘柄>\n' +
         '!pricealert list\n' +
         '!pricealert now (即時チェック)\n' +
+        '!pricealert dip (押し目を今すぐ判定)\n' +
         '!pricealert setid <銘柄> <CoinGecko id か チェーン:ペアアドレス> (自動解決失敗時の手動指定)'
     );
   }

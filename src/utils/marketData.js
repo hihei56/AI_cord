@@ -150,4 +150,42 @@ function analyzeMovingAverages(closes, periods, touchPercent) {
   });
 }
 
-module.exports = { fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, sma, rsi, analyzeMovingAverages };
+// 「押し目」の判定。上昇トレンド中(200日線が上向き・終値が200日線より上)に、
+// 上から下がってきて短中期の移動平均線(50/120日)に±touchPercent以内まで近づいた、
+// または割り込んだ日を押し目とみなす。200日線への上からの接近は「深い押し目」、
+// 200日線割れはトレンド転換の可能性がある別物として区別して返す
+// (200日線を割った後も下げ続けた2000年・2008年・2022年のような局面を押し目と
+// 呼ばないため)。下降トレンド中の移動平均線タッチは押し目ではないので何も返さない
+// 戻り値: 0件か1件の配列 [{ kind: 'dip'|'deep_dip'|'trend_break', period, drawdownPercent }]
+function detectDips(closes, periods, touchPercent, highLookback = 250) {
+  const mas = analyzeMovingAverages(closes, periods, touchPercent);
+  const longest = mas.reduce((a, m) => (m.ma !== null && (!a || m.period > a.period) ? m : a), null);
+  if (!longest || longest.slope !== 'up') return [];
+
+  const close = closes[closes.length - 1];
+  const recentHigh = Math.max(...closes.slice(-highLookback));
+  const drawdownPercent = ((close - recentHigh) / recentHigh) * 100;
+
+  const results = [];
+  for (const m of mas) {
+    if (m.ma === null) continue;
+    const fromAbove = m.event === 'approach_from_above' || m.event === 'cross_down';
+    if (!fromAbove) continue;
+    if (m.period === longest.period) {
+      results.push({ kind: m.event === 'cross_down' ? 'trend_break' : 'deep_dip', period: m.period, drawdownPercent });
+    } else if (close > longest.ma) {
+      results.push({ kind: 'dip', period: m.period, drawdownPercent });
+    }
+  }
+  // 1日で複数の線をまとめて割った時に行が並ばないよう、一番深い線の1件だけ返す
+  return results.slice(-1);
+}
+
+function formatDip(label, dip) {
+  const dd = `高値から${dip.drawdownPercent.toFixed(1)}%`;
+  if (dip.kind === 'trend_break') return `⚠️ ${label} ${dip.period}日線割れ 押し目ではなくトレンド転換注意 (${dd})`;
+  if (dip.kind === 'deep_dip') return `🎯 深い押し目 ${label} ${dip.period}日線タッチ (${dd})`;
+  return `🎯 押し目 ${label} ${dip.period}日線タッチ (${dd})`;
+}
+
+module.exports = { formatDip, detectDips, fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, sma, rsi, analyzeMovingAverages };

@@ -135,4 +135,28 @@ async function fetchPrices(symbols, currency = 'usd', overrides = {}) {
   return result;
 }
 
-module.exports = { resolveSymbol, fetchPrices };
+// 押し目判定用の日足終値(古い順)。CoinGeckoの無料APIは過去365日までしか
+// 取れないので、200日線+傾き判定(20日前比較)にぎりぎり足りる365日分を取る。
+// DexScreenerには過去データのAPIが無いため、DexScreener由来の銘柄はnull(判定対象外)
+async function fetchDailyCloses(symbol, overrides = {}) {
+  const resolution = await resolveSymbol(symbol, overrides[symbol.toLowerCase()]);
+  if (resolution?.source !== 'coingecko') return null;
+  try {
+    const res = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(resolution.id)}/market_chart?vs_currency=usd&days=365&interval=daily`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) {
+      logger.error('PRICE', `CoinGecko market_chart HTTP ${res.status} (${symbol})`);
+      return null;
+    }
+    const data = await res.json();
+    const closes = (data.prices || []).map((p) => p[1]).filter(Number.isFinite);
+    return closes.length >= 2 ? closes : null;
+  } catch (err) {
+    logger.error('PRICE', err);
+    return null;
+  }
+}
+
+module.exports = { resolveSymbol, fetchPrices, fetchDailyCloses };

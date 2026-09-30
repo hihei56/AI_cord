@@ -160,6 +160,8 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 銘柄の価格解決は`src/utils/priceApi.js`が担当し、優先順位は「`!pricealert setid`での手動指定」→「CoinGecko検索(ティッカーの完全一致のみ採用)」→「DexScreener検索(CoinGecko未上場の新興トークン向け、シンボル一致かつ流動性最大のペアを採用)」。どちらのAPIも無料でAPIキー不要。自動解決に失敗した銘柄は`!pricealert list`/`!pricealert now`で「取得失敗」と表示されるので、正しいCoinGecko idか`チェーンID:ペアアドレス`(DexScreenerの表記)が分かれば`!pricealert setid <銘柄> <id>`で手動指定できる。
 
+監視銘柄は毎日1回(日本時間`priceAlert.dip.checkHourJST`時以降、既定9時)、日足で米国株と同じ基準の押し目判定も行い、該当した銘柄だけ同じチャンネルに通知する(`!pricealert dip`で即時判定)。仮想通貨は値動きが大きいので線への接近幅は`priceAlert.dip.touchPercent`(既定±3%)。日足はCoinGeckoの`market_chart`(無料APIは過去365日まで)から取るため、DexScreener由来の銘柄(CoinGecko未上場のトークン)は判定対象外。
+
 初期監視銘柄は`priceAlert.defaultSymbols`(既定: `hype`, `ponz`, `zec`, `btc`)。`!pricealert add|remove`で運用中に増減でき、設定は`.env`ではなく`data/price-alerts.json`に永続化されるので、通知先チャンネル・銘柄構成の変更に`.env`編集や再起動は不要。
 
 ### 米国株の市況まとめ(`!market`)
@@ -168,7 +170,7 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 普段は`N100 21,340 (-1.2%)` / `P500 6,450 (-0.8%)` / `VIX 18.4 / PER 28.7`(PERはS&P500の実績PER)の3行だけにし、次のことが起きた日だけ⚠️行を足す。
 
-- 終値が50/120/200日移動平均線を上抜け/割り込んだ、または移動平均線から±`touchPercent`%以内に初めて入った(上から/下からを区別、線が20営業日前より下向きなら「線は下向き」と付ける)
+- 押し目(`🎯`): 上昇トレンド中(200日線が20営業日前より上向き、かつ終値が200日線より上)に、上から下がってきて50/120日線の±`touchPercent`%以内に入った・割り込んだ日。200日線への接近は「深い押し目」、200日線割れは押し目ではなく「トレンド転換注意(⚠️)」として出す。下降トレンド中の線タッチは通知しない。1日に複数の線をまたいだ時は一番深い線だけ
 - RSI(14)が70以上/30以下、VIXが`vixAlert`以上
 
 `marketReport.aiSummary`を`true`にすると、値動きの理由も1行足す(既定はオフ)。理由はYahoo FinanceのヘッドラインRSSの見出しだけを渡してAIに1文で要約させる(予想・売買推奨はさせない。読み取れなければ行ごと省く)。AIは会話とは別枠の`seed`接続を使う。

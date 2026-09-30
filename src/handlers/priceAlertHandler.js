@@ -1,8 +1,10 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const store = require('../utils/priceAlertStore');
-const { fetchPrices } = require('../utils/priceApi');
+const { fetchPrices, fetchDailyCloses } = require('../utils/priceApi');
+const { detectDips, formatDip } = require('../utils/marketData');
 const { scheduleWithJitter } = require('../utils/scheduler');
+const { hourOfDayJST, todayJST } = require('../utils/datetime');
 
 function formatPrice(v) {
   if (!Number.isFinite(v)) return '?';
@@ -55,6 +57,49 @@ async function checkOnce(client) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 監視銘柄それぞれの日足から押し目を判定して行のリストを返す。
+// CoinGeckoの無料APIのレート制限に当たらないよう銘柄ごとに間隔を空ける
+async function findCryptoDips() {
+  const { maPeriods = [50, 120, 200], touchPercent = 3 } = config.priceAlert?.dip || {};
+  const lines = [];
+  let fetched = 0;
+  for (const symbol of store.getSymbols()) {
+    const closes = await fetchDailyCloses(symbol, store.getOverrides());
+    if (closes) {
+      fetched++;
+      lines.push(...detectDips(closes, maPeriods, touchPercent).map((d) => formatDip(symbol.toUpperCase(), d)));
+    }
+    await sleep(3000);
+  }
+  return { lines, fetched };
+}
+
+// 仮想通貨の日足はUTC 0時(日本時間9時)で切り替わるので、checkHourJST以降に1日1回だけ判定する
+async function checkDipsOnce(client) {
+  const { checkHourJST = 9 } = config.priceAlert?.dip || {};
+  const channel = client.channels?.cache.get(store.getChannelId());
+  if (!channel) return;
+  const today = todayJST();
+  if (hourOfDayJST() < checkHourJST || store.getLastDipCheckDate() === today) return;
+
+  const { lines, fetched } = await findCryptoDips();
+  // 1銘柄も取れなかった(API障害等)ならチェック済みにせず次回再試行する
+  if (fetched === 0) return;
+  store.setLastDipCheckDate(today);
+  if (lines.length === 0) return;
+
+  try {
+    await channel.send(lines.join('\n'));
+    logger.log('PRICE', lines.join(' / '));
+  } catch (err) {
+    logger.error('PRICE', err);
+  }
+}
+
 // 価格アラートはアカウント(persona)に依存しない全体機能なので、複数アカウント運用時も
 // 最初のクライアント(clients[0])だけが通知先チャンネルへの投稿を担当する
 function registerPriceAlertHandler(clients) {
@@ -64,6 +109,10 @@ function registerPriceAlertHandler(clients) {
 
   const { checkIntervalMs = 900000, checkIntervalJitter = 0.3 } = config.priceAlert;
   scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce(client));
+
+  if (config.priceAlert.dip?.enabled) {
+    setInterval(() => checkDipsOnce(client).catch((err) => logger.error('PRICE', err)), 600000);
+  }
 }
 
-module.exports = { registerPriceAlertHandler, checkOnce };
+module.exports = { registerPriceAlertHandler, checkOnce, findCryptoDips };

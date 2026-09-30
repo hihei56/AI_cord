@@ -98,7 +98,13 @@
     "checkIntervalMs": 900000,
     "checkIntervalJitter": 0.3,
     "changeThresholdPercent": 5,
-    "currency": "usd"
+    "currency": "usd",
+    "dip": {
+      "enabled": true,
+      "maPeriods": [50, 120, 200],
+      "touchPercent": 3,
+      "checkHourJST": 9
+    }
   },
   "marketReport": {
     "enabled": true,
