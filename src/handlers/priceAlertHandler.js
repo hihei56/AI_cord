@@ -5,6 +5,7 @@ const { fetchPrices, fetchDailyCloses } = require('../utils/priceApi');
 const { detectDips, formatDip } = require('../utils/marketData');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { hourOfDayJST, todayJST } = require('../utils/datetime');
+const { sendEach } = require('../utils/sendEach');
 
 function formatPrice(v) {
   if (!Number.isFinite(v)) return '?';
@@ -93,7 +94,7 @@ async function checkDipsOnce(client) {
   if (lines.length === 0) return;
 
   try {
-    await channel.send(lines.join('\n'));
+    await sendEach(channel, lines);
     logger.log('PRICE', lines.join(' / '));
   } catch (err) {
     logger.error('PRICE', err);

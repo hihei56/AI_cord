@@ -4,6 +4,7 @@ const store = require('../utils/marketReportStore');
 const { fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, rsi, detectDips, formatDip } = require('../utils/marketData');
 const { callChatCompletion } = require('../utils/aiClient');
 const { hourOfDayJST, todayJST } = require('../utils/datetime');
+const { sendEach } = require('../utils/sendEach');
 
 const DEFAULTS = {
   indices: [
@@ -111,8 +112,8 @@ async function buildReport() {
     if (summary) lines.push(`理由: ${summary}`);
   }
 
-  lines.push(...events);
-  return { text: lines.join('\n'), tradingDay };
+  // 押し目等の通知は3行まとめとは別メッセージで1件ずつ送る
+  return { text: lines.join('\n'), events, tradingDay };
 }
 
 // 日本時間でpostHourJSTを過ぎたら1日1回だけチェックし、前回投稿時と米国の
@@ -134,7 +135,7 @@ async function checkOnce(client) {
   if (report.tradingDay === store.getLastReportedTradingDay()) return;
 
   try {
-    await channel.send(report.text);
+    await sendEach(channel, [report.text, ...report.events]);
     store.setLastReportedTradingDay(report.tradingDay);
     logger.log('MARKET', `市況まとめを投稿 (${report.tradingDay})`);
   } catch (err) {

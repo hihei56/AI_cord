@@ -1,6 +1,7 @@
 const store = require('../../utils/priceAlertStore');
 const { fetchPrices } = require('../../utils/priceApi');
 const config = require('../../utils/config');
+const { sendEach } = require('../../utils/sendEach');
 const { findCryptoDips } = require('../../handlers/priceAlertHandler');
 
 module.exports = {
@@ -50,7 +51,7 @@ module.exports = {
       await msg.channel.send('📡 日足を取得中...');
       const { lines, fetched } = await findCryptoDips();
       if (fetched === 0) return msg.channel.send('❌ 日足を取得できませんでした');
-      return msg.channel.send(lines.length ? lines.join('\n') : '今日は押し目なし');
+      return lines.length ? sendEach(msg.channel, lines) : msg.channel.send('今日は押し目なし');
     }
 
     if (sub === 'now') {

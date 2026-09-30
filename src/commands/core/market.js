@@ -1,6 +1,7 @@
 const store = require('../../utils/marketReportStore');
 const { buildReport } = require('../../handlers/marketReportHandler');
 const config = require('../../utils/config');
+const { sendEach } = require('../../utils/sendEach');
 
 module.exports = {
   name: 'market',
@@ -34,7 +35,8 @@ module.exports = {
     if (sub === 'now') {
       await msg.channel.send('📡 取得中...');
       const report = await buildReport();
-      return msg.channel.send(report ? report.text : '❌ 株価データを取得できませんでした(Yahoo Financeへの接続失敗の可能性)');
+      if (!report) return msg.channel.send('❌ 株価データを取得できませんでした(Yahoo Financeへの接続失敗の可能性)');
+      return sendEach(msg.channel, [report.text, ...report.events]);
     }
 
     return msg.channel.send(
