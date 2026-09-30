@@ -7,8 +7,8 @@ const { hourOfDayJST, todayJST } = require('../utils/datetime');
 
 const DEFAULTS = {
   indices: [
-    { symbol: '^NDX', label: 'NASDAQ100' },
-    { symbol: '^GSPC', label: 'S&P500' }
+    { symbol: '^NDX', label: 'N100' },
+    { symbol: '^GSPC', label: 'P500' }
   ],
   maPeriods: [50, 120, 200],
   touchPercent: 1,
@@ -16,7 +16,7 @@ const DEFAULTS = {
   vixAlert: 30,
   postHourJST: 7,
   checkIntervalMs: 600000,
-  aiSummary: true
+  aiSummary: false
 };
 
 function settings() {
@@ -108,12 +108,11 @@ async function buildReport() {
   if (described.length === 0) return null;
 
   const tradingDay = described[0].tradingDay;
-  const [, month, day] = tradingDay.split('-').map(Number);
-  const lines = [`📊 米国株 ${month}/${day}`, ...described.map((d) => d.line)];
+  const lines = described.map((d) => d.line);
 
   const events = described.flatMap((d) => d.events);
   const vix = vixData ? vixData.bars[vixData.bars.length - 1].close : null;
-  const extras = [vix !== null ? `VIX ${fmt(vix, 1)}` : null, per ? `S&P PER ${fmt(per, 1)}` : null].filter(Boolean);
+  const extras = [vix !== null ? `VIX ${fmt(vix, 1)}` : null, per ? `PER ${fmt(per, 1)}` : null].filter(Boolean);
   if (extras.length) lines.push(extras.join(' / '));
   if (vix !== null && vix >= s.vixAlert) events.push(`⚠️ VIX ${fmt(vix, 1)} 警戒水準`);
 

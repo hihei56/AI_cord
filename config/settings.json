@@ -103,8 +103,8 @@
   "marketReport": {
     "enabled": true,
     "indices": [
-      { "symbol": "^NDX", "label": "NASDAQ100" },
-      { "symbol": "^GSPC", "label": "S&P500" }
+      { "symbol": "^NDX", "label": "N100" },
+      { "symbol": "^GSPC", "label": "P500" }
     ],
     "maPeriods": [50, 120, 200],
     "touchPercent": 1,
@@ -112,7 +112,7 @@
     "vixAlert": 30,
     "postHourJST": 7,
     "checkIntervalMs": 600000,
-    "aiSummary": true
+    "aiSummary": false
   },
   "mealPosts": {
     "enabled": true,
