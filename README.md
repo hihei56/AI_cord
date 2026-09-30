@@ -158,7 +158,7 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 `src/handlers/priceAlertHandler.js`が`config/settings.json`の`priceAlert.checkIntervalMs`(既定15分、ジッター付き)ごとに監視銘柄の価格をチェックし、前回アラート時の基準価格から`priceAlert.changeThresholdPercent`(既定±5%)以上動いていたら`!pricealert channel`で設定したチャンネルに通知する。アカウントに紐づかない全体機能で、`clients[0]`(1つ目のアカウント)が通知を投稿する。
 
-銘柄の価格解決は`src/utils/priceApi.js`が担当し、優先順位は「`!pricealert setid`での手動指定」→「CoinGecko検索(ティッカーの完全一致のみ採用)」→「DexScreener検索(CoinGecko未上場の新興トークン向け、シンボル一致かつ流動性最大のペアを採用)」。どちらのAPIも無料でAPIキー不要。自動解決に失敗した銘柄は`!pricealert list`/`!pricealert now`で「取得失敗」と表示されるので、正しいCoinGecko idか`チェーンID:ペアアドレス`(DexScreenerの表記)が分かれば`!pricealert setid <銘柄> <id>`で手動指定できる。
+銘柄の価格解決は`src/utils/priceApi.js`が担当し、優先順位は「`!pricealert setid`での手動指定」→「CoinGecko検索(ティッカーの完全一致のみ採用)」→「DexScreener検索(CoinGecko未上場の新興トークン向け、シンボル一致かつ流動性最大のペアを採用)」。どちらのAPIも無料でAPIキー不要。ただしCoinGeckoはクラウドサーバーのIPからだとキー無しのリクエストを403で弾くことがあるため、その場合はCoinGeckoのDeveloper Dashboardで無料のDemo APIキーを発行して`.env`の`COINGECKO_API_KEY`に設定する。自動解決に失敗した銘柄は`!pricealert list`/`!pricealert now`で「取得失敗」と表示されるので、正しいCoinGecko idか`チェーンID:ペアアドレス`(DexScreenerの表記)が分かれば`!pricealert setid <銘柄> <id>`で手動指定できる。
 
 監視銘柄は毎日1回(日本時間`priceAlert.dip.checkHourJST`時以降、既定9時)、日足で米国株と同じ基準の押し目判定も行い、該当した銘柄だけ同じチャンネルに通知する(`!pricealert dip`で即時判定)。仮想通貨は値動きが大きいので線への接近幅は`priceAlert.dip.touchPercent`(既定±3%)。日足はCoinGeckoの`market_chart`(無料APIは過去365日まで)から取るため、DexScreener由来の銘柄(CoinGecko未上場のトークン)は判定対象外。
 
