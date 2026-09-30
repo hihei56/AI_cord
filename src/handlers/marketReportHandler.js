@@ -37,12 +37,13 @@ function signed(v, digits = 1) {
 }
 
 const EVENT_TEXT = {
-  cross_up: '終値が下から上抜け',
-  cross_down: '終値が上から割り込み',
-  approach_from_above: '上から±{t}%以内に接近',
-  approach_from_below: '下から±{t}%以内に接近'
+  cross_up: 'を上抜け',
+  cross_down: 'を割り込み',
+  approach_from_above: 'に上から接近',
+  approach_from_below: 'に下から接近'
 };
 
+// 平常時は「終値と前日比」の1行だけ。移動平均線・RSIは何か起きた時だけ⚠️行で出す
 function describeIndex(label, data, s) {
   const closes = data.bars.map((b) => b.close);
   const close = closes[closes.length - 1];
@@ -51,42 +52,26 @@ function describeIndex(label, data, s) {
   const mas = analyzeMovingAverages(closes, s.maPeriods, s.touchPercent);
   const r = rsi(closes, s.rsiPeriod);
 
-  const maLine = mas
-    .filter((m) => m.ma !== null)
-    .map((m) => `${m.period}日線 ${signed(m.diffPercent)}%${m.slope === 'down' ? '↘' : ''}`)
-    .join(' / ');
-
-  let rsiNote = '';
-  if (r !== null && r >= 70) rsiNote = '(買われすぎ圏)';
-  else if (r !== null && r <= 30) rsiNote = '(売られすぎ圏)';
-
-  const lines = [
-    `**${label}** ${fmt(close)} (${signed(change, 2)}%)${data.provisional ? ' ※取引中の暫定値' : ''}`,
-    `　${maLine}`,
-    `　RSI(${s.rsiPeriod}) ${fmt(r, 1)}${rsiNote}`
-  ];
+  const line = `${label} ${fmt(close, 0)} (${signed(change)}%)${data.provisional ? ' ※取引中' : ''}`;
 
   const events = mas
     .filter((m) => m.event)
-    .map((m) => {
-      const text = EVENT_TEXT[m.event].replace('{t}', s.touchPercent);
-      const slopeNote = m.slope === 'down' ? '、この線自体は下向き' : '';
-      return `⚠️ ${label} ${m.period}日線: ${text}(乖離 ${signed(m.diffPercent)}%${slopeNote})`;
-    });
-  if (r !== null && (r >= 70 || r <= 30)) events.push(`⚠️ ${label} RSI ${fmt(r, 1)}${rsiNote}`);
+    .map((m) => `⚠️ ${label} ${m.period}日線${EVENT_TEXT[m.event]}${m.slope === 'down' ? '(線は下向き)' : ''}`);
+  if (r !== null && r >= 70) events.push(`⚠️ ${label} RSI ${fmt(r, 0)} 買われすぎ`);
+  else if (r !== null && r <= 30) events.push(`⚠️ ${label} RSI ${fmt(r, 0)} 売られすぎ`);
 
-  return { lines, events, change, tradingDay: tradingDayOf(data.bars[data.bars.length - 1].time) };
+  return { line, events, change, tradingDay: tradingDayOf(data.bars[data.bars.length - 1].time) };
 }
 
-// 見出しだけを根拠に「なぜ動いたか」を要約させる。予想・売買推奨はさせない
+// 見出しだけを根拠に「なぜ動いたか」を1行で要約させる。予想・売買推奨はさせない
 // (見出しに無いことをLLMにもっともらしく補完させると誤情報になるため)
 async function summarizeHeadlines(headlines, moves) {
   if (headlines.length === 0) return null;
   const prompt = [
     '以下は米国株式市場のニュース見出しと、前日の主要指数の騰落率です。',
-    '見出しに書かれている事実だけを根拠に、指数が動いた主な理由を日本語の箇条書き(「・」始まり)で最大3行にまとめてください。',
-    '見出しから理由が読み取れない場合は「・見出しからは明確な理由は読み取れず」とだけ書いてください。',
-    '今後の相場予想、売買の推奨、見出しに無い情報の補足は一切しないでください。',
+    '見出しに書かれている事実だけを根拠に、指数が動いた主な理由を日本語で1文(40文字以内)にまとめてください。',
+    '見出しから理由が読み取れない場合は「不明」とだけ書いてください。',
+    '今後の相場予想、売買の推奨、見出しに無い情報の補足は一切しないでください。前置きや記号は付けないでください。',
     '',
     `騰落率: ${moves}`,
     '見出し:',
@@ -100,7 +85,9 @@ async function summarizeHeadlines(headlines, moves) {
     logTag: 'MARKET',
     kind: 'seed'
   });
-  return text;
+  if (!text) return null;
+  const firstLine = text.split('\n').map((l) => l.replace(/^[・\-*\s]+/, '').trim()).find(Boolean);
+  return firstLine && firstLine !== '不明' ? firstLine : null;
 }
 
 // レポート本文を組み立てる。株価が1つも取れなければnull
@@ -109,45 +96,35 @@ async function buildReport() {
   const [vixData, per, headlines, ...indexData] = await Promise.all([
     fetchDailyCloses('^VIX'),
     fetchSp500Per(),
-    fetchMarketHeadlines(s.indices.map((i) => i.symbol)),
+    s.aiSummary ? fetchMarketHeadlines(s.indices.map((i) => i.symbol)) : [],
     ...s.indices.map((i) => fetchDailyCloses(i.symbol))
   ]);
 
   const described = [];
-  const failed = [];
   s.indices.forEach((idx, i) => {
     const data = indexData[i];
-    if (data && data.bars.length >= 2) described.push({ label: idx.label, ...describeIndex(idx.label, data, s) });
-    else failed.push(idx.label);
+    if (data && data.bars.length >= 2) described.push(describeIndex(idx.label, data, s));
   });
   if (described.length === 0) return null;
 
   const tradingDay = described[0].tradingDay;
-  const lines = [`📊 米国株 市況まとめ(${tradingDay} 取引分)`];
-  for (const d of described) lines.push(...d.lines);
-  if (failed.length) lines.push(`(${failed.join('・')}は取得失敗)`);
+  const [, month, day] = tradingDay.split('-').map(Number);
+  const lines = [`📊 米国株 ${month}/${day}`, ...described.map((d) => d.line)];
 
   const events = described.flatMap((d) => d.events);
-  if (vixData) {
-    const vix = vixData.bars[vixData.bars.length - 1].close;
-    lines.push(`VIX ${fmt(vix)}${vix >= s.vixAlert ? ' (警戒水準)' : ''}`);
-    if (vix >= s.vixAlert) events.push(`⚠️ VIX ${fmt(vix)}(${s.vixAlert}以上)`);
-  }
-  if (per) lines.push(`S&P500 実績PER ${fmt(per)}倍`);
+  const vix = vixData ? vixData.bars[vixData.bars.length - 1].close : null;
+  const extras = [vix !== null ? `VIX ${fmt(vix, 1)}` : null, per ? `S&P PER ${fmt(per, 1)}` : null].filter(Boolean);
+  if (extras.length) lines.push(extras.join(' / '));
+  if (vix !== null && vix >= s.vixAlert) events.push(`⚠️ VIX ${fmt(vix, 1)} 警戒水準`);
 
-  if (events.length) lines.push('', ...events);
-
-  if (s.aiSummary && headlines.length) {
-    const moves = described.map((d) => `${d.label} ${signed(d.change, 2)}%`).join(', ');
+  if (headlines.length) {
+    const moves = described.map((d) => d.line).join(', ');
     const summary = await summarizeHeadlines(headlines, moves);
-    if (summary) lines.push('', 'なぜ動いた?(ニュース見出しからAIが要約)', summary);
-    lines.push(...headlines.slice(0, 3).filter((h) => h.link).map((h) => `🔗 <${h.link}>`));
+    if (summary) lines.push(`理由: ${summary}`);
   }
 
-  // Discordの1メッセージ上限(2000文字)を超えないよう切り詰める
-  let text = lines.join('\n');
-  if (text.length > 1990) text = `${text.slice(0, 1987)}...`;
-  return { text, tradingDay };
+  lines.push(...events);
+  return { text: lines.join('\n'), tradingDay };
 }
 
 // 日本時間でpostHourJSTを過ぎたら1日1回だけチェックし、前回投稿時と米国の
