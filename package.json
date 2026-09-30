@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "mealpost": "node src/mealPostBot.js",
     "deploy-watch": "node scripts/auto-deploy.js",
-    "markov:demo": "node scripts/markov-demo.js"
+    "markov:demo": "node scripts/markov-demo.js",
+    "dip:backtest": "node scripts/dip-backtest.js"
   },
   "dependencies": {
     "@sefinek/random-animals": "^2.0.6",

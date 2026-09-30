@@ -103,6 +103,9 @@
       "enabled": true,
       "maPeriods": [50, 120, 200],
       "touchPercent": 3,
+      "drawdownMin": 15,
+      "drawdownMax": 40,
+      "rsiMax": 40,
       "checkHourJST": 9
     }
   },
@@ -118,7 +121,8 @@
     "vixAlert": 30,
     "postHourJST": 7,
     "checkIntervalMs": 600000,
-    "aiSummary": false
+    "aiSummary": false,
+    "dipScore": { "drawdownMin": 5, "drawdownMax": 15, "rsiMax": 40, "vixMin": 25 }
   },
   "mealPosts": {
     "enabled": true,

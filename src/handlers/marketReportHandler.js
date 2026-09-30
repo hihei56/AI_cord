@@ -17,7 +17,9 @@ const DEFAULTS = {
   vixAlert: 30,
   postHourJST: 7,
   checkIntervalMs: 600000,
-  aiSummary: false
+  aiSummary: false,
+  // 押し目スコアの加点条件(marketData.detectDips参照)
+  dipScore: { drawdownMin: 5, drawdownMax: 15, rsiMax: 40, vixMin: 25 }
 };
 
 function settings() {
@@ -38,7 +40,7 @@ function signed(v, digits = 1) {
 }
 
 // 平常時は「終値と前日比」の1行だけ。押し目・RSIの過熱は起きた日だけ行を足す
-function describeIndex(label, data, s) {
+function describeIndex(label, data, s, vix) {
   const closes = data.bars.map((b) => b.close);
   const close = closes[closes.length - 1];
   const prev = closes[closes.length - 2];
@@ -47,7 +49,9 @@ function describeIndex(label, data, s) {
 
   const line = `${label} ${fmt(close, 0)} (${signed(change)}%)${data.provisional ? ' ※取引中' : ''}`;
 
-  const events = detectDips(closes, s.maPeriods, s.touchPercent).map((d) => formatDip(label, d));
+  const { vixMin, ...dipOpts } = s.dipScore;
+  const fearBonus = Number.isFinite(vix) && vix >= vixMin;
+  const events = detectDips(closes, s.maPeriods, s.touchPercent, { ...dipOpts, fearBonus }).map((d) => formatDip(label, d));
   if (r !== null && r >= 70) events.push(`🔥${label} RSI${fmt(r, 0)}`);
   else if (r !== null && r <= 30) events.push(`🧊${label} RSI${fmt(r, 0)}`);
 
@@ -91,10 +95,11 @@ async function buildReport() {
     ...s.indices.map((i) => fetchDailyCloses(i.symbol))
   ]);
 
+  const vix = vixData ? vixData.bars[vixData.bars.length - 1].close : null;
   const described = [];
   s.indices.forEach((idx, i) => {
     const data = indexData[i];
-    if (data && data.bars.length >= 2) described.push(describeIndex(idx.label, data, s));
+    if (data && data.bars.length >= 2) described.push(describeIndex(idx.label, data, s, vix));
   });
   if (described.length === 0) return null;
 
@@ -102,7 +107,6 @@ async function buildReport() {
   const lines = described.map((d) => d.line);
 
   const events = described.flatMap((d) => d.events);
-  const vix = vixData ? vixData.bars[vixData.bars.length - 1].close : null;
   const extras = [vix !== null ? `VIX ${fmt(vix, 1)}${vix >= s.vixAlert ? '!' : ''}` : null, per ? `PER ${fmt(per, 1)}` : null].filter(Boolean);
   if (extras.length) lines.push(extras.join(' / '));
 

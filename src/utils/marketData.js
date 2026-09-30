@@ -6,8 +6,9 @@ const logger = require('./logger');
 const YAHOO_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
 // 200日線+20日前との比較(傾き判定)に最低220本必要なので、休場日込みでも足りるよう2年分取る
-async function fetchDailyCloses(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=2y&interval=1d`;
+// rangeはバックテスト用に'max'等を渡せる
+async function fetchDailyCloses(symbol, range = '2y') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
   try {
     const res = await fetch(url, { headers: { 'User-Agent': YAHOO_UA }, signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
@@ -156,8 +157,18 @@ function analyzeMovingAverages(closes, periods, touchPercent) {
 // 200日線割れはトレンド転換の可能性がある別物として区別して返す
 // (200日線を割った後も下げ続けた2000年・2008年・2022年のような局面を押し目と
 // 呼ばないため)。下降トレンド中の移動平均線タッチは押し目ではないので何も返さない
-// 戻り値: 0件か1件の配列 [{ kind: 'dip'|'deep_dip'|'trend_break', period, drawdownPercent }]
-function detectDips(closes, periods, touchPercent, highLookback = 250) {
+//
+// 押し目(dip/deep_dip)には「押し目らしさ」のスコア(1〜4)も付ける。
+// 線タッチ自体で1点、以下を満たすごとに+1点:
+// - 高値からの下落率がdrawdownMin〜drawdownMax%の範囲(浅すぎる=ただの揺れ、
+//   深すぎる=暴落の途中の可能性が高いので、どちらも加点しない)
+// - RSIがrsiMax以下(上昇トレンド中のRSIは30まで下がらず40前後で反発しやすいため40を既定にしている)
+// - fearBonus(呼び出し側で判定。米国株ならVIXが高い=投げ売りが出ている)
+// 配点は根拠データ無しで決めたもので、各条件は「下がった」ことの言い換えで
+// 相関も強い。scripts/dip-backtest.jsで過去の成績を確認してから信用すること
+// 戻り値: 0件か1件の配列 [{ kind: 'dip'|'deep_dip'|'trend_break', period, drawdownPercent, score }]
+function detectDips(closes, periods, touchPercent, opts = {}) {
+  const { highLookback = 250, drawdownMin = 5, drawdownMax = 15, rsiMax = 40, rsiPeriod = 14, fearBonus = false } = opts;
   const mas = analyzeMovingAverages(closes, periods, touchPercent);
   const longest = mas.reduce((a, m) => (m.ma !== null && (!a || m.period > a.period) ? m : a), null);
   if (!longest || longest.slope !== 'up') return [];
@@ -178,16 +189,24 @@ function detectDips(closes, periods, touchPercent, highLookback = 250) {
     }
   }
   // 1日で複数の線をまとめて割った時に行が並ばないよう、一番深い線の1件だけ返す
-  return results.slice(-1);
+  const picked = results.slice(-1);
+  if (picked[0] && picked[0].kind !== 'trend_break') {
+    const r = rsi(closes, rsiPeriod);
+    const dd = -drawdownPercent;
+    picked[0].score =
+      1 + (dd >= drawdownMin && dd <= drawdownMax ? 1 : 0) + (r !== null && r <= rsiMax ? 1 : 0) + (fearBonus ? 1 : 0);
+  }
+  return picked;
 }
 
 // 本人にだけ分かれば良い短い記号表記(凡例は!market helpに載せている)。
-// 🎯=押し目(50/120日線) 🎯🎯=深い押し目(200日線) 💀=200日線割れ、数字は線の期間と高値からの下落率
+// 🎯=押し目(50/120日線) 🎯🎯=深い押し目(200日線) 💀=200日線割れ、数字は線の期間と高値からの下落率、★=押し目スコア
 function formatDip(label, dip) {
   const dd = dip.drawdownPercent.toFixed(1);
   if (dip.kind === 'trend_break') return `💀${label} ${dip.period} ${dd}`;
-  if (dip.kind === 'deep_dip') return `🎯🎯${label} ${dip.period} ${dd}`;
-  return `🎯${label} ${dip.period} ${dd}`;
+  const stars = '★'.repeat(dip.score || 1);
+  if (dip.kind === 'deep_dip') return `🎯🎯${label} ${dip.period} ${dd} ${stars}`;
+  return `🎯${label} ${dip.period} ${dd} ${stars}`;
 }
 
 module.exports = { formatDip, detectDips, fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, sma, rsi, analyzeMovingAverages };

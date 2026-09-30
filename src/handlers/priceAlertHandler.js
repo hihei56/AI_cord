@@ -65,14 +65,14 @@ function sleep(ms) {
 // 監視銘柄それぞれの日足から押し目を判定して行のリストを返す。
 // CoinGeckoの無料APIのレート制限に当たらないよう銘柄ごとに間隔を空ける
 async function findCryptoDips() {
-  const { maPeriods = [50, 120, 200], touchPercent = 3 } = config.priceAlert?.dip || {};
+  const { maPeriods = [50, 120, 200], touchPercent = 3, drawdownMin = 15, drawdownMax = 40, rsiMax = 40 } = config.priceAlert?.dip || {};
   const lines = [];
   let fetched = 0;
   for (const symbol of store.getSymbols()) {
     const closes = await fetchDailyCloses(symbol, store.getOverrides());
     if (closes) {
       fetched++;
-      lines.push(...detectDips(closes, maPeriods, touchPercent).map((d) => formatDip(symbol.toUpperCase(), d)));
+      lines.push(...detectDips(closes, maPeriods, touchPercent, { drawdownMin, drawdownMax, rsiMax }).map((d) => formatDip(symbol.toUpperCase(), d)));
     }
     await sleep(3000);
   }
