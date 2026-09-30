@@ -1,7 +1,9 @@
 const config = require('./utils/config');
 const { createChannelStore } = require('./utils/channelStore');
+const { createGuildStore } = require('./utils/guildStore');
 const { createReminderStore } = require('./utils/reminderStore');
 const { createMemoryStore } = require('./utils/memoryStore');
+const gifGenreStore = require('./utils/gifGenreStore');
 
 // アカウント1つ分の実行時状態(ペルソナ・コーパス・応答チャンネル・
 // クールダウン・ロックダウン・マルコフ連鎖・リマインダー)をひとまとめにする。
@@ -13,7 +15,8 @@ function buildAccountState(account) {
   return {
     id: account.id,
     discordToken: account.discordToken,
-    allowedGuildId: account.allowedGuildId,
+    // 動作してよいサーバー一覧(複数掛け持ち可)。!guild add/remove で実行中に変更できる
+    guildStore: createGuildStore(account.id, account.allowedGuildIds),
     // テスト用チャンネル(任意)。設定すると応答チャンネル登録・クールダウン・
     // 確率・crowdGuardを無視して常に即応答する(動作確認用)
     testChannelId: account.testChannelId,
@@ -43,6 +46,16 @@ function buildAccountState(account) {
     markovPriority: account.markovPriority,
     markovDirectReplyChance: account.markovDirectReplyChance,
     markovDirectReplyMinLength: account.markovDirectReplyMinLength,
+    // 自発投稿・AI同士の掛け合いの一部をKlipy GIF検索でそのまま貼るだけの投稿にする
+    // 機能用の検索キーワード一覧。初回起動時は.envのGIF_GENRE[_N](カンマ区切り)を
+    // 初期値としてdata/gif-genres-<id>.jsonに永続化し、以降は!gifgenreコマンドで
+    // 追加/削除した内容を使う(.envを書き換えず再起動不要でキーワードを管理できる)。
+    // 空配列ならこのアカウントはGIF投稿をしない
+    gifGenres: gifGenreStore.loadOrInit(account.id, account.gifGenres || []),
+    // ニュース見出しをネタにした定期の自発投稿(.envのNEWS_POST[_N])をするか
+    newsPostEnabled: account.newsPostEnabled || false,
+    // 返信・自発投稿をこの言語に固定する(.envのREPLY_LANGUAGE[_N]、nullなら日本語のまま)
+    replyLanguage: account.replyLanguage || null,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる

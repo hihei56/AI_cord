@@ -8,6 +8,15 @@ const aiProvider = require('./aiProvider');
 const { formatNowJST, timeOfDayLabel } = require('./datetime');
 const { getRandomHeadline, getHeadlines } = require('./newsTopics');
 
+// 言語固定アカウント(accountState.replyLanguage)向けの指示。人格設定・下書き・
+// 会話履歴は日本語のままなので、最後に「出力だけはこの言語で」と念押しする。
+// 文字体系ごと別の言語にすることで、日本語圏の人にはまず読めない発言になる
+function languageSection(accountState) {
+  const lang = accountState?.replyLanguage;
+  if (!lang) return '';
+  return `\n【出力言語(最優先)】必ず${lang}だけで書くこと。日本語・英語を混ぜない。人格設定の口調やキャラクターは${lang}で表現する。下書きや会話履歴が日本語でも、返す文は${lang}にすること。`;
+}
+
 // 「1行に収める」をプロンプト指示だけに頼らず、コード側で強制的に成形する。
 // 複数行に分かれていたら最初の1行だけを採用する(残りを繋げると逆に長くなるため
 // 意味が無い)。さらに文字数上限を超えていたら切り詰める
@@ -166,7 +175,7 @@ function getMarkovDraft(accountState, contextText = '') {
 
 // 1回分のchat completionsリクエストを送る薄いラッパー。成功/失敗を例外ではなく
 // 戻り値で表現し、呼び出し側(callChatCompletion)でフォールバック判断に使う
-async function requestChatCompletion(conn, messages, { temperature, maxTokens, logTag }) {
+async function requestChatCompletion(conn, messages, { temperature, maxTokens, logTag, skipGarbledCheck }) {
   // fetch自体の失敗(タイムアウト・DNS失敗等)やres.json()の失敗(APIゲートウェイが
   // 障害時にJSON以外のエラーページを返す等)がここで例外として投げられると、
   // 呼び出し元(callChatCompletion)のフォールバックループに入る前に処理全体が
@@ -222,7 +231,9 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
     return null;
   }
 
-  if (isGarbledOutput(content)) {
+  // 言語固定アカウント(replyLanguage)は日本語以外の文字体系で返すのが正常なので、
+  // 「日本語チャットに出ないはずの文字」で判定するこのチェックは掛けない
+  if (!skipGarbledCheck && isGarbledOutput(content)) {
     logger.error(logTag, `トークンサラダ状態(多言語混在・意味不明)の壊れた応答のため破棄 (${conn.provider}): ${content}`);
     return null;
   }
@@ -230,7 +241,10 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   return content;
 }
 
-async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat' } = {}) {
+async function callChatCompletion(
+  messages,
+  { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat', skipGarbledCheck = false } = {}
+) {
   // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
   // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る。
   // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う。
@@ -240,7 +254,7 @@ async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, a
     ? { provider: null, baseUrl, apiKey, model }
     : { ...aiProvider.getConnection(kind), ...(model ? { model } : {}) };
 
-  const content = await requestChatCompletion(conn, messages, { temperature, maxTokens, logTag });
+  const content = await requestChatCompletion(conn, messages, { temperature, maxTokens, logTag, skipGarbledCheck });
   if (content) return content;
 
   // baseUrlが明示指定されている(finetune等の専用接続先)場合はフォールバック対象外。
@@ -252,7 +266,7 @@ async function callChatCompletion(messages, { temperature, maxTokens, baseUrl, a
 
   for (const fallback of aiProvider.getFallbackChain(kind)) {
     logger.log(logTag, `${conn.provider}が失敗したため${fallback.provider}にフォールバック`);
-    const fallbackContent = await requestChatCompletion(fallback, messages, { temperature, maxTokens, logTag });
+    const fallbackContent = await requestChatCompletion(fallback, messages, { temperature, maxTokens, logTag, skipGarbledCheck });
     if (fallbackContent) return fallbackContent;
   }
 
@@ -386,7 +400,8 @@ async function getAIResponseOnce(
   // あればそちらを優先し、無ければ全アカウント共通のconfig.markovに従う
   const directReplyChance = accountState.markovDirectReplyChance ?? config.markov?.directReplyChance ?? 0;
   const directReplyMinLength = accountState.markovDirectReplyMinLength ?? config.markov?.directReplyMinLength ?? 0;
-  if (allowMarkovDirect && draft && draft.length >= directReplyMinLength && Math.random() < directReplyChance) {
+  // 言語固定アカウントは日本語の下書きをそのまま出すと固定が崩れるので、直接採用しない
+  if (!accountState.replyLanguage && allowMarkovDirect && draft && draft.length >= directReplyMinLength && Math.random() < directReplyChance) {
     logger.log('MARKOV', `[${accountState.id}] 下書きをそのまま採用: ${draft}`);
     return toSingleLine(draft);
   }
@@ -491,7 +506,7 @@ async function getAIResponseOnce(
   // 連発のような浅い応酬になりがちなので、会話全体を貫く軸を持たせる
   const topicSection = topicHint ? `\n【この会話のお題(参考程度)】${topicHint}` : '';
 
-  const systemPrompt = `${accountState.persona}${memorySection}${antiRepeatSection}${rulesSection}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}\n【返信】`;
+  const systemPrompt = `${accountState.persona}${memorySection}${antiRepeatSection}${rulesSection}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}${languageSection(accountState)}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
@@ -502,7 +517,13 @@ async function getAIResponseOnce(
       // AI同士の掛け合い(partnerIsAi)はkind: 'seed'で区別する。プロバイダ振り分けは
       // aiProvider側の設定に従う。modelはアカウント単位のCHAT_MODEL上書きがあれば
       // それを使う(未設定ならプロバイダの既定モデルのまま)
-      { temperature, maxTokens, kind: partnerIsAi ? 'seed' : 'chat', model: accountState.chatModel }
+      {
+        temperature,
+        maxTokens,
+        kind: partnerIsAi ? 'seed' : 'chat',
+        model: accountState.chatModel,
+        skipGarbledCheck: Boolean(accountState.replyLanguage)
+      }
     );
     if (reply) return toSingleLine(reply);
 
@@ -551,8 +572,8 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
       role === 'center' ? '\n具体的な話題や自分のエピソードを振って、相手が反応しやすい話しかけ方をすること。' : '';
 
     const systemPrompt = accountState?.persona
-      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。`
-      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}`;
+      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。${languageSection(accountState)}`
+      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}${languageSection(accountState)}`;
 
     const text = await callChatCompletion(
       [
@@ -561,7 +582,8 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
       ],
       {
         temperature: config.ai.selfTalk.temperature,
-        maxTokens: config.ai.selfTalk.maxTokens
+        maxTokens: config.ai.selfTalk.maxTokens,
+        skipGarbledCheck: Boolean(accountState?.replyLanguage)
       }
     );
     if (!text) return null;

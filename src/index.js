@@ -12,6 +12,8 @@ const { registerReminderScheduler } = require('./reminderScheduler');
 const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
 const { registerPriceAlertHandler } = require('./handlers/priceAlertHandler');
 const { registerMarketReportHandler } = require('./handlers/marketReportHandler');
+const { registerGifPostHandler } = require('./handlers/gifPostHandler');
+const { registerNewsPostHandler } = require('./handlers/newsPostHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
 const { initMarkov } = require('./utils/aiClient');
 
@@ -38,6 +40,8 @@ async function start() {
       registerOwnAccount(client.user.id);
       registerPresenceHandler(client);
       registerReminderScheduler(client);
+      registerGifPostHandler(client);
+      registerNewsPostHandler(client);
     });
   }
 
