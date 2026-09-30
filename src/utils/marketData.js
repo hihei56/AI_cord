@@ -182,12 +182,12 @@ function detectDips(closes, periods, touchPercent, highLookback = 250) {
 }
 
 // 本人にだけ分かれば良い短い記号表記(凡例は!market helpに載せている)。
-// 🍆=押し目(50/120日線) 🍆🍆=深い押し目(200日線) 💀=200日線割れ、数字は線の期間と高値からの下落率
+// 🎯=押し目(50/120日線) 🎯🎯=深い押し目(200日線) 💀=200日線割れ、数字は線の期間と高値からの下落率
 function formatDip(label, dip) {
   const dd = dip.drawdownPercent.toFixed(1);
   if (dip.kind === 'trend_break') return `💀${label} ${dip.period} ${dd}`;
-  if (dip.kind === 'deep_dip') return `🍆🍆${label} ${dip.period} ${dd}`;
-  return `🍆${label} ${dip.period} ${dd}`;
+  if (dip.kind === 'deep_dip') return `🎯🎯${label} ${dip.period} ${dd}`;
+  return `🎯${label} ${dip.period} ${dd}`;
 }
 
 module.exports = { formatDip, detectDips, fetchDailyCloses, fetchSp500Per, fetchMarketHeadlines, sma, rsi, analyzeMovingAverages };

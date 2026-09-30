@@ -8,7 +8,7 @@ const { sendEach } = require('../utils/sendEach');
 
 const DEFAULTS = {
   indices: [
-    { symbol: '^NDX', label: 'N100' },
+    { symbol: '^NDX', label: '🍆' },
     { symbol: '^GSPC', label: 'P500' }
   ],
   maPeriods: [50, 120, 200],
