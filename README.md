@@ -114,6 +114,8 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
 | `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
 | `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
+| `!market channel` / `!market off` | 今いるチャンネルを米国株の市況まとめ(毎朝)の投稿先に設定 / 停止 |
+| `!market now` / `!market status` | 市況まとめを今すぐ表示 / 設定状況を表示 |
 | `!help` | コマンド一覧を表示 |
 
 `!slashbump`(他BOTへのスラッシュコマンド自動送信)はai_cordプロセスのコマンドではなく、[ご飯画像の定期投稿と同じ別プロセス](#スラッシュコマンド自動送信slashbump)側のコマンド。詳細は後述。
@@ -159,6 +161,16 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 銘柄の価格解決は`src/utils/priceApi.js`が担当し、優先順位は「`!pricealert setid`での手動指定」→「CoinGecko検索(ティッカーの完全一致のみ採用)」→「DexScreener検索(CoinGecko未上場の新興トークン向け、シンボル一致かつ流動性最大のペアを採用)」。どちらのAPIも無料でAPIキー不要。自動解決に失敗した銘柄は`!pricealert list`/`!pricealert now`で「取得失敗」と表示されるので、正しいCoinGecko idか`チェーンID:ペアアドレス`(DexScreenerの表記)が分かれば`!pricealert setid <銘柄> <id>`で手動指定できる。
 
 初期監視銘柄は`priceAlert.defaultSymbols`(既定: `hype`, `ponz`, `zec`, `btc`)。`!pricealert add|remove`で運用中に増減でき、設定は`.env`ではなく`data/price-alerts.json`に永続化されるので、通知先チャンネル・銘柄構成の変更に`.env`編集や再起動は不要。
+
+### 米国株の市況まとめ(`!market`)
+
+`src/handlers/marketReportHandler.js`が日本時間の`marketReport.postHourJST`(既定7時)以降に1日1回、NASDAQ100(`^NDX`)とS&P500(`^GSPC`)の前日終値をもとに次の内容を`!market channel`で設定したチャンネルへ投稿する。米国の取引日が前回投稿時から変わっていない日(土日祝の翌朝)は投稿しない。
+
+- 終値・前日比、50/120/200日移動平均線との乖離(20営業日前より下向きの線には↘)、RSI(14)、VIX、S&P500の実績PER
+- 警告(⚠️): 終値が移動平均線を上抜け/割り込んだ日、移動平均線から±`touchPercent`%以内に初めて入った日(上から/下からを区別)、RSIが70以上/30以下、VIXが`vixAlert`以上
+- Yahoo FinanceのヘッドラインRSSの見出しだけを渡して、指数が動いた理由をAIに最大3行で要約させる(予想・売買推奨はさせない)。AIは会話とは別枠の`seed`接続を使う
+
+データ取得元はYahoo Financeのchart API/RSS(非公式・APIキー不要)とmultpl.com(S&P500のPER、スクレイピング)。どれも予告なく使えなくなる可能性があり、取れなかった項目は表示から省く。ナスダック100のPERは無料で安定して取れる取得元が無いため表示しない。
 
 ### スラッシュコマンド自動送信(`!slashbump`)
 

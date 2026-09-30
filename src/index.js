@@ -11,6 +11,7 @@ const { registerCommandHandler } = require('./commands/handler');
 const { registerReminderScheduler } = require('./reminderScheduler');
 const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
 const { registerPriceAlertHandler } = require('./handlers/priceAlertHandler');
+const { registerMarketReportHandler } = require('./handlers/marketReportHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
 const { initMarkov } = require('./utils/aiClient');
 
@@ -42,6 +43,7 @@ async function start() {
 
   registerConversationSeedHandler(clients);
   registerPriceAlertHandler(clients);
+  registerMarketReportHandler(clients);
 
   const results = await loginStaggered(clients);
 

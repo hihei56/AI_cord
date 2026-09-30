@@ -672,5 +672,6 @@ module.exports = {
   describeImage,
   recordReply,
   recordMemory,
-  compressUserMemoryIfNeeded
+  compressUserMemoryIfNeeded,
+  callChatCompletion
 };

@@ -100,6 +100,20 @@
     "changeThresholdPercent": 5,
     "currency": "usd"
   },
+  "marketReport": {
+    "enabled": true,
+    "indices": [
+      { "symbol": "^NDX", "label": "NASDAQ100" },
+      { "symbol": "^GSPC", "label": "S&P500" }
+    ],
+    "maPeriods": [50, 120, 200],
+    "touchPercent": 1,
+    "rsiPeriod": 14,
+    "vixAlert": 30,
+    "postHourJST": 7,
+    "checkIntervalMs": 600000,
+    "aiSummary": true
+  },
   "mealPosts": {
     "enabled": true,
     "channelId": "1540729545194217512",
