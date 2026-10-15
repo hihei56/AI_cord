@@ -114,6 +114,8 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!pricealert add\|remove <銘柄>` | 監視銘柄を追加/削除(既定: hype, ponz, zec, btc) |
 | `!pricealert list` / `!pricealert now` | 監視設定を表示 / 現在価格を即時取得して表示 |
 | `!pricealert setid <銘柄> <id>` | 自動解決に失敗した銘柄をCoinGecko idか`チェーン:ペアアドレス`で手動指定 |
+| `!housewatch channel` / `off` | なんJ実況G(livegalileo)のお🏡スレ検知の通知先を今のチャンネルに設定 / 通知停止 |
+| `!housewatch status` / `now` | 監視設定を表示 / 即時チェック |
 | `!help` | コマンド一覧を表示 |
 
 `!slashbump`(他BOTへのスラッシュコマンド自動送信)はai_cordプロセスのコマンドではなく、[ご飯画像の定期投稿と同じ別プロセス](#スラッシュコマンド自動送信slashbump)側のコマンド。詳細は後述。
@@ -151,6 +153,10 @@ CORPUS_FILE_2=別のコーパスファイル名
 finetuneモードでは、そのアカウントの返信はペルソナ文書・マルコフ下書きを一切使わず、会話の流れをそのままファインチューニング済みモデルに投げるだけになる(ペルソナはモデル自体に学習済みという前提)。`!set mode @account markov`でいつでも今まで通りの方式(マルコフ下書き+Groq等での補正)に戻せる。`FINETUNE_BASE_URL_N`が未設定のアカウントでfinetuneモードに切り替えようとすると拒否される。
 
 `!set mode`での切り替えは実行中の状態変更なので再起動すると消える(常にmarkovで起動し直す)。常時finetuneモードで運用したいアカウントは`.env`で`AI_MODE_N=finetune`を指定しておくと、起動時点からfinetuneモードになる。
+
+### お🏡スレ検知(`!housewatch`)
+
+`src/handlers/houseWatchHandler.js`が`config/settings.json`の`houseWatch.checkIntervalMs`(既定2分、ジッター付き)ごとに`houseWatch.boardUrl`(既定 なんでも実況G `https://nova.5ch.io/livegalileo/`)の`subject.txt`を取得し、スレタイに`houseWatch.keyword`(既定🏡)を含む未判定スレだけ`>>1`を取りに行く。`!extend:none:none:1000:512`で立てたスレは`>>1`末尾に`VIPQ2_EXTDAT: none:none:1000:512`が付くので、そのID欄が`houseWatch.extendIdMode`(既定`none`=ID非表示)なら`!housewatch channel`で設定したチャンネルにスレタイとURLを通知する。判定済みスレキーは`data/house-watch.json`に保存され、再起動しても二重通知しない(`>>1`取得に失敗したスレは次回再試行)。価格アラートと同じく`clients[0]`が投稿する。
 
 ### 仮想通貨の価格アラート(`!pricealert`)
 
