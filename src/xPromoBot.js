@@ -2,8 +2,8 @@
 // ai_cord/mealpost/twinviteのどのプロセスとも状態を共有しないため、pm2で別プロセスとして起動する。
 //
 // 1回の投稿の流れ:
-//   1. Xのトレンドを取得(twinviteと同じCookieで内部APIを叩く。失敗時は予備タグで代用)
-//   2. AIにサーバー紹介文とトレンド一覧を渡し、トレンドを2〜4個選ばせつつ宣伝文を書かせる
+//   1. (PROMO_USE_TRENDS=trueの時だけ)Xのトレンドを取得(twinviteと同じCookieで内部APIを叩く)
+//   2. AIにサーバー紹介文(とトレンド一覧)を渡して宣伝文を書かせる。トレンドを使う時は2〜4個選ばせる
 //   3. Discordで招待リンクを新規発行(投稿ごとに別コードにして、どの投稿から何人来たか追えるようにする)
 //   4. 公式X API(POST /2/tweets)で投稿
 require('dotenv').config();
@@ -21,14 +21,20 @@ const inviteChannelId = process.env.PROMO_INVITE_CHANNEL_ID;
 const serverDescription = process.env.PROMO_SERVER_DESCRIPTION || '';
 const DRY_RUN = process.env.PROMO_DRY_RUN === 'true';
 
-const INTERVAL_MS = Number(process.env.PROMO_INTERVAL_MS || 6 * 60 * 60 * 1000);
+const INTERVAL_MS = Number(process.env.PROMO_INTERVAL_MS || 24 * 60 * 60 * 1000);
+// 投稿時刻になったかの確認間隔。再起動のたびに即投稿すると(auto-deployでの再起動等)
+// 1日に何度も投稿してしまうため、前回の投稿時刻をdata/x-promo.jsonから見て判定する
+const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+// トレンドタグを使うか(既定false)。無関係なトレンドタグはXのスパム規約に触れるため、
+// 既定ではPROMO_TAGSの宣伝・募集用タグだけを付ける
+const USE_TRENDS = process.env.PROMO_USE_TRENDS === 'true';
 // 招待リンクの有効期限(秒)。投稿ごとに発行するので、無期限だと招待がどんどん溜まる
 const INVITE_MAX_AGE = Number(process.env.PROMO_INVITE_MAX_AGE ?? 7 * 24 * 60 * 60);
 const TREND_TAG_MIN = Number(process.env.PROMO_TREND_TAG_MIN || 2);
 const TREND_TAG_MAX = Number(process.env.PROMO_TREND_TAG_MAX || 4);
 const FIXED_TAGS = splitTags(process.env.PROMO_FIXED_TAGS || '#discord');
-// トレンドが取れなかった時に代わりに使うタグ
-const FALLBACK_TAGS = splitTags(process.env.PROMO_FALLBACK_TAGS || '#Discordサーバー,#雑談,#友達募集');
+// 宣伝・募集用のタグ。トレンドを使わない時はこれを付け、使う時はトレンドが取れなかった時の予備にする
+const PROMO_TAGS = splitTags(process.env.PROMO_TAGS || '#Discordサーバー宣伝,#Discord募集');
 
 const TWEET_MAX_WEIGHT = 280;
 // Xの文字数計算ではURLは長さに関係なく一律23文字扱い
@@ -125,15 +131,17 @@ async function generatePromo(trends) {
     'あなたはDiscordサーバーの宣伝ツイートを書く担当です。',
     '出力は必ず次のJSONだけにしてください: {"text": "宣伝文", "trends": ["選んだトレンド", ...]}',
     '- textは日本語で80文字以内。ハッシュタグ・URLはtextに含めない(後で付け足す)',
-    `- trendsはトレンド一覧からちょうど${tagCount}個、一覧の表記そのままで選ぶ`,
-    '- 選んだトレンドの話題に一言触れて、そこからサーバーへの誘いに自然につなげる',
+    ...(trends.length ? [
+      `- trendsはトレンド一覧からちょうど${tagCount}個、一覧の表記そのままで選ぶ`,
+      '- 選んだトレンドの話題に一言触れて、そこからサーバーへの誘いに自然につなげる'
+    ] : ['- trendsは空配列にする']),
     '- 毎回言い回しを変える。過去の投稿と似た書き出し・構成にしない',
     '- 絵文字は0〜2個まで。誇大な表現や嘘は書かない'
   ].join('\n');
 
   const user = [
     `サーバーの紹介: ${serverDescription || '(未設定。気軽に雑談できるDiscordサーバー)'}`,
-    `トレンド一覧: ${trends.join(' / ')}`,
+    trends.length ? `トレンド一覧: ${trends.join(' / ')}` : '',
     recent.length ? `過去の投稿(これらと似せない):\n${recent.map((t) => `- ${t}`).join('\n')}` : ''
   ].filter(Boolean).join('\n');
 
@@ -175,19 +183,18 @@ function composeTweet(text, inviteUrl, trendTags, fixedTags) {
 }
 
 async function runPromo() {
-  const trends = await fetchTrends();
-  // トレンドが取れなければ予備タグを候補にしてAIに選ばせる
-  const candidates = trends.length ? trends : FALLBACK_TAGS.map((t) => t.slice(1));
-
-  const promo = await generatePromo(candidates);
+  const trends = USE_TRENDS ? await fetchTrends() : [];
+  const promo = await generatePromo(trends);
   if (!promo) {
     logger.error('XPROMO', '宣伝文を生成できなかったため今回は投稿をスキップ');
     return;
   }
-  // AIが選んだ数が足りなければ予備タグから補う
+  // トレンドを使わない(または取れなかった)時は宣伝・募集用タグを付ける。
+  // トレンドを使う時もAIが選んだ数が足りなければ宣伝・募集用タグから補う
   const trendTags = [...promo.trendTags];
-  for (const tag of shuffle(FALLBACK_TAGS)) {
-    if (trendTags.length >= TREND_TAG_MIN) break;
+  const minTags = trends.length ? TREND_TAG_MIN : PROMO_TAGS.length;
+  for (const tag of shuffle(PROMO_TAGS)) {
+    if (trendTags.length >= minTags) break;
     if (!trendTags.includes(tag)) trendTags.push(tag);
   }
 
@@ -212,6 +219,9 @@ async function runPromo() {
 }
 
 async function safeRunPromo() {
+  const last = store.lastPostedAt();
+  // 毎時の確認がずれても1日の投稿時刻が少しずつ後ろへずれていかないよう、30分の余裕を持たせる
+  if (!DRY_RUN && last && Date.now() - last < INTERVAL_MS - 30 * 60 * 1000) return;
   try {
     await runPromo();
   } catch (err) {
@@ -221,9 +231,9 @@ async function safeRunPromo() {
 }
 
 async function start() {
-  logger.log('READY', `[XPROMO] 約${Math.round(INTERVAL_MS / 360000) / 10}時間間隔で投稿${DRY_RUN ? '(DRY RUN)' : ''}`);
+  logger.log('READY', `[XPROMO] 約${Math.round(INTERVAL_MS / 360000) / 10}時間間隔で投稿${USE_TRENDS ? '(トレンドタグあり)' : ''}${DRY_RUN ? '(DRY RUN)' : ''}`);
   await safeRunPromo();
-  scheduleWithJitter(INTERVAL_MS, 0.3, safeRunPromo);
+  scheduleWithJitter(DRY_RUN ? INTERVAL_MS : CHECK_INTERVAL_MS, 0.3, safeRunPromo);
 }
 
 // DRY RUNでは招待を発行しないので、Discordにログインせずに文面だけ確認できる

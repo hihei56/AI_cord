@@ -35,4 +35,10 @@ function recentTexts(count) {
   return state.history.slice(-count).map((entry) => entry.text);
 }
 
-module.exports = { addPost, recentTexts };
+// 最後に投稿した時刻(ms)。まだ一度も投稿していなければnull
+function lastPostedAt() {
+  const last = state.history[state.history.length - 1];
+  return last ? Date.parse(last.postedAt) : null;
+}
+
+module.exports = { addPost, recentTexts, lastPostedAt };
