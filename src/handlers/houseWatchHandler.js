@@ -15,15 +15,22 @@ function parseExtdat(html) {
   return m ? { id: m[1], slip: m[2], maxRes: Number(m[3]), maxKb: Number(m[4]) } : null;
 }
 
-// スレタイにkeyword(既定🏡)を含み、かつ>>1のEXTDATでIDがextendIdMode(既定none=ID非表示)の
-// 新スレだけを通知する。>>1の取得はタイトル一致したスレだけに絞って余計なアクセスを避ける
+// スレタイにkeyword(既定🏡)を含む新スレを通知する。requireIdHidden=trueの時だけ、
+// さらに>>1のEXTDATでIDがextendIdMode(既定none=ID非表示)のスレに絞る(>>1の取得は
+// タイトル一致したスレだけに限定して余計なアクセスを避ける)
 async function checkOnce(client, { manual = false } = {}) {
   const channelId = store.getChannelId();
   if (!channelId) return { found: [], error: '通知先チャンネル未設定' };
   const channel = client.channels?.cache.get(channelId);
   if (!channel) return { found: [], error: '通知先チャンネルが見つからない' };
 
-  const { boardUrl, keyword = '🏡', extendIdMode = 'none', firstPostDelayMs = 1500 } = config.houseWatch || {};
+  const {
+    boardUrl,
+    keyword = '🏡',
+    requireIdHidden = false,
+    extendIdMode = 'none',
+    firstPostDelayMs = 1500
+  } = config.houseWatch || {};
 
   let threads;
   try {
@@ -38,6 +45,11 @@ async function checkOnce(client, { manual = false } = {}) {
   const judged = [];
 
   for (const t of candidates) {
+    if (!requireIdHidden) {
+      judged.push(t.key);
+      found.push(t);
+      continue;
+    }
     const html = await fetchFirstPost(boardUrl, t.key);
     // 取得失敗は判定保留(seenに入れず次回再試行)
     if (html !== null) {

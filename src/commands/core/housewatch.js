@@ -6,7 +6,7 @@ module.exports = {
   name: 'housewatch',
   aliases: ['oie', 'おうち'],
   description:
-    'なんJ実況G(livegalileo)の🏡入りID非表示スレ(!extend:none:...)の検知。!housewatch channel(今のチャンネルを通知先に設定) / off / status / now(即時チェック)',
+    'なんJ実況G(livegalileo)の🏡入りスレの検知。!housewatch channel(今のチャンネルを通知先に設定) / off / status / now(即時チェック)',
   async execute(msg, args) {
     const sub = args[0]?.toLowerCase();
 
@@ -26,7 +26,7 @@ module.exports = {
       return msg.channel.send(
         `通知先: ${channelId ? `<#${channelId}>` : '(未設定)'}\n` +
           `監視板: ${hw.boardUrl}\n` +
-          `条件: タイトルに「${hw.keyword || '🏡'}」 + >>1のEXTDATでID=${hw.extendIdMode || 'none'}\n` +
+          `条件: タイトルに「${hw.keyword || '🏡'}」${hw.requireIdHidden ? ` + >>1のEXTDATでID=${hw.extendIdMode || 'none'}` : ''}\n` +
           `間隔: 約${Math.round((hw.checkIntervalMs || 120000) / 1000)}秒${hw.enabled ? '' : ' (settings.jsonでenabled=falseのため自動監視は停止中)'}`
       );
     }
