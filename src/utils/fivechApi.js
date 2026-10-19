@@ -18,8 +18,12 @@ function decodeEntities(s) {
     .replace(/&amp;/g, '&');
 }
 
+// 5ch側が応答を返さないまま接続を保持すると、fetchは既定でタイムアウトせず永久に待つ。
+// そうなるとお🏡検知の定期チェック(前回が終わってから次を予約する)ごと止まるので必ず打ち切る
+const FETCH_TIMEOUT_MS = 20000;
+
 async function fetchText(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
   return sjis.decode(await res.arrayBuffer());
 }
