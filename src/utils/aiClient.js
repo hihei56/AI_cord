@@ -665,6 +665,7 @@ async function compressUserMemoryIfNeeded(accountState, userId, displayName) {
 }
 
 module.exports = {
+  callChatCompletion,
   getAIResponse,
   generateSelfTalk,
   planConversationTopic,

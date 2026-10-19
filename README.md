@@ -28,6 +28,7 @@ AI_cord/
 ├── src/
 │   ├── index.js                # エントリーポイント
 │   ├── twitterInviteBot.js     # X検索→Discord招待リンク共有(独立プロセス)
+│   ├── xPromoBot.js            # Xへのサーバー宣伝の定期投稿(独立プロセス)
 │   ├── client.js                # discord.js-selfbot-v13 クライアント生成
 │   ├── handlers/
 │   │   ├── messageHandler.js    # メッセージ受信・返信ロジック
@@ -187,6 +188,21 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 > **注意**: Xの非公式APIを使ったスクレイピングはXの利用規約に反し、使ったアカウントが凍結・ロックされる可能性がある。メインのアカウントではなく捨てアカウントのCookieを使うこと。またXの内部APIは予告なく変わるため、ライブラリの更新が必要になって突然動かなくなることがある。
 
+### Xへのサーバー宣伝の定期投稿(`npm run xpromo`)
+
+`src/xPromoBot.js`は、Discordサーバーの宣伝ツイートをXに定期投稿する独立プロセス。1回の投稿の流れは次の通り。
+
+1. Xのトレンドを取得する(`TWITTER_AUTH_TOKEN`/`TWITTER_CT0`のCookieを使う。取れなければ`PROMO_FALLBACK_TAGS`を代わりに使う)
+2. AI(会話用と同じ`AI_PROVIDER`)に`PROMO_SERVER_DESCRIPTION`とトレンド一覧を渡し、トレンドを2〜4個選ばせて、その話題に触れた宣伝文を書かせる。直近5件の投稿も渡して、似た文面にならないようにする
+3. `PROMO_INVITE_CHANNEL_ID`のチャンネルで招待リンクを新規発行する(既定で7日間有効)
+4. 「本文・招待リンク・トレンドタグ・`#discord`」の形で、公式X API(`POST /2/tweets`)から投稿する。Xの文字数制限(全角2・URL23換算で280)を超えそうなら本文を切り詰める
+
+- 投稿履歴(ツイートID・招待コード・本文・タグ)は`data/x-promo.json`に残る。招待は投稿ごとに別のコードなので、Discordのサーバー設定 > 招待で使用回数を見れば、どの投稿から何人入ったか分かる
+- `PROMO_DRY_RUN=true`にすると、Discordへのログインも投稿もせず、生成した投稿内容をログに出すだけになる。まずはこれで文面を確認すること
+- 投稿にCookie(非公式API)を使わないのは、自動投稿は検索よりはるかに凍結されやすく、内部APIの仕様変更でもすぐ壊れるため
+
+> **注意**: Xのスパムポリシーでは、投稿内容と関係のないトレンドタグを付けることや、同じ宣伝の繰り返し投稿を禁止している。凍結やシャドウバン(検索に出なくなる)の対象になるので、AIには選んだトレンドの話題に触れさせているが、それで規約違反にならないと保証されるわけではない。投稿間隔は短くしすぎないこと。また公式APIの投稿枠や料金はXの都合で変わるため、developer.x.comで今の条件を確認すること。
+
 ### `config/settings.json`(動作パラメータ)
 
 | セクション | 内容 |
@@ -307,6 +323,7 @@ npm start
 sudo npm install -g pm2
 pm2 start src/index.js --name ai_cord
 pm2 start src/twitterInviteBot.js --name twinvite   # X招待リンク収集BOTも動かす場合
+pm2 start src/xPromoBot.js --name xpromo             # Xへの宣伝定期投稿も動かす場合
 pm2 save
 pm2 startup
 # 表示されたコマンド(sudo env PATH=... pm2 startup systemd -u ... など)をそのまま実行するとOS起動時にも自動起動する
@@ -346,7 +363,7 @@ pm2 save
 ```
 
 - 既定では`main`ブランチを1分間隔でチェックし、新しいコミットを検知したら`git pull`→(`package.json`が変わっていれば)`npm install`→`pm2 restart ai_cord mealpost`まで自動で行う
-- 追跡するブランチ・ポーリング間隔・再起動対象のpm2プロセス名は`.env`の`DEPLOY_BRANCH` / `DEPLOY_CHECK_INTERVAL_MS` / `DEPLOY_PM2_PROCESSES`(カンマ区切り)で変更できる(`twinvite`も動かしているなら`ai_cord,mealpost,twinvite`のように足す)
+- 追跡するブランチ・ポーリング間隔・再起動対象のpm2プロセス名は`.env`の`DEPLOY_BRANCH` / `DEPLOY_CHECK_INTERVAL_MS` / `DEPLOY_PM2_PROCESSES`(カンマ区切り)で変更できる(`twinvite`/`xpromo`も動かしているなら`ai_cord,mealpost,twinvite,xpromo`のように足す)
 - サーバー側で直接ファイルを編集した後や、リモートと競合する変更がある状態だと`git pull`に失敗することがある。その場合はデプロイ自体は成功しないが`deploy-watch`プロセスは落ちずに次回のポーリングで再試行し続けるので、`pm2 logs deploy-watch`でエラー内容を確認して手動で解消する
 - スマホのGitHubアプリ等からpushするだけで、次のポーリングのタイミング(既定最大1分後)で反映される
 
@@ -360,3 +377,4 @@ pm2 save
 - [dotenv](https://www.npmjs.com/package/dotenv)
 - [@sefinek/random-animals](https://www.npmjs.com/package/@sefinek/random-animals)
 - [@the-convocation/twitter-scraper](https://www.npmjs.com/package/@the-convocation/twitter-scraper)
+- [twitter-api-v2](https://www.npmjs.com/package/twitter-api-v2)
