@@ -3,6 +3,7 @@ const logger = require('../utils/logger');
 const store = require('../utils/houseWatchStore');
 const { fetchSubjects, fetchFirstPost, threadUrl } = require('../utils/fivechApi');
 const { scheduleWithJitter } = require('../utils/scheduler');
+const { getAllClients } = require('../utils/accountRegistry');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,14 +37,45 @@ function isIdHidden(firstPost, extendIdMode) {
   return !hasVisibleId(firstPost);
 }
 
+// 投稿役の候補。houseWatch.accountOrder(アカウントIDの配列)があればその順、無ければアカウント番号順で、
+// ログイン済み・ロックダウン中でない・通知先チャンネルが見えるアカウントだけを返す。
+// アカウント1が落ちていても他(待機)アカウントが代わりに投稿できるようにするため
+function posterCandidates(channelId) {
+  const all = getAllClients();
+  const order = config.houseWatch?.accountOrder;
+  const ordered = Array.isArray(order) && order.length > 0
+    ? order.map((id) => all.find((c) => c.accountState?.id === String(id))).filter(Boolean)
+    : all;
+  return ordered
+    .filter((c) => c.isReady?.() && !c.accountState?.lockedDown)
+    .map((c) => ({ client: c, channel: c.channels?.cache.get(channelId) }))
+    .filter((p) => p.channel);
+}
+
+// 候補の先頭から送信を試み、失敗したら次のアカウントで送り直す
+async function sendWithFallback(channelId, content, t) {
+  for (const { client, channel } of posterCandidates(channelId)) {
+    try {
+      await channel.send(content);
+      logger.log('HOUSE', `[${client.accountState.id}] ${t.key} ${t.title}`);
+      return true;
+    } catch (err) {
+      logger.error('HOUSE', `[${client.accountState.id}] 送信失敗、次のアカウントで再試行: ${err.message}`);
+    }
+  }
+  logger.error('HOUSE', `全アカウントで送信失敗: ${t.key} ${t.title}`);
+  return false;
+}
+
 // スレタイにkeyword(既定🏡)を含み、かつID非表示(!extend:none:...)の新スレを通知する。
 // >>1の取得はタイトル一致したスレだけに限定して余計なアクセスを避ける。
 // requireIdHidden=falseにするとID判定を省きタイトル一致だけで通知する
-async function checkOnce(client, { manual = false } = {}) {
+async function checkOnce({ manual = false } = {}) {
   const channelId = store.getChannelId();
   if (!channelId) return { found: [], error: '通知先チャンネル未設定' };
-  const channel = client.channels?.cache.get(channelId);
-  if (!channel) return { found: [], error: '通知先チャンネルが見つからない' };
+  if (posterCandidates(channelId).length === 0) {
+    return { found: [], error: '通知先チャンネルに投稿できるアカウントが無い(全アカウント未ログイン/ロックダウン中/チャンネル不可視)' };
+  }
 
   const {
     boardUrl,
@@ -67,27 +99,24 @@ async function checkOnce(client, { manual = false } = {}) {
 
   for (const t of candidates) {
     if (!requireIdHidden) {
-      judged.push(t.key);
       found.push(t);
       continue;
     }
     const html = await fetchFirstPost(boardUrl, t.key);
-    // 取得失敗は判定保留(seenに入れず次回再試行)
+    // 取得失敗は判定保留(seenに入れず次回再試行)。judgedは該当しなかったスレ
     if (html !== null) {
-      judged.push(t.key);
       if (isIdHidden(html, extendIdMode)) found.push(t);
+      else judged.push(t.key);
     }
     await sleep(firstPostDelayMs);
   }
 
   store.markSeen(judged);
 
+  // 該当スレは送信に成功した時だけ通知済みにする(全アカウントで送信失敗したら次回再送)
   for (const t of found) {
-    try {
-      await channel.send(`🏡 お🏡スレ検知\n**${t.title}** (${t.resCount})\n${threadUrl(boardUrl, t.key)}`);
-      logger.log('HOUSE', `${t.key} ${t.title}`);
-    } catch (err) {
-      logger.error('HOUSE', err);
+    if (await sendWithFallback(channelId, `🏡 お🏡スレ検知\n**${t.title}** (${t.resCount})\n${threadUrl(boardUrl, t.key)}`, t)) {
+      store.markSeen([t.key]);
     }
   }
 
@@ -95,14 +124,14 @@ async function checkOnce(client, { manual = false } = {}) {
   return { found, candidates: candidates.length };
 }
 
-// 価格アラートと同じくアカウント非依存の全体機能なので、clients[0]だけが投稿を担当する
+// アカウント非依存の全体機能なので監視ループは1本だけ回し、投稿役は投稿の都度
+// posterCandidatesで選ぶ(アカウント1固定だとそのアカウントが落ちた時に通知が止まるため)
 function registerHouseWatchHandler(clients) {
   if (!config.houseWatch?.enabled) return;
-  const client = clients[0];
-  if (!client) return;
+  if (clients.length === 0) return;
 
   const { checkIntervalMs = 120000, checkIntervalJitter = 0.3 } = config.houseWatch;
-  scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce(client));
+  scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce());
 }
 
 module.exports = { registerHouseWatchHandler, checkOnce, parseExtdat, isIdHidden };

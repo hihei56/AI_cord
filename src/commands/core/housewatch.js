@@ -33,7 +33,7 @@ module.exports = {
 
     if (sub === 'now') {
       await msg.channel.send('📡 チェック中...');
-      const r = await checkOnce(msg.client, { manual: true });
+      const r = await checkOnce({ manual: true });
       if (r.error) return msg.channel.send(`⚠️ ${r.error}`);
       return msg.channel.send(`完了: 新規候補${r.candidates}件 / 該当${r.found.length}件`);
     }

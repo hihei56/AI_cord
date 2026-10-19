@@ -119,6 +119,7 @@
     "extendIdMode": "none",
     "checkIntervalMs": 120000,
     "checkIntervalJitter": 0.3,
-    "firstPostDelayMs": 1500
+    "firstPostDelayMs": 1500,
+    "accountOrder": []
   }
 }
