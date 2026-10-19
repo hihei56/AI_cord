@@ -27,6 +27,7 @@ AI_cord/
 │       └── default.txt        # Markov連鎖の学習元テキスト(任意機能、1行1発言)
 ├── src/
 │   ├── index.js                # エントリーポイント
+│   ├── twitterInviteBot.js     # X検索→Discord招待リンク共有(独立プロセス)
 │   ├── client.js                # discord.js-selfbot-v13 クライアント生成
 │   ├── handlers/
 │   │   ├── messageHandler.js    # メッセージ受信・返信ロジック
@@ -173,6 +174,19 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 - 設定は`.env`ではなく`data/slash-bump.json`に永続化される。対象の追加/削除は`!slashbump add`/`remove`だけで完結し、再起動不要で実行ループが即座に開始/停止する
 - 対象チャンネルにアクセスできる(そのギルドに参加している)`mealpost`アカウントが実行する。会話用のペルソナ・アカウント設定とは独立した全体機能
 
+### X(Twitter)からDiscord招待リンクを収集・共有(`npm run twinvite`)
+
+`src/twitterInviteBot.js`は、Xを`discord.gg min_faves:50 lang:ja`(`TWITTER_SEARCH_QUERY`で変更可)で定期検索し、ツイートに含まれるDiscordサーバーの招待リンクを抜き出してWebhookでチャンネルへ共有する独立プロセス。ai_cord/mealpostとは状態を共有しない。
+
+- 検索は[@the-convocation/twitter-scraper](https://www.npmjs.com/package/@the-convocation/twitter-scraper)でWeb版Xの内部APIを叩く。ログインはパスワードではなく、ブラウザから取り出したCookie(`TWITTER_AUTH_TOKEN`/`TWITTER_CT0`)で行う。公式API v2の検索は`min_faves`演算子に対応しておらず有料のため使っていない
+- 招待コードはツイートの展開済みURL(t.coの展開先)と本文の両方から`discord.gg/xxx`・`discord.com/invite/xxx`形式を拾う
+- 各招待はDiscordの公開API(`GET /invites/{code}?with_counts=true`、認証不要)で照会し、サーバー名・アイコン・メンバー数を埋め込みに載せる。期限切れ・無効な招待は共有しない
+- 共有済みの招待コードとサーバーIDを`data/twitter-invites.json`に記録し、同じ招待も、同じサーバーの別招待も二度は流さない
+- 検索間隔は既定30分(±30%のランダムなばらつき)。Xのレート制限(429)を受けたらその回は打ち切り、次回に持ち越す
+- XのCookieは数週間〜数ヶ月で失効する。ログに認証エラーが出始めたら取り直して`.env`を更新し、`pm2 restart twinvite`する
+
+> **注意**: Xの非公式APIを使ったスクレイピングはXの利用規約に反し、使ったアカウントが凍結・ロックされる可能性がある。メインのアカウントではなく捨てアカウントのCookieを使うこと。またXの内部APIは予告なく変わるため、ライブラリの更新が必要になって突然動かなくなることがある。
+
 ### `config/settings.json`(動作パラメータ)
 
 | セクション | 内容 |
@@ -292,6 +306,7 @@ npm start
 ```bash
 sudo npm install -g pm2
 pm2 start src/index.js --name ai_cord
+pm2 start src/twitterInviteBot.js --name twinvite   # X招待リンク収集BOTも動かす場合
 pm2 save
 pm2 startup
 # 表示されたコマンド(sudo env PATH=... pm2 startup systemd -u ... など)をそのまま実行するとOS起動時にも自動起動する
@@ -331,7 +346,7 @@ pm2 save
 ```
 
 - 既定では`main`ブランチを1分間隔でチェックし、新しいコミットを検知したら`git pull`→(`package.json`が変わっていれば)`npm install`→`pm2 restart ai_cord mealpost`まで自動で行う
-- 追跡するブランチ・ポーリング間隔・再起動対象のpm2プロセス名は`.env`の`DEPLOY_BRANCH` / `DEPLOY_CHECK_INTERVAL_MS` / `DEPLOY_PM2_PROCESSES`(カンマ区切り)で変更できる
+- 追跡するブランチ・ポーリング間隔・再起動対象のpm2プロセス名は`.env`の`DEPLOY_BRANCH` / `DEPLOY_CHECK_INTERVAL_MS` / `DEPLOY_PM2_PROCESSES`(カンマ区切り)で変更できる(`twinvite`も動かしているなら`ai_cord,mealpost,twinvite`のように足す)
 - サーバー側で直接ファイルを編集した後や、リモートと競合する変更がある状態だと`git pull`に失敗することがある。その場合はデプロイ自体は成功しないが`deploy-watch`プロセスは落ちずに次回のポーリングで再試行し続けるので、`pm2 logs deploy-watch`でエラー内容を確認して手動で解消する
 - スマホのGitHubアプリ等からpushするだけで、次のポーリングのタイミング(既定最大1分後)で反映される
 
@@ -344,3 +359,4 @@ pm2 save
 - [discord.js-selfbot-v13](https://www.npmjs.com/package/discord.js-selfbot-v13)
 - [dotenv](https://www.npmjs.com/package/dotenv)
 - [@sefinek/random-animals](https://www.npmjs.com/package/@sefinek/random-animals)
+- [@the-convocation/twitter-scraper](https://www.npmjs.com/package/@the-convocation/twitter-scraper)
