@@ -28,6 +28,7 @@ function loadCommands() {
 // nullになってしまう。そのためキャッシュに無ければ明示的にfetchして確実に判定する
 async function canRunCommands(msg, client, state) {
   if (msg.author.id === client.user.id) return { allowed: true };
+  if (state.commandUserIds?.includes(msg.author.id)) return { allowed: true };
   if (!state.commandRoleIds?.length) return { allowed: false, reason: 'commandRoleIds未設定' };
   if (!msg.guild) return { allowed: false, reason: 'DM(サーバー外)' };
 
@@ -60,7 +61,7 @@ function registerCommandHandler(client) {
     if (!permission.allowed) {
       logger.log(
         'COMMAND',
-        `[${client.accountState.id}] ${msg.author.username}のコマンドを権限なしで拒否 (${permission.reason}): ${msg.content.slice(0, 50)}`
+        `[${client.accountState.id}] ${msg.author.username}(userId=${msg.author.id})のコマンドを権限なしで拒否 (${permission.reason}): ${msg.content.slice(0, 50)}`
       );
       return;
     }

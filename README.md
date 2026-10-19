@@ -154,6 +154,18 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 `!set mode`での切り替えは実行中の状態変更なので再起動すると消える(常にmarkovで起動し直す)。常時finetuneモードで運用したいアカウントは`.env`で`AI_MODE_N=finetune`を指定しておくと、起動時点からfinetuneモードになる。
 
+### 5ch自動まとめスクリプト(`scripts/matome.js`)
+
+ボット本体とは独立した単体スクリプト。スレを取得して、まとめブログ風のHTMLを`outputs/matome-<スレ番号>.html`(git管理外)に書き出す。Discordには何も投稿しない。
+
+```
+node scripts/matome.js https://nova.5ch.io/test/read.cgi/livegalileo/1234567890/   # 指定スレ
+node scripts/matome.js --latest                                                     # 実況Gの最新ID非表示🏡スレ
+node scripts/matome.js --file 1234567890.dat                                        # 手元のdat(Shift_JIS)
+```
+
+抜粋はAIを使わず安価の数だけで決める: `>>1` → 安価が`--min-replies`(既定3)以上付いたレス(最大`--max`件、既定30)と、それぞれへの返信(`--replies`件まで、既定5)。安価5以上は赤字・大きく、3以上は青字。スレ取得はお🏡検知と同じ`src/utils/fivechApi.js`(dat優先、失敗時read.cgi)を使う。
+
 ### AI投稿の一括停止(`aiPosting.enabled`)
 
 `config/settings.json`の`aiPosting.enabled`を`false`にすると、AIによる返信(`messageHandler`)・アカウント同士の掛け合いと割り込みリプライ(`conversationSeedHandler`)・自発投稿(`selfTalkHandler`)を止める。`!pause`(ロックダウン)と違い、コマンド・リアクション・価格アラート・ご飯投稿・お🏡検知は動いたままで、設定ファイルなので再起動しても停止状態が保たれる。再開は`true`に戻して再起動(mainにpushすれば自動デプロイで反映)。リアクションも止めたい場合は`reactions.enabled`を`false`にする。

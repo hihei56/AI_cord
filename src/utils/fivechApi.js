@@ -18,8 +18,12 @@ function decodeEntities(s) {
     .replace(/&amp;/g, '&');
 }
 
+// 5ch側が応答を返さないまま接続を保持すると、fetchは既定でタイムアウトせず永久に待つ。
+// そうなるとお🏡検知の定期チェック(前回が終わってから次を予約する)ごと止まるので必ず打ち切る
+const FETCH_TIMEOUT_MS = 20000;
+
 async function fetchText(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
   return sjis.decode(await res.arrayBuffer());
 }
@@ -72,4 +76,86 @@ async function fetchFirstPost(boardUrl, key) {
   }
 }
 
-module.exports = { fetchSubjects, fetchFirstPost, threadUrl, decodeEntities };
+// レス本文/名前のHTMLをプレーンテキストにする(<br>は改行、アンカーの<a>等のタグは除去、実体参照は戻す)
+function htmlToText(html) {
+  return decodeEntities(
+    html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+  )
+    .split('\n')
+    .map((l) => l.trim())
+    .join('\n')
+    .trim();
+}
+
+// 本文末尾に自動で付くEXTDAT行(<hr>VIPQ2_EXTDAT: ...)を表示用に取り除く
+function stripExtdat(html) {
+  return html.replace(/<hr>\s*VIPQ2_EXTDAT:[\s\S]*$/i, '');
+}
+
+// dat(1行1レス「名前<>メール<>日付 ID<>本文<>スレタイ」)をレス配列にする
+function parseDat(text) {
+  const posts = [];
+  let title = null;
+  text.split('\n').forEach((line, i) => {
+    const f = line.split('<>');
+    if (f.length < 4) return;
+    if (i === 0 && f[4]) title = htmlToText(f[4]);
+    const idMatch = f[2].match(/\s(ID:\S+)/);
+    posts.push({
+      no: i + 1,
+      name: htmlToText(f[0]),
+      mail: htmlToText(f[1]),
+      date: htmlToText(f[2].replace(/\s?ID:\S+/, '')).trim(),
+      id: idMatch ? idMatch[1] : '',
+      body: htmlToText(stripExtdat(f[3]))
+    });
+  });
+  return { title, posts };
+}
+
+// 現行read.cgi(<article id="N">…<span class="date">…<span class="uid">…<section class="post-content">)を
+// レス配列にする。形式はonihusube/2chAPIProxyのHTML→dat変換の正規表現に合わせている
+function parseReadCgi(html) {
+  const titleMatch = html.match(/<title>([\s\S]*?)<\/title>/i);
+  const posts = [];
+  for (const block of html.split(/<article\s+id="/).slice(1)) {
+    const no = Number(block.match(/^(\d+)/)?.[1]);
+    const pick = (re) => block.match(re)?.[1] ?? '';
+    if (!no) continue;
+    posts.push({
+      no,
+      name: htmlToText(pick(/class="postusername">([\s\S]*?)<\/span>/)),
+      mail: '',
+      date: htmlToText(pick(/class="date">([\s\S]*?)<\/span>/)),
+      id: htmlToText(pick(/class="uid">([\s\S]*?)<\/span>/)),
+      body: htmlToText(stripExtdat(pick(/class="post-content">([\s\S]*?)<\/section>/)))
+    });
+  }
+  return { title: titleMatch ? htmlToText(titleMatch[1]) : null, posts };
+}
+
+// スレ全体を取得する。dat優先、取れなければread.cgiのHTML
+async function fetchThread(boardUrl, key) {
+  const u = new URL(boardUrl);
+  const board = u.pathname.split('/').filter(Boolean)[0];
+  try {
+    const parsed = parseDat(await fetchText(`${u.origin}/${board}/dat/${key}.dat`));
+    if (parsed.posts.length > 0) return parsed;
+  } catch {
+    // read.cgiへ
+  }
+  return parseReadCgi(await fetchText(threadUrl(boardUrl, key)));
+}
+
+module.exports = {
+  fetchSubjects,
+  fetchFirstPost,
+  fetchThread,
+  threadUrl,
+  decodeEntities,
+  parseDat,
+  parseReadCgi,
+  sjis
+};
