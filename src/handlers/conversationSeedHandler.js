@@ -393,6 +393,8 @@ function registerBotReplyTrigger(clients) {
 // 省略する」ことだけを意味し、ユーザーの発言を待つかどうかには関与しない
 function registerConversationSeedHandler(clients) {
   if (clients.length < 2) return;
+  // aiPosting.enabled=falseならAI同士の掛け合い・割り込みリプライも起動しない
+  if (config.aiPosting?.enabled === false) return;
 
   registerBotReplyTrigger(clients);
 

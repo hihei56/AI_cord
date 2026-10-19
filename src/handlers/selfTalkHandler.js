@@ -69,7 +69,7 @@ async function selfPost(channel, accountState) {
 }
 
 function registerSelfTalkHandler(client) {
-  if (!config.selfTalk.enabled) return;
+  if (!config.selfTalk.enabled || config.aiPosting?.enabled === false) return;
 
   const state = client.accountState;
   const { intervalMs, intervalJitter = 0.4 } = config.selfTalk;

@@ -4,6 +4,9 @@
     "minMs": 8000,
     "maxMs": 30000
   },
+  "aiPosting": {
+    "enabled": false
+  },
   "cooldownSeconds": 90,
   "cooldownJitter": 0.3,
   "replyChance": {
@@ -165,5 +168,16 @@
       "lunch": { "hour": 12, "jitterHours": 1, "label": "お昼ごはん" },
       "dinner": { "hour": 18, "jitterHours": 1, "label": "晩ごはん" }
     }
+  },
+  "houseWatch": {
+    "enabled": true,
+    "boardUrl": "https://nova.5ch.io/livegalileo/",
+    "keyword": "🏡",
+    "requireIdHidden": true,
+    "extendIdMode": "none",
+    "checkIntervalMs": 120000,
+    "checkIntervalJitter": 0.3,
+    "firstPostDelayMs": 1500,
+    "accountOrder": []
   }
 }
