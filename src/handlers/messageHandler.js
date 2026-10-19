@@ -136,6 +136,8 @@ function registerMessageHandler(client) {
     // 意図的な掛け合いは conversationSeedHandler が専用ルートで行う。
     if (isOwnAccount(msg.author.id)) return;
     if (state.lockedDown) return;
+    // config/settings.jsonのaiPosting.enabled=falseでAIの返信を止める(リアクション・コマンドは別系統なので動く)
+    if (config.aiPosting?.enabled === false) return;
     if (msg.guild?.id !== state.allowedGuildId) return;
     if (!isRealUser(msg)) return;
     if (state.allowedReplyUserIds?.length && !state.allowedReplyUserIds.includes(msg.author.id)) return;

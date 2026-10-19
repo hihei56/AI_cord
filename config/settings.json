@@ -4,6 +4,9 @@
     "minMs": 8000,
     "maxMs": 30000
   },
+  "aiPosting": {
+    "enabled": false
+  },
   "cooldownSeconds": 90,
   "cooldownJitter": 0.3,
   "replyChance": {
