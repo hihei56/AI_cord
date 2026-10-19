@@ -18,7 +18,7 @@ function parseExtdat(html) {
 
 // >>1にIDが表示されているか。datは「名前<>E-mail<>日付とIDとBE<>本文<>スレタイ」
 // (5ch wiki Monazilla/develop/dat)で、IDは日付欄に「 ID:xxx」として付き、無い時は日付だけになる。
-// read.cgiのHTMLならclass="uid"のspanにIDが入る。ID:???は非表示扱い
+// read.cgiのHTMLならclass="uid"のspanにIDが入る(ID非表示ならspanが空か無い)。ID:???は非表示扱い
 function hasVisibleId(firstPost) {
   const idPattern = /ID:(?!\?\?\?)\S+/;
   if (firstPost.includes('<>')) {
