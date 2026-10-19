@@ -57,7 +57,13 @@ async function fetchFirstPost(boardUrl, key) {
     // dat不可(過去ログ化・アクセス制限等)ならread.cgiへ
   }
   try {
-    return await fetchText(`${threadUrl(boardUrl, key)}1`);
+    const html = await fetchText(`${threadUrl(boardUrl, key)}1`);
+    // レス本体が無いHTML(エラーページ・規制ページ等)を「IDが無い」と誤判定しないよう判定保留にする
+    if (!/class="(clear )?post"|<dd/.test(html)) {
+      logger.log('HOUSE', `${key}: read.cgiにレス本体が無いため判定保留`);
+      return null;
+    }
+    return html;
   } catch (err) {
     logger.error('HOUSE', err);
     return null;

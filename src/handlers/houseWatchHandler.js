@@ -15,9 +15,26 @@ function parseExtdat(html) {
   return m ? { id: m[1], slip: m[2], maxRes: Number(m[3]), maxKb: Number(m[4]) } : null;
 }
 
-// スレタイにkeyword(既定🏡)を含む新スレを通知する。requireIdHidden=trueの時だけ、
-// さらに>>1のEXTDATでIDがextendIdMode(既定none=ID非表示)のスレに絞る(>>1の取得は
-// タイトル一致したスレだけに限定して余計なアクセスを避ける)
+// >>1にIDが表示されているか。datなら「名前<>メール<>日付 ID:xxx<>本文<>タイトル」の
+// 日付欄、read.cgiのHTMLならclass="uid"のspanにIDが入る。ID非表示スレはどちらにも出ない
+function hasVisibleId(firstPost) {
+  if (firstPost.includes('<>')) {
+    const dateField = firstPost.split('<>')[2] || '';
+    return /ID:\S+/.test(dateField);
+  }
+  return /class="uid"[^>]*>\s*ID:\S+/.test(firstPost);
+}
+
+// ID非表示か判定する。EXTDAT表記があればそのID欄で決め、無ければ>>1にIDが出ていないかで決める
+function isIdHidden(firstPost, extendIdMode) {
+  const ext = parseExtdat(firstPost);
+  if (ext) return ext.id === extendIdMode;
+  return !hasVisibleId(firstPost);
+}
+
+// スレタイにkeyword(既定🏡)を含み、かつID非表示(!extend:none:...)の新スレを通知する。
+// >>1の取得はタイトル一致したスレだけに限定して余計なアクセスを避ける。
+// requireIdHidden=falseにするとID判定を省きタイトル一致だけで通知する
 async function checkOnce(client, { manual = false } = {}) {
   const channelId = store.getChannelId();
   if (!channelId) return { found: [], error: '通知先チャンネル未設定' };
@@ -27,7 +44,7 @@ async function checkOnce(client, { manual = false } = {}) {
   const {
     boardUrl,
     keyword = '🏡',
-    requireIdHidden = false,
+    requireIdHidden = true,
     extendIdMode = 'none',
     firstPostDelayMs = 1500
   } = config.houseWatch || {};
@@ -54,8 +71,7 @@ async function checkOnce(client, { manual = false } = {}) {
     // 取得失敗は判定保留(seenに入れず次回再試行)
     if (html !== null) {
       judged.push(t.key);
-      const ext = parseExtdat(html);
-      if (ext && ext.id === extendIdMode) found.push({ ...t, ext });
+      if (isIdHidden(html, extendIdMode)) found.push(t);
     }
     await sleep(firstPostDelayMs);
   }
@@ -85,4 +101,4 @@ function registerHouseWatchHandler(clients) {
   scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce(client));
 }
 
-module.exports = { registerHouseWatchHandler, checkOnce, parseExtdat };
+module.exports = { registerHouseWatchHandler, checkOnce, parseExtdat, isIdHidden };

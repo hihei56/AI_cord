@@ -156,7 +156,7 @@ finetuneモードでは、そのアカウントの返信はペルソナ文書・
 
 ### お🏡スレ検知(`!housewatch`)
 
-`src/handlers/houseWatchHandler.js`が`config/settings.json`の`houseWatch.checkIntervalMs`(既定2分、ジッター付き)ごとに`houseWatch.boardUrl`(既定 なんでも実況G `https://nova.5ch.io/livegalileo/`)の`subject.txt`を取得し、スレタイに`houseWatch.keyword`(既定🏡)を含む新スレのタイトルとURLを`!housewatch channel`で設定したチャンネルに通知する。`houseWatch.requireIdHidden`を`true`にすると、さらに`>>1`(dat優先、失敗時read.cgi)を取得し、`!extend:none:none:1000:512`で立てたスレの`>>1`末尾に付く`VIPQ2_EXTDAT: none:...`のID欄が`houseWatch.extendIdMode`(既定`none`=ID非表示)のスレだけに絞る(既定`false`。EXTDATの表記は実スレで未検証のため)。判定済みスレキーは`data/house-watch.json`に保存され、再起動しても二重通知しない(`requireIdHidden`時に`>>1`取得に失敗したスレは次回再試行)。価格アラートと同じく`clients[0]`が投稿する。
+`src/handlers/houseWatchHandler.js`が`config/settings.json`の`houseWatch.checkIntervalMs`(既定2分、ジッター付き)ごとに`houseWatch.boardUrl`(既定 なんでも実況G `https://nova.5ch.io/livegalileo/`)の`subject.txt`を取得し、スレタイに`houseWatch.keyword`(既定🏡)を含むスレだけ`>>1`(dat優先、失敗時read.cgi)を取得し、ID非表示(`!extend:none:none:1000:512`)のスレのタイトルとURLを`!housewatch channel`で設定したチャンネルに通知する。ID非表示の判定は、`>>1`末尾の`VIPQ2_EXTDAT: none:...`があればそのID欄が`houseWatch.extendIdMode`(既定`none`)か、無ければ`>>1`の日付欄に`ID:`が出ていないかで行う。`houseWatch.requireIdHidden`を`false`にするとID判定を省いてタイトル一致だけで通知する。判定済みスレキーは`data/house-watch.json`に保存され、再起動しても二重通知しない(`>>1`取得に失敗したスレは次回再試行)。価格アラートと同じく`clients[0]`が投稿する。
 
 ### 仮想通貨の価格アラート(`!pricealert`)
 

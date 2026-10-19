@@ -115,7 +115,7 @@
     "enabled": true,
     "boardUrl": "https://nova.5ch.io/livegalileo/",
     "keyword": "🏡",
-    "requireIdHidden": false,
+    "requireIdHidden": true,
     "extendIdMode": "none",
     "checkIntervalMs": 120000,
     "checkIntervalJitter": 0.3,
