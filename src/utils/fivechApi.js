@@ -1,6 +1,9 @@
 const logger = require('./logger');
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+// 5chの専ブラ慣習に合わせてMonazilla形式のUAを名乗る(5ch.io対応の専ブラEmberも
+// subject.txt/datの取得にMonazilla/1.00 Ember/0.1を使っている)。ブラウザのUAを偽装するより
+// 素性が明確で、運営側の専ブラ向け経路として扱われる
+const USER_AGENT = 'Monazilla/1.00 AI_cord/2.0';
 // 5chのsubject.txt/read.cgiはShift_JIS。絵文字はShift_JISに無いので&#127969;のような
 // 数値文字参照で格納されている。Node標準のTextDecoder(full-icu)でデコードする
 const sjis = new TextDecoder('shift_jis');
@@ -41,8 +44,18 @@ function threadUrl(boardUrl, key) {
 }
 
 // >>1の本文を取得する。!extend:付きで立てたスレは>>1末尾に
-// 「VIPQ2_EXTDAT: none:none:1000:512:: EXT was configured」が自動で付くので、それで判定できる
+// 「VIPQ2_EXTDAT: none:none:1000:512:: EXT was configured」が自動で付くので、それで判定できる。
+// Emberと同じくまず軽いdat(1行目が>>1)を取り、取れなければread.cgiのHTMLにフォールバックする
 async function fetchFirstPost(boardUrl, key) {
+  const u = new URL(boardUrl);
+  const board = u.pathname.split('/').filter(Boolean)[0];
+  try {
+    const dat = await fetchText(`${u.origin}/${board}/dat/${key}.dat`);
+    const first = dat.split('\n')[0];
+    if (first.includes('<>')) return first;
+  } catch {
+    // dat不可(過去ログ化・アクセス制限等)ならread.cgiへ
+  }
   try {
     return await fetchText(`${threadUrl(boardUrl, key)}1`);
   } catch (err) {
