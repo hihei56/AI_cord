@@ -8,21 +8,25 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// >>1のEXTDAT表記からID表示設定(先頭フィールド)を取り出す。
-// !extend:none:none:1000:512 → "none:none:1000:512"
+// >>1のEXTDAT表記からID表示設定(先頭フィールド)を取り出す。5ch wiki(新生VIPQ2)の仕様では
+// 第1指定値がID(default/none/checked)、第2指定値がSLIP(空も可。例 !extend:none::1000:512)で、
+// スレ立て後>>1末尾に「VIPQ2_EXTDAT: none:none:1000:512:: EXT was configured」が付く
 function parseExtdat(html) {
-  const m = html.match(/VIPQ2_EXTDAT:\s*([^:\s<]+):([^:\s<]+):(\d+):(\d+)/);
+  const m = html.match(/VIPQ2_EXTDAT:\s*([^:\s<]*):([^:\s<]*):(\d+):(\d+)/);
   return m ? { id: m[1], slip: m[2], maxRes: Number(m[3]), maxKb: Number(m[4]) } : null;
 }
 
-// >>1にIDが表示されているか。datなら「名前<>メール<>日付 ID:xxx<>本文<>タイトル」の
-// 日付欄、read.cgiのHTMLならclass="uid"のspanにIDが入る。ID非表示スレはどちらにも出ない
+// >>1にIDが表示されているか。datは「名前<>E-mail<>日付とIDとBE<>本文<>スレタイ」
+// (5ch wiki Monazilla/develop/dat)で、IDは日付欄に「 ID:xxx」として付き、無い時は日付だけになる。
+// read.cgiのHTMLならclass="uid"のspanにIDが入る。ID:???は非表示扱い
 function hasVisibleId(firstPost) {
+  const idPattern = /ID:(?!\?\?\?)\S+/;
   if (firstPost.includes('<>')) {
     const dateField = firstPost.split('<>')[2] || '';
-    return /ID:\S+/.test(dateField);
+    return idPattern.test(dateField);
   }
-  return /class="uid"[^>]*>\s*ID:\S+/.test(firstPost);
+  const uid = firstPost.match(/class="uid"[^>]*>([^<]*)/);
+  return Boolean(uid && idPattern.test(uid[1]));
 }
 
 // ID非表示か判定する。EXTDAT表記があればそのID欄で決め、無ければ>>1にIDが出ていないかで決める
