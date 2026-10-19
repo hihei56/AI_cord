@@ -3,11 +3,40 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
+const { tryFetchGenreGif } = require('../utils/klipyGif');
 const { scheduleWithJitter } = require('../utils/scheduler');
+const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 
 async function selfPost(channel, accountState) {
   if (!channel) return;
   if (Math.random() > config.selfTalk.chance) return;
+
+  // 絵文字/GIFのみモードでは、画像添付やLLMキャプション生成を一切せず、
+  // 絵文字かGIFのどちらかを必ず1つ送るだけにする
+  if (isEmojiGifOnlyMode()) {
+    try {
+      const content = await pickEmojiOrGif(accountState, null);
+      await channel.send(content);
+      logger.log('SELF', content);
+    } catch (err) {
+      logger.error('SELF', err);
+    }
+    return;
+  }
+
+  // LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、
+  // アカウントにGIF_GENRE[_N]の設定があれば一定確率でKlipy検索したGIFを
+  // キャプション無しでそのまま貼るだけの投稿にする(LLM呼び出し自体をしない)
+  const gifUrl = await tryFetchGenreGif(accountState, config.gif?.chance, config.gif?.chanceJitter);
+  if (gifUrl) {
+    try {
+      await channel.send(gifUrl);
+      logger.log('SELF', `(GIF) ${gifUrl}`);
+      return;
+    } catch (err) {
+      logger.error('SELF', err);
+    }
+  }
 
   const withImage = Math.random() < config.selfTalk.imageChance;
 
