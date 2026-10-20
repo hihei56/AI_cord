@@ -1,7 +1,7 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const store = require('../utils/houseWatchStore');
-const { fetchSubjects, fetchFirstPost, threadUrl } = require('../utils/fivechApi');
+const { fetchSubjects, fetchThread, threadUrl } = require('../utils/fivechApi');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { getAllClients } = require('../utils/accountRegistry');
 
@@ -9,32 +9,17 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// >>1のEXTDAT表記からID表示設定(先頭フィールド)を取り出す。5ch wiki(新生VIPQ2)の仕様では
-// 第1指定値がID(default/none/checked)、第2指定値がSLIP(空も可。例 !extend:none::1000:512)で、
-// スレ立て後>>1末尾に「VIPQ2_EXTDAT: none:none:1000:512:: EXT was configured」が付く
-function parseExtdat(html) {
-  const m = html.match(/VIPQ2_EXTDAT:\s*([^:\s<]*):([^:\s<]*):(\d+):(\d+)/);
-  return m ? { id: m[1], slip: m[2], maxRes: Number(m[3]), maxKb: Number(m[4]) } : null;
-}
+// スレがID非表示か判定する。実況Gでは!extend:none:none:1000:512で立てても>>1末尾に
+// 「VIPQ2_EXTDAT: none:none:...」が付くだけで、>>2以降にはIDが出るスレが実在する(浪人以外は
+// ID非表示にできない板設定のため)。>>1自身はどちらのスレでもIDが出ないので判定に使えない。
+// そこで>>2以降(最大10レス)に1つでもIDが出ていれば「ID有り」とする。ID:???は非表示扱い。
+// レスが>>1しか無い間は判定できないのでnullを返す(呼び出し側で保留)
+const VISIBLE_ID = /ID:(?!\?\?\?)\S+/;
 
-// >>1にIDが表示されているか。datは「名前<>E-mail<>日付とIDとBE<>本文<>スレタイ」
-// (5ch wiki Monazilla/develop/dat)で、IDは日付欄に「 ID:xxx」として付き、無い時は日付だけになる。
-// read.cgiのHTMLならclass="uid"のspanにIDが入る(ID非表示ならspanが空か無い)。ID:???は非表示扱い
-function hasVisibleId(firstPost) {
-  const idPattern = /ID:(?!\?\?\?)\S+/;
-  if (firstPost.includes('<>')) {
-    const dateField = firstPost.split('<>')[2] || '';
-    return idPattern.test(dateField);
-  }
-  const uid = firstPost.match(/class="uid"[^>]*>([^<]*)/);
-  return Boolean(uid && idPattern.test(uid[1]));
-}
-
-// ID非表示か判定する。EXTDAT表記があればそのID欄で決め、無ければ>>1にIDが出ていないかで決める
-function isIdHidden(firstPost, extendIdMode) {
-  const ext = parseExtdat(firstPost);
-  if (ext) return ext.id === extendIdMode;
-  return !hasVisibleId(firstPost);
+function isThreadIdHidden(posts) {
+  const replies = posts.filter((p) => p.no >= 2).slice(0, 10);
+  if (replies.length === 0) return null;
+  return !replies.some((p) => VISIBLE_ID.test(p.id || ''));
 }
 
 // 投稿役の候補。houseWatch.accountOrder(アカウントIDの配列)があればその順、無ければアカウント番号順で、
@@ -67,8 +52,8 @@ async function sendWithFallback(channelId, content, t) {
   return false;
 }
 
-// スレタイにkeyword(既定🏡)を含み、かつID非表示(!extend:none:...)の新スレを通知する。
-// >>1の取得はタイトル一致したスレだけに限定して余計なアクセスを避ける。
+// スレタイにkeyword(既定🏡)を含み、かつID非表示の新スレを通知する。
+// スレ本体の取得はタイトル一致かつレスが2件以上付いたスレだけに限定して余計なアクセスを避ける。
 // requireIdHidden=falseにするとID判定を省きタイトル一致だけで通知する
 async function checkOnce({ manual = false } = {}) {
   const channelId = store.getChannelId();
@@ -81,7 +66,6 @@ async function checkOnce({ manual = false } = {}) {
     boardUrl,
     keyword = '🏡',
     requireIdHidden = true,
-    extendIdMode = 'none',
     firstPostDelayMs = 1500
   } = config.houseWatch || {};
 
@@ -102,12 +86,17 @@ async function checkOnce({ manual = false } = {}) {
       found.push(t);
       continue;
     }
-    const html = await fetchFirstPost(boardUrl, t.key);
-    // 取得失敗は判定保留(seenに入れず次回再試行)。judgedは該当しなかったスレ
-    if (html !== null) {
-      if (isIdHidden(html, extendIdMode)) found.push(t);
-      else judged.push(t.key);
+    // >>2が付くまではID有無を判定できないので、取得もせず保留(seenに入れず次回再チェック)
+    if (t.resCount < 2) continue;
+    let hidden = null;
+    try {
+      hidden = isThreadIdHidden((await fetchThread(boardUrl, t.key)).posts);
+    } catch (err) {
+      logger.error('HOUSE', err);
     }
+    // 取得失敗・判定不能は保留。judgedは該当しなかったスレ
+    if (hidden === true) found.push(t);
+    else if (hidden === false) judged.push(t.key);
     await sleep(firstPostDelayMs);
   }
 
@@ -134,4 +123,4 @@ function registerHouseWatchHandler(clients) {
   scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce());
 }
 
-module.exports = { registerHouseWatchHandler, checkOnce, parseExtdat, isIdHidden };
+module.exports = { registerHouseWatchHandler, checkOnce, isThreadIdHidden };

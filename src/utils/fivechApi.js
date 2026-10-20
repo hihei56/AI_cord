@@ -47,35 +47,6 @@ function threadUrl(boardUrl, key) {
   return `${u.origin}/test/read.cgi/${board}/${key}/`;
 }
 
-// >>1の本文を取得する。!extend:付きで立てたスレは>>1末尾に
-// 「VIPQ2_EXTDAT: none:none:1000:512:: EXT was configured」が自動で付くので、それで判定できる。
-// Emberと同じくまず軽いdat(1行目が>>1)を取り、取れなければread.cgiのHTMLにフォールバックする
-async function fetchFirstPost(boardUrl, key) {
-  const u = new URL(boardUrl);
-  const board = u.pathname.split('/').filter(Boolean)[0];
-  try {
-    const dat = await fetchText(`${u.origin}/${board}/dat/${key}.dat`);
-    const first = dat.split('\n')[0];
-    if (first.includes('<>')) return first;
-  } catch {
-    // dat不可(過去ログ化・アクセス制限等)ならread.cgiへ
-  }
-  try {
-    const html = await fetchText(`${threadUrl(boardUrl, key)}1`);
-    // レス本体が無いHTML(エラーページ・規制ページ等)を「IDが無い」と誤判定しないよう判定保留にする。
-    // 現行のread.cgiは<article id="1">…<section class="post-content">形式、旧形式はdiv.post/<dd>
-    // (onihusube/2chAPIProxyのHTML→dat変換の正規表現と同じ判定材料)
-    if (!/class="post-content"|<article id=|class="(clear )?post"|<dd/.test(html)) {
-      logger.log('HOUSE', `${key}: read.cgiにレス本体が無いため判定保留`);
-      return null;
-    }
-    return html;
-  } catch (err) {
-    logger.error('HOUSE', err);
-    return null;
-  }
-}
-
 // レス本文/名前のHTMLをプレーンテキストにする(<br>は改行、アンカーの<a>等のタグは除去、実体参照は戻す)
 function htmlToText(html) {
   return decodeEntities(
@@ -151,7 +122,6 @@ async function fetchThread(boardUrl, key) {
 
 module.exports = {
   fetchSubjects,
-  fetchFirstPost,
   fetchThread,
   threadUrl,
   decodeEntities,
