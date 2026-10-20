@@ -1,7 +1,7 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
 const store = require('../utils/houseWatchStore');
-const { fetchSubjects, fetchThread, threadUrl } = require('../utils/fivechApi');
+const { fetchSubjects, fetchThreadHead, threadUrl } = require('../utils/fivechApi');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { getAllClients } = require('../utils/accountRegistry');
 
@@ -52,10 +52,24 @@ async function sendWithFallback(channelId, content, t) {
   return false;
 }
 
-// スレタイにkeyword(既定🏡)を含み、かつID非表示の新スレを通知する。
+// ID非表示の新スレのURLを通知する。keywordを設定した場合はスレタイにそれを含むスレだけに絞る(空なら全スレ)。
 // スレ本体の取得はタイトル一致かつレスが2件以上付いたスレだけに限定して余計なアクセスを避ける。
 // requireIdHidden=falseにするとID判定を省きタイトル一致だけで通知する
-async function checkOnce({ manual = false } = {}) {
+// 初回は一覧の全スレを判定するので数分かかる。その間に!housewatch nowや次の定期チェックが
+// 重なると同じスレを二重に取得・通知してしまうため、同時に1つしか走らせない
+let running = false;
+
+async function checkOnce(opts = {}) {
+  if (running) return { found: [], error: '前回のチェックがまだ実行中(初回は全スレ判定で数分かかる)' };
+  running = true;
+  try {
+    return await checkOnceInner(opts);
+  } finally {
+    running = false;
+  }
+}
+
+async function checkOnceInner({ manual = false } = {}) {
   const channelId = store.getChannelId();
   if (!channelId) return { found: [], error: '通知先チャンネル未設定' };
   if (posterCandidates(channelId).length === 0) {
@@ -64,10 +78,12 @@ async function checkOnce({ manual = false } = {}) {
 
   const {
     boardUrl,
-    keyword = '🏡',
+    keyword = '',
     requireIdHidden = true,
     firstPostDelayMs = 1500
   } = config.houseWatch || {};
+  // キーワード無し+ID判定無しだと板の全スレを通知してしまうので拒否する
+  if (!keyword && !requireIdHidden) return { found: [], error: 'keyword空のままrequireIdHidden=falseにはできない(全スレ通知になる)' };
 
   let threads;
   try {
@@ -77,7 +93,7 @@ async function checkOnce({ manual = false } = {}) {
     return { found: [], error: err.message };
   }
 
-  const candidates = threads.filter((t) => t.title.includes(keyword) && !store.hasSeen(t.key));
+  const candidates = threads.filter((t) => (!keyword || t.title.includes(keyword)) && !store.hasSeen(t.key));
   const found = [];
   const judged = [];
 
@@ -90,7 +106,7 @@ async function checkOnce({ manual = false } = {}) {
     if (t.resCount < 2) continue;
     let hidden = null;
     try {
-      hidden = isThreadIdHidden((await fetchThread(boardUrl, t.key)).posts);
+      hidden = isThreadIdHidden((await fetchThreadHead(boardUrl, t.key)).posts);
     } catch (err) {
       logger.error('HOUSE', err);
     }
@@ -104,7 +120,7 @@ async function checkOnce({ manual = false } = {}) {
 
   // 該当スレは送信に成功した時だけ通知済みにする(全アカウントで送信失敗したら次回再送)
   for (const t of found) {
-    if (await sendWithFallback(channelId, `🏡 お🏡スレ検知\n**${t.title}** (${t.resCount})\n${threadUrl(boardUrl, t.key)}`, t)) {
+    if (await sendWithFallback(channelId, threadUrl(boardUrl, t.key), t)) {
       store.markSeen([t.key]);
     }
   }

@@ -172,7 +172,7 @@
   "houseWatch": {
     "enabled": true,
     "boardUrl": "https://nova.5ch.io/livegalileo/",
-    "keyword": "🏡",
+    "keyword": "",
     "requireIdHidden": true,
     "checkIntervalMs": 120000,
     "checkIntervalJitter": 0.3,

@@ -44,15 +44,15 @@ function parseThreadUrl(url) {
 
 // 実況Gのsubject.txtから🏡入りスレを新しい順に見て、最初に見つかったID非表示スレを返す
 async function findLatestHouseThread() {
-  const { boardUrl, keyword = '🏡' } = config.houseWatch || {};
+  const { boardUrl, keyword = '' } = config.houseWatch || {};
   const threads = (await fetchSubjects(boardUrl))
-    .filter((t) => t.title.includes(keyword) && t.resCount >= 2)
+    .filter((t) => (!keyword || t.title.includes(keyword)) && t.resCount >= 2)
     .sort((a, b) => Number(b.key) - Number(a.key));
   for (const t of threads) {
     const thread = await fetchThread(boardUrl, t.key).catch(() => null);
     if (thread && isThreadIdHidden(thread.posts) === true) return { boardUrl, key: t.key, thread };
   }
-  throw new Error(`${boardUrl} に${keyword}入りのID非表示スレが見つからない`);
+  throw new Error(`${boardUrl} に${keyword ? `${keyword}入りの` : ''}ID非表示スレが見つからない`);
 }
 
 // 本文中の安価(>>12, >>3-5, 全角＞＞も)を拾う。範囲安価は10レス分までに制限
