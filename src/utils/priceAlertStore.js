@@ -74,7 +74,18 @@ function setOverride(symbol, value) {
   save();
 }
 
+function getLastDipCheckDate() {
+  return state.lastDipCheckDate || null;
+}
+
+function setLastDipCheckDate(dateStr) {
+  state.lastDipCheckDate = dateStr;
+  save();
+}
+
 module.exports = {
+  getLastDipCheckDate,
+  setLastDipCheckDate,
   getChannelId,
   setChannelId,
   getSymbols,

@@ -8,9 +8,21 @@ const KNOWN_COINGECKO_IDS = {
 
 const resolvedCache = new Map();
 
+// CoinGeckoはUser-Agent無し・キー無しのリクエストをクラウドのIP(Oracle Cloud等)から
+// 送ると403で弾くことがある(本番で全リクエストが403になっていた)。無料のDemo APIキー
+// (coingecko.comのDeveloper Dashboardで発行)を.envのCOINGECKO_API_KEYに入れると
+// x-cg-demo-api-keyヘッダで送る。接続先URLは無料APIと同じ
+function coingeckoHeaders() {
+  const headers = { 'User-Agent': 'Mozilla/5.0 (compatible; ai_cord/2.0)', Accept: 'application/json' };
+  if (process.env.COINGECKO_API_KEY) headers['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
+  return headers;
+}
+
 async function searchCoinGecko(symbol) {
   try {
-    const res = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`);
+    const res = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`, {
+      headers: coingeckoHeaders()
+    });
     if (!res.ok) return null;
     const data = await res.json();
     const match = data.coins?.find((c) => c.symbol?.toLowerCase() === symbol);
@@ -77,10 +89,11 @@ async function fetchCoinGeckoPrices(ids, currency) {
   if (ids.length === 0) return {};
   try {
     const res = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=${currency}&include_24hr_change=true`
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=${currency}&include_24hr_change=true`,
+      { headers: coingeckoHeaders() }
     );
     if (!res.ok) {
-      logger.error('PRICE', `CoinGecko HTTP ${res.status}`);
+      logger.error('PRICE', `CoinGecko HTTP ${res.status}${res.status === 403 && !process.env.COINGECKO_API_KEY ? '(.envにCOINGECKO_API_KEYを設定すると解消する可能性)' : ''}`);
       return {};
     }
     return await res.json();
@@ -135,4 +148,28 @@ async function fetchPrices(symbols, currency = 'usd', overrides = {}) {
   return result;
 }
 
-module.exports = { resolveSymbol, fetchPrices };
+// 押し目判定用の日足終値(古い順)。CoinGeckoの無料APIは過去365日までしか
+// 取れないので、200日線+傾き判定(20日前比較)にぎりぎり足りる365日分を取る。
+// DexScreenerには過去データのAPIが無いため、DexScreener由来の銘柄はnull(判定対象外)
+async function fetchDailyCloses(symbol, overrides = {}) {
+  const resolution = await resolveSymbol(symbol, overrides[symbol.toLowerCase()]);
+  if (resolution?.source !== 'coingecko') return null;
+  try {
+    const res = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(resolution.id)}/market_chart?vs_currency=usd&days=365&interval=daily`,
+      { headers: coingeckoHeaders(), signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) {
+      logger.error('PRICE', `CoinGecko market_chart HTTP ${res.status} (${symbol})`);
+      return null;
+    }
+    const data = await res.json();
+    const closes = (data.prices || []).map((p) => p[1]).filter(Number.isFinite);
+    return closes.length >= 2 ? closes : null;
+  } catch (err) {
+    logger.error('PRICE', err);
+    return null;
+  }
+}
+
+module.exports = { resolveSymbol, fetchPrices, fetchDailyCloses };
