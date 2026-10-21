@@ -79,9 +79,11 @@ function apiKeyFor(providerName) {
   return process.env[PROVIDER_DEFAULTS[providerName].apiKeyEnv];
 }
 
-// 対応するAPIキーが.envに入っているプロバイダだけを「切り替え可能」とする
+// 対応するAPIキーが.envに入っているプロバイダだけを「切り替え可能」とする。
+// CloudflareはCLOUDFLARE_ACCOUNT_ID未設定だとbaseUrlが空になり、
+// "Failed to parse URL from /chat/completions"で必ず失敗するため候補から外す
 function availableProviders() {
-  return Object.keys(PROVIDER_DEFAULTS).filter((name) => Boolean(apiKeyFor(name)));
+  return Object.keys(PROVIDER_DEFAULTS).filter((name) => Boolean(apiKeyFor(name)) && Boolean(PROVIDER_DEFAULTS[name].baseUrl));
 }
 
 let currentProvider = resolveProviderName(process.env.AI_PROVIDER) || availableProviders()[0] || 'groq';
@@ -97,6 +99,9 @@ function setProvider(name) {
   if (!resolved) return { ok: false, reason: `未対応のプロバイダ: ${name} (対応: ${Object.keys(PROVIDER_DEFAULTS).join(', ')})` };
   if (!apiKeyFor(resolved) && !process.env.AI_API_KEY) {
     return { ok: false, reason: `${PROVIDER_DEFAULTS[resolved].apiKeyEnv}が.envに未設定です` };
+  }
+  if (!PROVIDER_DEFAULTS[resolved].baseUrl && !process.env.AI_BASE_URL) {
+    return { ok: false, reason: `${PROVIDER_DEFAULTS[resolved].label}の接続先URLが未設定です(CLOUDFLARE_ACCOUNT_IDを.envに設定してください)` };
   }
   currentProvider = resolved;
   return { ok: true };
