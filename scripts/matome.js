@@ -17,8 +17,8 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('../src/utils/config');
-const { fetchSubjects, fetchFirstPost, fetchThread, parseDat, threadUrl, sjis } = require('../src/utils/fivechApi');
-const { isIdHidden } = require('../src/handlers/houseWatchHandler');
+const { fetchSubjects, fetchThread, parseDat, threadUrl, sjis } = require('../src/utils/fivechApi');
+const { isThreadIdHidden } = require('../src/handlers/houseWatchHandler');
 
 function parseArgs(argv) {
   const opts = { minReplies: 3, max: 30, replies: 5 };
@@ -44,15 +44,15 @@ function parseThreadUrl(url) {
 
 // 実況Gのsubject.txtから🏡入りスレを新しい順に見て、最初に見つかったID非表示スレを返す
 async function findLatestHouseThread() {
-  const { boardUrl, keyword = '🏡', extendIdMode = 'none' } = config.houseWatch || {};
+  const { boardUrl, keyword = '' } = config.houseWatch || {};
   const threads = (await fetchSubjects(boardUrl))
-    .filter((t) => t.title.includes(keyword))
+    .filter((t) => (!keyword || t.title.includes(keyword)) && t.resCount >= 2)
     .sort((a, b) => Number(b.key) - Number(a.key));
   for (const t of threads) {
-    const first = await fetchFirstPost(boardUrl, t.key);
-    if (first && isIdHidden(first, extendIdMode)) return { boardUrl, key: t.key };
+    const thread = await fetchThread(boardUrl, t.key).catch(() => null);
+    if (thread && isThreadIdHidden(thread.posts) === true) return { boardUrl, key: t.key, thread };
   }
-  throw new Error(`${boardUrl} に${keyword}入りのID非表示スレが見つからない`);
+  throw new Error(`${boardUrl} に${keyword ? `${keyword}入りの` : ''}ID非表示スレが見つからない`);
 }
 
 // 本文中の安価(>>12, >>3-5, 全角＞＞も)を拾う。範囲安価は10レス分までに制限
@@ -191,7 +191,7 @@ async function main() {
       console.error('使い方: node scripts/matome.js <スレURL> | --latest | --file <dat>  (詳細はファイル冒頭のコメント)');
       process.exit(1);
     }
-    thread = await fetchThread(target.boardUrl, target.key);
+    thread = target.thread || (await fetchThread(target.boardUrl, target.key));
     url = threadUrl(target.boardUrl, target.key);
     opts.key = target.key;
   }

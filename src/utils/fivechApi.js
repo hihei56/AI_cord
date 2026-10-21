@@ -22,10 +22,17 @@ function decodeEntities(s) {
 // そうなるとお🏡検知の定期チェック(前回が終わってから次を予約する)ごと止まるので必ず打ち切る
 const FETCH_TIMEOUT_MS = 20000;
 
-async function fetchText(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+async function fetchRaw(url, headers = {}) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT, ...headers },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
-  return sjis.decode(await res.arrayBuffer());
+  return { status: res.status, text: sjis.decode(await res.arrayBuffer()) };
+}
+
+async function fetchText(url) {
+  return (await fetchRaw(url)).text;
 }
 
 // boardUrl例: https://nova.5ch.io/livegalileo/
@@ -45,35 +52,6 @@ function threadUrl(boardUrl, key) {
   const u = new URL(boardUrl);
   const board = u.pathname.split('/').filter(Boolean)[0];
   return `${u.origin}/test/read.cgi/${board}/${key}/`;
-}
-
-// >>1の本文を取得する。!extend:付きで立てたスレは>>1末尾に
-// 「VIPQ2_EXTDAT: none:none:1000:512:: EXT was configured」が自動で付くので、それで判定できる。
-// Emberと同じくまず軽いdat(1行目が>>1)を取り、取れなければread.cgiのHTMLにフォールバックする
-async function fetchFirstPost(boardUrl, key) {
-  const u = new URL(boardUrl);
-  const board = u.pathname.split('/').filter(Boolean)[0];
-  try {
-    const dat = await fetchText(`${u.origin}/${board}/dat/${key}.dat`);
-    const first = dat.split('\n')[0];
-    if (first.includes('<>')) return first;
-  } catch {
-    // dat不可(過去ログ化・アクセス制限等)ならread.cgiへ
-  }
-  try {
-    const html = await fetchText(`${threadUrl(boardUrl, key)}1`);
-    // レス本体が無いHTML(エラーページ・規制ページ等)を「IDが無い」と誤判定しないよう判定保留にする。
-    // 現行のread.cgiは<article id="1">…<section class="post-content">形式、旧形式はdiv.post/<dd>
-    // (onihusube/2chAPIProxyのHTML→dat変換の正規表現と同じ判定材料)
-    if (!/class="post-content"|<article id=|class="(clear )?post"|<dd/.test(html)) {
-      logger.log('HOUSE', `${key}: read.cgiにレス本体が無いため判定保留`);
-      return null;
-    }
-    return html;
-  } catch (err) {
-    logger.error('HOUSE', err);
-    return null;
-  }
 }
 
 // レス本文/名前のHTMLをプレーンテキストにする(<br>は改行、アンカーの<a>等のタグは除去、実体参照は戻す)
@@ -149,10 +127,26 @@ async function fetchThread(boardUrl, key) {
   return parseReadCgi(await fetchText(threadUrl(boardUrl, key)));
 }
 
+// スレの先頭数レスだけを軽く取得する(ID有無の判定用)。datをRangeで先頭bytesバイトだけ取り、
+// 206(部分応答)なら途中で切れた最終行を捨てる。datが取れなければread.cgiの1-11レス目だけ取る
+async function fetchThreadHead(boardUrl, key, bytes = 8192) {
+  const u = new URL(boardUrl);
+  const board = u.pathname.split('/').filter(Boolean)[0];
+  try {
+    const { status, text } = await fetchRaw(`${u.origin}/${board}/dat/${key}.dat`, { Range: `bytes=0-${bytes - 1}` });
+    const body = status === 206 && !text.endsWith('\n') ? text.slice(0, text.lastIndexOf('\n') + 1) : text;
+    const parsed = parseDat(body);
+    if (parsed.posts.length > 0) return parsed;
+  } catch {
+    // read.cgiへ
+  }
+  return parseReadCgi(await fetchText(`${threadUrl(boardUrl, key)}1-11`));
+}
+
 module.exports = {
   fetchSubjects,
-  fetchFirstPost,
   fetchThread,
+  fetchThreadHead,
   threadUrl,
   decodeEntities,
   parseDat,
