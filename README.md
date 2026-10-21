@@ -227,9 +227,10 @@ node scripts/matome.js --file 1234567890.dat                                    
 
 特定サーバーの特定チャンネルの投稿を、他の複数チャンネルへそのまま転送(ミラー)する機能。`!slashbump`と同じ`mealpost`プロセス(`src/mealPostBot.js`)専用で動く(ai_cordのメインプロセスとは無関係)。設定は**コマンドを実行したアカウントに紐づく**(`client.accountState.relay`、`data/relay-<アカウントID>.json`に永続化)。`.env`の`RELAY_SOURCE_GUILD_ID`/`RELAY_SOURCE_CHANNEL_ID`/`RELAY_DESTINATION_CHANNEL_IDS`は初回起動時の初期値としてのみ使われ、以降は`!relay`コマンドで再起動不要に変更できる。
 
-- `src/handlers/relayHandler.js`が各アカウントの設定を見る。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)
+- `src/handlers/relayHandler.js`が各アカウントの設定を見る。監視元チャンネルへメッセージが投稿されると、本文はそのままコピペし、添付ファイル・embed画像/動画はダウンロード/再アップロードせずDiscordのCDN URLをそのまま本文に含めて転送する(URLがあればDiscord側が自動でプレビュー展開する)。ただし本文にURLがある時、YouTube等のリンクプレビュー(rich以外のembed)は転送先でも同じURLから自動展開されるので拾わない(サムネイル画像URLが二重に貼られるのを防ぐため)
 - 本文中にtwitter.com/x.com/nitter等のツイートリンクが含まれていれば、`src/utils/vxtwitter.js`でvxtwitter.com形式に変換してから転送する(生のツイートリンクはDiscordの埋め込みプレビューが展開されないため)。それ以外のURL・テキストはそのまま
 - 転送元・転送先チャンネルには、監視を担当するアカウント(転送先は`mealpost`プロセスのいずれかのアカウント)が参加している必要がある
+- 転送先チャンネルに参加している`mealpost`アカウントが複数あれば、直前に転送したアカウント以外からランダムに選んで交代で投稿する(2体なら交互になる)
 - 連続投稿があっても即座に全部転送せず、1件ずつ`relay.delayMs`(既定5秒)±`delayJitter`の間隔を空けて順番に転送する(機械的な連投に見えないようにするため)
 
 | コマンド | 内容 |

@@ -2,10 +2,22 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { convertTweetLinksInText } = require('../utils/vxtwitter');
 
-// 転送先チャンネルにアクセスできる(参加している)最初のアカウントを使う。
+// 転送先チャンネルごとに、直前に転送したアカウント
+const lastSenderByChannel = new Map();
+
+// 転送先チャンネルにアクセスできる(参加している)アカウントの中から、直前に
+// そのチャンネルへ転送したアカウント以外をランダムに選ぶ(同じアカウントばかりが
+// 転送し続けると機械的に見えるため、アクセスできるアカウントが複数あれば交代させる)。
 // 転送元・転送先は普段の会話用チャンネルと別の場合もあるため、channelStoreには依らない
-function findClientForChannel(clients, channelId) {
-  return clients.find((c) => c.channels?.cache.get(channelId));
+function pickClientForChannel(clients, channelId) {
+  const candidates = clients.filter((c) => c.channels?.cache.get(channelId));
+  if (candidates.length === 0) return null;
+
+  const last = lastSenderByChannel.get(channelId);
+  const pool = candidates.length > 1 ? candidates.filter((c) => c !== last) : candidates;
+  const client = pool[Math.floor(Math.random() * pool.length)];
+  lastSenderByChannel.set(channelId, client);
+  return client;
 }
 
 function relayDelay() {
@@ -26,14 +38,19 @@ function enqueue(fn) {
 // そのまま使う(ダウンロード/再アップロードは一切しない)。URLを本文に含めておけば
 // Discord側が自動でプレビュー展開してくれる。ただしtwitter.com/x.com/nitter等の
 // ツイートリンクだけはvxtwitter.com形式に変換する(生のツイートリンクだとDiscordの
-// 埋め込みプレビューが展開されないため)
+// 埋め込みプレビューが展開されないため)。
+// 本文にURLがある時、rich以外のembed(YouTube等のリンクプレビュー)はそのURLから
+// Discordが自動生成したものなので拾わない。拾うと転送先でもプレビューが展開される上に
+// サムネイル画像のURL(i.ytimg.com等)まで貼られて二重表示になるため
 function buildRelayContent(msg) {
   const parts = [];
   if (msg.content) parts.push(convertTweetLinksInText(msg.content));
   for (const a of msg.attachments.values()) {
     if (a.url) parts.push(a.url);
   }
+  const hasUrlInContent = /https?:\/\//.test(msg.content || '');
   for (const embed of msg.embeds || []) {
+    if (hasUrlInContent && embed.type !== 'rich') continue;
     const url = embed.image?.url || embed.thumbnail?.url || embed.video?.url;
     if (url) parts.push(url);
   }
@@ -45,7 +62,7 @@ async function relayMessage(clients, destinationChannelIds, msg) {
   if (!content) return;
 
   for (const channelId of destinationChannelIds) {
-    const client = findClientForChannel(clients, channelId);
+    const client = pickClientForChannel(clients, channelId);
     if (!client) {
       logger.error('RELAY', `転送先チャンネル${channelId}にアクセスできるアカウントが無い`);
       continue;
