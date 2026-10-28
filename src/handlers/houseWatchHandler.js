@@ -11,15 +11,19 @@ function sleep(ms) {
 
 // スレがID非表示か判定する。実況Gでは!extend:none:none:1000:512で立てても>>1末尾に
 // 「VIPQ2_EXTDAT: none:none:...」が付くだけで、>>2以降にはIDが出るスレが実在する(浪人以外は
-// ID非表示にできない板設定のため)。>>1自身はどちらのスレでもIDが出ないので判定に使えない。
-// そこで>>2以降(最大10レス)に1つでもIDが出ていれば「ID有り」とする。ID:???は非表示扱い。
-// レスが>>1しか無い間は判定できないのでnullを返す(呼び出し側で保留)
+// ID非表示にできない板設定のため)。また>>1にIDが出ているのに>>2がIDなし(荒らしのコピペ等)の
+// 通常スレもあり、>>2以降だけ見ると誤検知する。そこで>>1と>>2以降(最大10レス)の両方を見て、
+// どれか1つでもIDが出ていれば「ID有り」とする。ID:???は非表示扱い。
+// >>1にIDが出ていればその時点でID有り確定。そうでなくレスが>>1しか無い間は判定できないのでnullを返す(呼び出し側で保留)
 const VISIBLE_ID = /ID:(?!\?\?\?)\S+/;
 
 function isThreadIdHidden(posts) {
+  const hasId = (p) => VISIBLE_ID.test(p.id || '');
+  const op = posts.find((p) => p.no === 1);
+  if (op && hasId(op)) return false;
   const replies = posts.filter((p) => p.no >= 2).slice(0, 10);
   if (replies.length === 0) return null;
-  return !replies.some((p) => VISIBLE_ID.test(p.id || ''));
+  return !replies.some(hasId);
 }
 
 // 投稿役の候補。houseWatch.accountOrder(アカウントIDの配列)があればその順、無ければアカウント番号順で、
