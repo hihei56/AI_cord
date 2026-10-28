@@ -26,7 +26,7 @@ module.exports = {
       return msg.channel.send(
         `通知先: ${channelId ? `<#${channelId}>` : '(未設定)'}\n` +
           `監視板: ${hw.boardUrl}\n` +
-          `条件: ${hw.keyword ? `タイトルに「${hw.keyword}」` : '全スレ'}${hw.requireIdHidden === false ? '' : ' + >>1と>>2以降にIDが出ていない(ID非表示)'}\n` +
+          `条件: ${hw.keyword ? `タイトルに「${hw.keyword}」` : '全スレ'}${hw.requireIdHidden === false ? '' : ' + >>1と>>2以降(2レス以上)にIDが出ていない(ID非表示)'}\n` +
           `間隔: 約${Math.round((hw.checkIntervalMs || 120000) / 1000)}秒${hw.enabled ? '' : ' (settings.jsonでenabled=falseのため自動監視は停止中)'}`
       );
     }

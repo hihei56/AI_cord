@@ -14,16 +14,19 @@ function sleep(ms) {
 // ID非表示にできない板設定のため)。また>>1にIDが出ているのに>>2がIDなし(荒らしのコピペ等)の
 // 通常スレもあり、>>2以降だけ見ると誤検知する。そこで>>1と>>2以降(最大10レス)の両方を見て、
 // どれか1つでもIDが出ていれば「ID有り」とする。ID:???は非表示扱い。
-// >>1にIDが出ていればその時点でID有り確定。そうでなくレスが>>1しか無い間は判定できないのでnullを返す(呼び出し側で保留)
+// >>1にIDが出ていればその時点でID有り確定。そうでなければ>>2以降が2レス以上付くまでnullを返す(呼び出し側で保留)。
+// upliftでIDを消した荒らしが>>2にコピペをマルチポストするので、>>2だけでは🏡と判定できないため
 const VISIBLE_ID = /ID:(?!\?\?\?)\S+/;
+const MIN_REPLIES = 2;
 
 function isThreadIdHidden(posts) {
   const hasId = (p) => VISIBLE_ID.test(p.id || '');
   const op = posts.find((p) => p.no === 1);
   if (op && hasId(op)) return false;
   const replies = posts.filter((p) => p.no >= 2).slice(0, 10);
-  if (replies.length === 0) return null;
-  return !replies.some(hasId);
+  if (replies.some(hasId)) return false;
+  if (replies.length < MIN_REPLIES) return null;
+  return true;
 }
 
 // 投稿役の候補。houseWatch.accountOrder(アカウントIDの配列)があればその順、無ければアカウント番号順で、
@@ -106,8 +109,8 @@ async function checkOnceInner({ manual = false } = {}) {
       found.push(t);
       continue;
     }
-    // >>2が付くまではID有無を判定できないので、取得もせず保留(seenに入れず次回再チェック)
-    if (t.resCount < 2) continue;
+    // >>3が付くまではID有無を判定できないので、取得もせず保留(seenに入れず次回再チェック)
+    if (t.resCount < MIN_REPLIES + 1) continue;
     let hidden = null;
     try {
       hidden = isThreadIdHidden((await fetchThreadHead(boardUrl, t.key)).posts);
@@ -143,4 +146,4 @@ function registerHouseWatchHandler(clients) {
   scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce());
 }
 
-module.exports = { registerHouseWatchHandler, checkOnce, isThreadIdHidden };
+module.exports = { registerHouseWatchHandler, checkOnce, isThreadIdHidden, MIN_REPLIES };

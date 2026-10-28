@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../src/utils/config');
 const { fetchSubjects, fetchThread, parseDat, threadUrl, sjis } = require('../src/utils/fivechApi');
-const { isThreadIdHidden } = require('../src/handlers/houseWatchHandler');
+const { isThreadIdHidden, MIN_REPLIES } = require('../src/handlers/houseWatchHandler');
 
 function parseArgs(argv) {
   const opts = { minReplies: 3, max: 30, replies: 5 };
@@ -46,7 +46,7 @@ function parseThreadUrl(url) {
 async function findLatestHouseThread() {
   const { boardUrl, keyword = '' } = config.houseWatch || {};
   const threads = (await fetchSubjects(boardUrl))
-    .filter((t) => (!keyword || t.title.includes(keyword)) && t.resCount >= 2)
+    .filter((t) => (!keyword || t.title.includes(keyword)) && t.resCount >= MIN_REPLIES + 1)
     .sort((a, b) => Number(b.key) - Number(a.key));
   for (const t of threads) {
     const thread = await fetchThread(boardUrl, t.key).catch(() => null);
