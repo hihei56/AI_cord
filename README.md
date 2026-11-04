@@ -168,6 +168,18 @@ node scripts/matome.js --file 1234567890.dat                                    
 
 抜粋はAIを使わず安価の数だけで決める: `>>1` → 安価が`--min-replies`(既定3)以上付いたレス(最大`--max`件、既定30)と、それぞれへの返信(`--replies`件まで、既定5)。安価5以上は赤字・大きく、3以上は青字。スレ取得はお🏡検知と同じ`src/utils/fivechApi.js`(dat優先、失敗時read.cgi)を使う。
 
+### Hyperliquid取引記録の取得(`scripts/hyperliquid-history.js`)
+
+ボット本体とは独立した単体スクリプト。Hyperliquidの公開Info APIから約定・ファンディング・入出金/送金・注文履歴を取得し、`outputs/hyperliquid/`(git管理外)にCSV/JSONで保存する。読み取り専用なので秘密鍵は不要。
+
+```
+node scripts/hyperliquid-history.js 0xYourAddress                                  # 約定・ファンディング・入出金
+node scripts/hyperliquid-history.js 0xYourAddress --from 2025-01-01 --to 2025-12-31
+node scripts/hyperliquid-history.js 0xYourAddress --types fills,orders --format json
+```
+
+アドレスは`HYPERLIQUID_ADDRESS`でも指定できる。指定するのはメイン/サブアカウントのアドレスで、APIウォレット(エージェント)のアドレスではない。日付は`--tz`(既定`Asia/Tokyo`)で解釈する。APIの仕様上、約定は直近10000件、注文履歴は直近2000件までしか遡れない。
+
 ### AI投稿の一括停止(`aiPosting.enabled`)
 
 `config/settings.json`の`aiPosting.enabled`を`false`にすると、AIによる返信(`messageHandler`)・アカウント同士の掛け合いと割り込みリプライ(`conversationSeedHandler`)・自発投稿(`selfTalkHandler`)を止める。`!pause`(ロックダウン)と違い、コマンド・リアクション・価格アラート・ご飯投稿・お🏡検知は動いたままで、設定ファイルなので再起動しても停止状態が保たれる。再開は`true`に戻して再起動(mainにpushすれば自動デプロイで反映)。リアクションも止めたい場合は`reactions.enabled`を`false`にする。
