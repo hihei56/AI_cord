@@ -180,6 +180,19 @@ node scripts/hyperliquid-history.js 0xYourAddress --types fills,orders --format 
 
 アドレスは`HYPERLIQUID_ADDRESS`でも指定できる。指定するのはメイン/サブアカウントのアドレスで、APIウォレット(エージェント)のアドレスではない。日付は`--tz`(既定`Asia/Tokyo`)で解釈する。APIの仕様上、約定は直近10000件、注文履歴は直近2000件までしか遡れない。
 
+#### 確定申告用の計算(`scripts/hyperliquid-tax.js`)
+
+現物取引の雑所得を総平均法・円建てで計算し、国税庁「暗号資産の計算書(総平均法用)」と同じ並びのCSV(Excelで開けるBOM付き)と、取引ごとの円換算明細・生データを`outputs/hyperliquid/`に保存する。申告書に書く金額の根拠資料であり、提出必須の書類ではない。
+
+```
+node scripts/hyperliquid-tax.js 0xYourAddress --year 2026
+node scripts/hyperliquid-tax.js 0xYourAddress --year 2026 --opening opening.csv --fx-csv ttm.csv
+```
+
+- `--opening`: Hyperliquid以外で持っている/年内に買った同じ銘柄(`token,quantity,cost_jpy`)。総平均法は全保有分を合算するため、該当があれば必須
+- `--fx-csv`: ドル円レート(`date,rate`)。省略時はYahoo FinanceのUSDJPY終値(TTMではない近似値)。取引日にレートが無ければ前日以前で最も近い日を使う
+- 現物のみ対応(パーペチュアルは警告して除外)。ステーブルコインは1ドル扱いで、USDC自体の為替差損益は計算しない
+
 ### AI投稿の一括停止(`aiPosting.enabled`)
 
 `config/settings.json`の`aiPosting.enabled`を`false`にすると、AIによる返信(`messageHandler`)・アカウント同士の掛け合いと割り込みリプライ(`conversationSeedHandler`)・自発投稿(`selfTalkHandler`)を止める。`!pause`(ロックダウン)と違い、コマンド・リアクション・価格アラート・ご飯投稿・お🏡検知は動いたままで、設定ファイルなので再起動しても停止状態が保たれる。再開は`true`に戻して再起動(mainにpushすれば自動デプロイで反映)。リアクションも止めたい場合は`reactions.enabled`を`false`にする。

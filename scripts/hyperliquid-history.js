@@ -301,7 +301,11 @@ async function main() {
   console.log('\n' + summarize(results));
 }
 
-main().catch((err) => {
-  console.error(`エラー: ${err.message}`);
-  process.exit(1);
-});
+module.exports = { MAINNET_URL, TESTNET_URL, REQUEST_INTERVAL_MS, postInfo, fetchAllByTime, zonedDayStartMs, formatTime, toCsv, sleep };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`エラー: ${err.message}`);
+    process.exit(1);
+  });
+}
