@@ -7,6 +7,20 @@
   "aiPosting": {
     "enabled": false
   },
+  "agent": {
+    "enabled": false,
+    "tickIntervalMs": 600000,
+    "tickJitter": 0.4,
+    "quietMinMinutes": 10,
+    "maxQuietHours": 12,
+    "ownSilenceMinutes": 45,
+    "sleepHoursJST": [2, 7],
+    "channelCooldownMinutes": 20,
+    "maxActionsPerDay": 30,
+    "evalWindowMinutes": 10,
+    "exploreRate": 0.15,
+    "decisionMaxTokens": 400
+  },
   "cooldownSeconds": 90,
   "cooldownJitter": 0.3,
   "replyChance": {

@@ -424,4 +424,9 @@ function registerConversationSeedHandler(clients) {
   });
 }
 
-module.exports = { registerConversationSeedHandler };
+// 自律エージェント(agentHandler)が「AI同士の掛け合いを始める」を行動として選んだ時に使う
+function isSeedActive(channelId) {
+  return activeChannels.has(channelId);
+}
+
+module.exports = { registerConversationSeedHandler, seedConversation, isSeedActive, isRealUserMessage };

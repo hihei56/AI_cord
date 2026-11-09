@@ -15,6 +15,7 @@ const { registerMarketReportHandler } = require('./handlers/marketReportHandler'
 const { registerGifPostHandler } = require('./handlers/gifPostHandler');
 const { registerNewsPostHandler } = require('./handlers/newsPostHandler');
 const { registerHouseWatchHandler } = require('./handlers/houseWatchHandler');
+const { registerAgentHandler } = require('./handlers/agentHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
 const { initMarkov } = require('./utils/aiClient');
 
@@ -50,6 +51,7 @@ async function start() {
   registerPriceAlertHandler(clients);
   registerMarketReportHandler(clients);
   registerHouseWatchHandler(clients);
+  registerAgentHandler(clients);
 
   const results = await loginStaggered(clients);
 

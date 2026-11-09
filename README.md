@@ -118,6 +118,7 @@ CORPUS_FILE_2=別のコーパスファイル名
 | `!market now` / `!market status` | 市況まとめを今すぐ表示 / 設定状況を表示 |
 | `!housewatch channel` / `off` | なんJ実況G(livegalileo)のお🏡スレ検知の通知先を今のチャンネルに設定 / 通知停止 |
 | `!housewatch status` / `now` | 監視設定を表示 / 即時チェック |
+| `!agent [status\|on\|off\|now]` | 自律エージェントの状態・行動ごとの効果を表示 / 実行中の有効化・無効化 / 今いるチャンネルで1回判断させる(動作確認用) |
 | `!help` | コマンド一覧を表示 |
 
 `!slashbump`(他BOTへのスラッシュコマンド自動送信)はai_cordプロセスのコマンドではなく、[ご飯画像の定期投稿と同じ別プロセス](#スラッシュコマンド自動送信slashbump)側のコマンド。詳細は後述。
@@ -286,6 +287,17 @@ nitter等のRSSフィードを定期的にポーリングし、フィード内�
 - `src/utils/emojiGifReply.js`が本体。アカウントに`gifGenres`(`!gifgenre`で管理)が設定されていれば`emojiGifOnlyMode.gifChance`(既定50%)の確率でKlipy検索したGIFを、それ以外は`src/utils/reactionEmoji.js`のキーワードパターンマッチ絵文字(該当無しならランダムプールから)を返す
 - LLM呼び出し(`getAIResponse`/`generateSelfTalk`/`planConversationTopic`)は該当箇所で丸ごとスキップされるため、この間はAPIコストが一切発生しない。画像添付の読み取り(vision API)もLLM返信にしか使わないため合わせてスキップする
 - `false`に戻せば、既存の通常のLLM返信(+ときどきGIFを混ぜる従来の`gif`セクションの挙動)にそのまま戻る
+
+### 自律エージェント(`agent`)
+
+`config/settings.json`の`agent.enabled`をtrueにすると(実行中は`!agent on`)、各アカウントが一定間隔(既定10分±40%)で「観察 → 判断 → 行動 → 効果測定」を回す。
+
+1. **観察**: 応答チャンネルの直近20件を1回だけfetchし、最後の発言からの経過時間、人間同士で盛り上がっている最中か、放置された質問があるか、を集計する
+2. **足切り(LLMを使わない)**: 人間同士で会話中、深夜(`sleepHoursJST`)、直前が自分たちの発言、同じチャンネルで最近行動済み、人間が`maxQuietHours`以上いない、のどれかなら何もしない
+3. **判断**: 足切りを通った時だけ、LLM(`kind: 'seed'`の枠)に状況・直近の会話・過去の効果を渡して、`wait`(何もしない) / `reply`(人間の発言を拾う) / `topic`(話題振り) / `question`(軽い質問) / `news` / `search`(Web検索してネタにする、要`TAVILY_API_KEY`) / `seed`(仲間のアカウントと雑談を始める)から選ばせる。`exploreRate`(既定15%)の確率でLLMを使わずランダムに選ぶ(選ばれない行動の効果が測れないまま統計が偏るのを防ぐため)
+4. **効果測定**: 行動を送信してから`evalWindowMinutes`(既定10分)の間に増えた人間の発言数(自分たちへの返信は2倍)を数え、行動ごとに`data/agent-stats-<id>.json`へ記録する。`!agent status`で平均・標準誤差・`wait`との差が見られ、この数字は次の判断のプロンプトにも渡される
+
+1日の行動回数は`maxActionsPerDay`(既定30回)まで。`aiPosting.enabled`がfalseの間は動かない。
 
 ### AI同士の掛け合い・常時チャットモード(`conversationSeed`)
 

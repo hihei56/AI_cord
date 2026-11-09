@@ -87,7 +87,25 @@ const ANTI_FILLER_SPAM_CONSTRAINT =
   '\n【重要】素っ気ない性格でも、相手の発言の中身を無視した「そう」「知らん」「へえ」「まあ」のような同じ単語だけの相槌を連発しないこと。反応が薄いキャラクターでも、その時々の話題に応じた違う言葉を選ぶこと。';
 
 const SIMILARITY_THRESHOLD = 0.6;
-const SIMILARITY_MAX_RETRY = 3;
+// 以前は「同じプロンプトのまま最大3回再生成」していたため、口癖の強いペルソナでは
+// 4回連続で似た結果になりトークンだけを消費して見送り、という無駄が多かった。
+// 弾いた候補をプロンプトに「これとは違う言い回しで」と明示して再生成させるように
+// したことで1回目のリトライで通る確率が上がったので、上限を2回(=計3回)に減らす
+const SIMILARITY_MAX_RETRY = 2;
+
+// 日付・曜日・時刻を伝えておくことで、「今日」「週末」「もう夜だし」のような
+// 時間感覚のある発言ができるようにする。毎回必ず時間帯に触れさせると「おはよう」の
+// 連発のような別のパターン化を生みかねないため、参考程度・自然な時だけでよいと明示する
+function dateSection() {
+  return `\n【現在日時】${formatNowJST()}(${timeOfDayLabel()})。時間帯は参考程度。挨拶や時間の話をしたくなったら使ってよいが、毎回触れる必要はない。`;
+}
+
+// 類似度チェックで弾いた候補を、再生成時のプロンプトに「これとは違う言い回しで」と渡す
+function rejectedSection(rejected) {
+  return rejected?.length
+    ? `\n【却下された候補(直近の発言と似すぎ。これらとは単語も言い回しも変えること)】\n${rejected.join('\n')}`
+    : '';
+}
 // bot臭さ対策として類似度チェック・プロンプトの「これは避けて」に渡す直近発言の保持件数。
 // 4件だと、口癖への偏りが強いペルソナでは数分の間隔でも古い発言が枠から押し出されて
 // しまい、実質的に同じ短い相槌("そうそうかもな"等)を繰り返し投稿できてしまっていたため増やした
@@ -116,10 +134,12 @@ function isTooSimilarToRecent(text, recentReplies) {
 // 黙る方がマシなので、最終リトライでも似すぎている場合はnullを返して今回は
 // 見送る(完全な無反応になるのは他の対策で軽減する方針は他の箇所と同じ)
 async function withSimilarityRetry(accountState, logTag, generate) {
+  const rejected = [];
   for (let attempt = 0; attempt <= SIMILARITY_MAX_RETRY; attempt++) {
-    const result = await generate();
+    const result = await generate(rejected);
     if (!result) return result;
     if (!isTooSimilarToRecent(result, accountState?.recentReplies)) return result;
+    rejected.push(result);
     logger.log(logTag, `[${accountState?.id}] 直近の発言と似すぎているため再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY})`);
   }
   logger.log(logTag, `[${accountState?.id}] リトライしても直近の発言と似すぎるため今回は投稿を見送る`);
@@ -283,47 +303,35 @@ async function describeImage(imageUrls) {
   const urls = (Array.isArray(imageUrls) ? imageUrls : [imageUrls]).filter(Boolean);
   if (urls.length === 0) return null;
 
+  // 以前はここだけfetch・エラー処理・壊れた応答の検知を独自に書いていた。
+  // 共通のrequestChatCompletionに寄せる。接続先を明示指定(baseUrl)するので
+  // フォールバックはしない(Cerebras/Cloudflareの既定visionModelは実際には
+  // 画像を読めないテキストモデルで、フォールバックすると画像を見ずに
+  // それらしい説明をでっち上げる恐れがあるため、従来通り失敗時は諦める)
   const conn = aiProvider.getConnection('vision');
-
-  try {
-    const res = await fetch(`${conn.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${conn.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: conn.model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text:
-                  urls.length > 1
-                    ? `この${urls.length}枚の画像それぞれに何が写っているか、日本語で簡潔に説明して`
-                    : 'この画像に何が写っているか、日本語で1〜2文で簡潔に説明して'
-              },
-              ...urls.map((url) => ({ type: 'image_url', image_url: { url } }))
-            ]
-          }
-        ],
-        max_tokens: config.ai.vision.maxTokens || 200
-      })
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      logger.error('VISION', `HTTP ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
-      return null;
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text:
+            urls.length > 1
+              ? `この${urls.length}枚の画像それぞれに何が写っているか、日本語で簡潔に説明して`
+              : 'この画像に何が写っているか、日本語で1〜2文で簡潔に説明して'
+        },
+        ...urls.map((url) => ({ type: 'image_url', image_url: { url } }))
+      ]
     }
+  ];
 
-    return data.choices?.[0]?.message?.content?.trim() || null;
-  } catch (err) {
-    logger.error('VISION', err);
-    return null;
-  }
+  return callChatCompletion(messages, {
+    maxTokens: config.ai.vision.maxTokens || 200,
+    baseUrl: conn.baseUrl,
+    apiKey: conn.apiKey,
+    model: conn.model,
+    logTag: 'VISION'
+  });
 }
 
 // ファインチューニング済みモデルに直接投げる経路。ペルソナは学習済みモデル側に
@@ -357,12 +365,32 @@ async function getFinetuneResponse(accountState, userMsg, history, speakerMsg) {
   }
 }
 
+// AI同士の掛け合いでは、両者が同じように話題を出そうとして噛み合わなかったり、
+// 逆にお互い相槌ばかりで話が広がらなかったりしがちだった。会話ごとに
+// 「話題を広げる中心役」「聞き役・相槌役」を明確に割り振ることで、
+// 実際の雑談のような自然な役割分担を持たせる(役割自体はconversationSeedHandler側で
+// 会話単位に決めて渡す。人格そのものは変えず、あくまで振る舞い方の指示)。
+// 固定の1文だけを毎回同じ言い回しで渡すと、どのアカウントが中心/聞き役に
+// なっても同じような発言パターンに収束するため、複数の言い回しをランダムに選ぶ
+const ROLE_INSTRUCTIONS = {
+  center: [
+    '自分の話や具体的なエピソードを振ったり、相手に質問したりして会話を引っ張る。1つの話題に固執しすぎず自然に広げる',
+    'あなたから話しかけるような流れにする。話題を丁寧に説明しすぎず、自分のキャラクターらしいテンションで振る',
+    '相手が答えやすい具体的な話や小ネタを振って会話の主導権を握る。毎回質問形にする必要はない'
+  ],
+  reactor: [
+    '相手の話に短く相槌を打ったり感想を返したりすることを中心にし、自分から新しい話題を広げすぎない',
+    '基本は聞き役に回り、相手の発言を受けて短く反応する。たまに自分の話を混ぜても構わない',
+    '相手の話にちゃんと反応しつつ、自分から強く話題を変えない。素っ気ない一言だけの反応でもよい'
+  ]
+};
+
 async function getAIResponseOnce(
   accountState,
   userMsg,
   history = [],
   speakerMsg = null,
-  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null, role = null } = {}
+  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null, role = null, rejected = [] } = {}
 ) {
   if (accountState.aiMode === 'finetune') {
     if (!accountState.finetuneBaseUrl) {
@@ -372,11 +400,7 @@ async function getAIResponseOnce(
     return getFinetuneResponse(accountState, userMsg, history, speakerMsg);
   }
 
-  const { historyContextSize, temperature, maxTokens } = {
-    historyContextSize: config.ai.reply.historyContextSize,
-    temperature: config.ai.reply.temperature,
-    maxTokens: config.ai.reply.maxTokens
-  };
+  const { historyContextSize, temperature, maxTokens } = config.ai.reply;
 
   const ctx = history
     .slice(-historyContextSize)
@@ -432,25 +456,6 @@ async function getAIResponseOnce(
     ? `\n【直近の自分の発言(参考データ。この言い回しや絵文字の組み合わせを繰り返さないこと)】\n${accountState.recentReplies.join('\n')}`
     : '';
 
-  // AI同士の掛け合いでは、両者が同じように話題を出そうとして噛み合わなかったり、
-  // 逆にお互い相槌ばかりで話が広がらなかったりしがちだった。会話ごとに
-  // 「話題を広げる中心役」「聞き役・相槌役」を明確に割り振ることで、
-  // 実際の雑談のような自然な役割分担を持たせる(役割自体はconversationSeedHandler側で
-  // 会話単位に決めて渡す。人格そのものは変えず、あくまで振る舞い方の指示)。
-  // 固定の1文だけを毎回同じ言い回しで渡すと、どのアカウントが中心/聞き役に
-  // なっても同じような発言パターンに収束するため、複数の言い回しをランダムに選ぶ
-  const ROLE_INSTRUCTIONS = {
-    center: [
-      '自分の話や具体的なエピソードを振ったり、相手に質問したりして会話を引っ張る。1つの話題に固執しすぎず自然に広げる',
-      'あなたから話しかけるような流れにする。話題を丁寧に説明しすぎず、自分のキャラクターらしいテンションで振る',
-      '相手が答えやすい具体的な話や小ネタを振って会話の主導権を握る。毎回質問形にする必要はない'
-    ],
-    reactor: [
-      '相手の話に短く相槌を打ったり感想を返したりすることを中心にし、自分から新しい話題を広げすぎない',
-      '基本は聞き役に回り、相手の発言を受けて短く反応する。たまに自分の話を混ぜても構わない',
-      '相手の話にちゃんと反応しつつ、自分から強く話題を変えない。素っ気ない一言だけの反応でもよい'
-    ]
-  };
   const roleInstructionPool = ROLE_INSTRUCTIONS[role];
 
   // 以前はここまでの各項目(相手がAIである旨・役割・1行厳守・計算の遅さ・
@@ -493,26 +498,22 @@ async function getAIResponseOnce(
         ? `\n【下書き(マルコフ連鎖生成)】\n${draft}\n人格設定は無いので、上の下書きをベースに最低限の誤字脱字・助詞の修正だけを行って返信すること。単語の言い換え、文の作り直し、新しい話題や説明の追加はしないこと。下書きに無い一人称や主語を勝手に補わないこと。Discordの実際のユーザーの発言のように、丁寧な完全文に整えず、素っ気なく短いままにすること。`
         : '';
 
-  // 日付・曜日・時刻を伝えておくことで、「今日」「週末」「もう夜だし」のような
-  // 時間感覚のある発言ができるようにする(これが無いとAIは常に日付不明のまま喋る)。
-  // 時間帯ラベル(朝/夜等)も添えることで、早朝なら「おはよう」、深夜なら
-  // 「まだ起きてる」のような時間感覚の一言も自然に出せるようにする。ただし
-  // 毎回必ず時間帯に触れさせると「おはよう」の連発のような別のパターン化を
-  // 生みかねないため、あくまで参考程度・自然な時だけでよいと明示する
-  const dateSection = `\n【現在日時】${formatNowJST()}(${timeOfDayLabel()})。時間帯は参考程度。挨拶や時間の話をしたくなったら使ってよいが、毎回触れる必要はない。`;
-
   // AI同士の掛け合いでは、会話開始前にplanConversationTopicで決めたお題を
   // 全ターンで共有する。行き当たりばったりで各ターンを生成すると「そうだね」の
   // 連発のような浅い応酬になりがちなので、会話全体を貫く軸を持たせる
   const topicSection = topicHint ? `\n【この会話のお題(参考程度)】${topicHint}` : '';
 
-  const systemPrompt = `${accountState.persona}${memorySection}${antiRepeatSection}${rulesSection}${dateSection}${topicSection}${draftSection}\n【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}${languageSection(accountState)}\n【返信】`;
+  // 以前はsystemプロンプトの末尾に会話履歴+相手の発言を埋め込んだ上で、userメッセージにも
+  // 同じ発言(userMsg)を重ねて送っていた(相手の発言が毎回2回分トークンを食っていた)。
+  // system=人格・ルールなど「変わらない側」、user=会話履歴と今の発言、に分けて重複を無くす
+  const systemPrompt = `${accountState.persona}${memorySection}${antiRepeatSection}${rejectedSection(rejected)}${rulesSection}${dateSection()}${topicSection}${draftSection}`;
+  const userPrompt = `【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}${languageSection(accountState)}\n【返信】`;
 
   try {
     const reply = await callChatCompletion(
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMsg }
+        { role: 'user', content: userPrompt }
       ],
       // AI同士の掛け合い(partnerIsAi)はkind: 'seed'で区別する。プロバイダ振り分けは
       // aiProvider側の設定に従う。modelはアカウント単位のCHAT_MODEL上書きがあれば
@@ -539,19 +540,17 @@ async function getAIResponseOnce(
 
 // 直近の自分の発言と似すぎていたら再生成する(規則的な連投に見えないようにするため)
 async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null, options = {}) {
-  return withSimilarityRetry(accountState, 'AI', () => getAIResponseOnce(accountState, userMsg, history, speakerMsg, options));
+  return withSimilarityRetry(accountState, 'AI', (rejected) =>
+    getAIResponseOnce(accountState, userMsg, history, speakerMsg, { ...options, rejected })
+  );
 }
 
-async function generateSelfTalkOnce(accountState = null, topicHint = null, role = null) {
+async function generateSelfTalkOnce(accountState = null, topicHint = null, role = null, rejected = []) {
   try {
     // accountStateを渡さないとどのアカウントもペルソナ無しの汎用口調になり、
     // 2アカウントの自発投稿が同じ喋り方に見えてしまう(ペルソナが混ざる原因)ので、
     // 呼び出し側は必ずaccountStateを渡すこと
-    // 自発投稿(独り言)は「話しかけられて答える」のではなく自分から発する一言なので、
-    // 通常の返信よりも時間帯に触れた挨拶・つぶやきが自然に出やすい場面。ただし
-    // ここでも毎回時間帯に触れさせると「おはよう」の連発になりかねないため、
-    // 参考程度・自然な時だけでよいと明示する
-    const dateLine = `\n【現在日時】${formatNowJST()}(${timeOfDayLabel()})。時間帯は参考程度。挨拶や時間の話をしたくなったら使ってよいが、毎回触れる必要はない。`;
+    const dateLine = dateSection();
 
     // topicHint(planConversationTopicで事前に決めたお題)があればそれを優先し、
     // 無い場合のみ一定確率で実際のニュース見出しを話題のきっかけとして渡す。
@@ -571,9 +570,10 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     const roleLine =
       role === 'center' ? '\n具体的な話題や自分のエピソードを振って、相手が反応しやすい話しかけ方をすること。' : '';
 
+    const avoidLine = rejectedSection(rejected);
     const systemPrompt = accountState?.persona
-      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。${languageSection(accountState)}`
-      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}${ANTI_FILLER_SPAM_CONSTRAINT}${languageSection(accountState)}`;
+      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${avoidLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。${languageSection(accountState)}`
+      : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}${avoidLine}${ANTI_FILLER_SPAM_CONSTRAINT}${languageSection(accountState)}`;
 
     const text = await callChatCompletion(
       [
@@ -601,7 +601,9 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
 
 // 自発投稿も直近の自分の発言と似すぎていたら再生成する
 async function generateSelfTalk(accountState = null, topicHint = null, role = null) {
-  return withSimilarityRetry(accountState, 'SELF-TALK', () => generateSelfTalkOnce(accountState, topicHint, role));
+  return withSimilarityRetry(accountState, 'SELF-TALK', (rejected) =>
+    generateSelfTalkOnce(accountState, topicHint, role, rejected)
+  );
 }
 
 // AI同士の掛け合いを始める前に、賢いモデルで一度「今回何を話すか」を考えさせる。

@@ -32,6 +32,24 @@ function extractImageUrls(msg) {
   return [...new Set(urls)];
 }
 
+// 返信生成用の会話履歴(古い→新しい順)。以前は返信1回ごとに、ガード判定用の
+// fetch(上限20件)とは別に、タイピング待ちの後でもう一度fetch(10件)していた。
+// ガード用fetchの時点でチャンネルのメッセージキャッシュは埋まっており、待っている間に
+// 届いた新着もmessageCreate経由でキャッシュに積まれるので、キャッシュで足りる。
+// セルフボットではAPI呼び出しの回数そのものがbot判定の材料になりうるため、
+// 1返信あたりのAPI呼び出しを1回減らす。キャッシュが空に近い時(ガード用fetchが
+// 失敗した等)だけ従来通りfetchする
+async function recentHistory(channel, limit) {
+  let source = channel.messages.cache;
+  if (source.size < 2) {
+    source = await channel.messages.fetch({ limit });
+  }
+  return [...source.values()]
+    .filter(isRealUser)
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+    .slice(-limit);
+}
+
 function isDuplicateBurst(sorted) {
   const { minGapMs } = config.recentDuplicateGuard;
   if (sorted.size < 2) return false;
@@ -196,8 +214,7 @@ function registerMessageHandler(client) {
       await msg.channel.sendTyping();
       await new Promise((r) => setTimeout(r, Math.random() * (maxMs - minMs) + minMs));
 
-      const history = await msg.channel.messages.fetch({ limit: config.ai.reply.historyFetchLimit });
-      const ctxMsgs = [...history.filter(isRealUser).reverse().values()];
+      const ctxMsgs = await recentHistory(msg.channel, config.ai.reply.historyFetchLimit);
 
       let userMsg = msg.content;
       // 絵文字/GIFのみモードではLLMを一切呼ばないため、画像読み取り(vision API)も
