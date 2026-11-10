@@ -106,21 +106,27 @@ function buildActivities(client, presence) {
   return activities;
 }
 
+// 表示内容が変わらない時は送り直さない(既定30秒ごとに全アカウントがGatewayへ同じ
+// プレゼンスを送り続けていた)。再接続等で表示が消えていても直るよう、この間隔ごとには送る
+const PRESENCE_REFRESH_MS = 10 * 60000;
+
 async function updatePresence(client) {
   const { presence } = client.accountState;
+  const state = client.accountState;
   try {
     const activities = buildActivities(client, presence);
+    const signature = activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)';
+    if (signature === state.lastRpcSignature && Date.now() - (state.lastRpcSentAt || 0) < PRESENCE_REFRESH_MS) return;
+
     await client.user.setPresence({
       activities,
       status: presence.status
     });
+    state.lastRpcSentAt = Date.now();
 
-    // 更新間隔が短い(既定30秒)ため、選ばれた内容が前回と同じ時まで毎回ログすると
-    // 他のログが埋もれてしまう。実際に表示内容が変わった時だけログする
-    const signature = activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)';
-    if (signature !== client.accountState.lastRpcSignature) {
-      client.accountState.lastRpcSignature = signature;
-      logger.log('RPC', `[${client.accountState.id}] 更新: ${signature}`);
+    if (signature !== state.lastRpcSignature) {
+      state.lastRpcSignature = signature;
+      logger.log('RPC', `[${state.id}] 更新: ${signature}`);
     }
   } catch (err) {
     logger.error('RPC', err);

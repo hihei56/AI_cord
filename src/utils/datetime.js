@@ -2,48 +2,46 @@ const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
 // プロンプトに差し込む「今」の情報。サーバーのタイムゾーン設定に依存せず
 // 日本時間で表示したいので、Intl.DateTimeFormatでAsia/Tokyoに固定する
+// Intl.DateTimeFormatの生成は比較的重い(ロケール・タイムゾーンデータの解決)ため、
+// 呼び出しごとに作らずモジュール読み込み時に1回だけ作って使い回す。
+// todayJST/hourOfDayJSTは統計収集(serverStats)でメッセージ1件ごとに呼ばれる
+const FMT_NOW = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  weekday: 'short'
+});
+const FMT_HOUR = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false });
+const FMT_HOUR_MINUTE = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: 'numeric', minute: 'numeric', hour12: false });
+const FMT_DATE = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' });
+
 function formatNowJST(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('ja-JP', {
-    timeZone: 'Asia/Tokyo',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    weekday: 'short'
-  }).formatToParts(date);
+  const parts = FMT_NOW.formatToParts(date);
 
   const get = (type) => parts.find((p) => p.type === type)?.value;
   return `${get('year')}年${get('month')}月${get('day')}日(${get('weekday')}) ${get('hour')}:${get('minute')}`;
 }
 
 function hourJST(date = new Date()) {
-  return Number(new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false }).format(date));
+  return Number(FMT_HOUR.format(date));
 }
 
 // 日本時間での「今、その日の何時何分か」を分単位の小数で返す(9:30なら9.5)。
 // 定時投稿系の機能(mealImageHandler等)で「今日のこの時刻を過ぎたか」を
 // 判定するのに使う
 function hourOfDayJST(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('ja-JP', {
-    timeZone: 'Asia/Tokyo',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false
-  }).formatToParts(date);
+  const parts = FMT_HOUR_MINUTE.formatToParts(date);
   const get = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
   return get('hour') + get('minute') / 60;
 }
 
 // 日本時間での日付をYYYY-MM-DD形式で返す(「今日もう投稿したか」の判定キーに使う)
 function todayJST(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('ja-JP', {
-    timeZone: 'Asia/Tokyo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(date);
+  const parts = FMT_DATE.formatToParts(date);
   const get = (type) => parts.find((p) => p.type === type)?.value;
   return `${get('year')}-${get('month')}-${get('day')}`;
 }

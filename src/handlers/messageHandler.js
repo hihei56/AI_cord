@@ -42,21 +42,26 @@ function extractImageUrls(msg) {
 // 1返信あたりのAPI呼び出しを1回減らす。キャッシュが空に近い時(ガード用fetchが
 // 失敗した等)だけ従来通りfetchする
 async function recentHistory(channel, limit) {
-  let source = channel.messages.cache;
-  if (source.size < 2) {
-    source = await channel.messages.fetch({ limit });
-  }
+  // 足りない時だけfetchする。fetchした分はキャッシュに入るので、以降は呼ばれない
+  const source = channel.messages.cache.size >= limit ? channel.messages.cache : await channel.messages.fetch({ limit });
   return [...source.values()]
     .filter(isRealUser)
     .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
     .slice(-limit);
 }
 
+// 連投・自分の連続返信の判定用に、直近の実ユーザーの発言を新しい順で返す。
+// 判定に使うのは直近2件だけで、それはmessageCreateで受信済みなのでキャッシュで足りる。
+// 起動直後などでキャッシュがほぼ空の時だけfetchする
+async function recentSorted(channel, limit) {
+  const source = channel.messages.cache.size >= 2 ? channel.messages.cache : await channel.messages.fetch({ limit });
+  return [...source.values()].filter(isRealUser).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+}
+
 function isDuplicateBurst(sorted) {
   const { minGapMs } = config.recentDuplicateGuard;
-  if (sorted.size < 2) return false;
-  if (sorted.at(0).createdTimestamp - sorted.at(1).createdTimestamp < minGapMs) return true;
-  return false;
+  if (sorted.length < 2) return false;
+  return sorted[0].createdTimestamp - sorted[1].createdTimestamp < minGapMs;
 }
 
 // config.replyChanceの値(mention/reply/normal)は固定の定数なので、そのまま
@@ -66,7 +71,7 @@ function isDuplicateBurst(sorted) {
 // 反応頻度のようにばらつきを持たせる
 const REPLY_CHANCE_JITTER = 0.15;
 
-function resolveChance(msg, client, state, sortedMessages) {
+function resolveChance(msg, client, state, presenceLevel) {
   const isMention = msg.mentions.has(client.user.id);
   const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
 
@@ -79,7 +84,7 @@ function resolveChance(msg, client, state, sortedMessages) {
   // 人間の人数でbotの出しゃばり具合を変える(humanPresence参照)。人間同士で回っている時は
   // 引っ込み、1人しかいない時は寂しくならないよう反応を増やす。
   // メンション・リプライで直接呼ばれた時は人数に関係なく普通に反応する
-  if (!isMention && !isReply) chance = Math.min(1, chance * humanPresence.replyFactor(humanPresence.level(msg.channel)));
+  if (!isMention && !isReply) chance = Math.min(1, chance * humanPresence.replyFactor(presenceLevel));
 
   // ユーザーが直接リプライしてきた時は、アカウントごとの確率ばらつき
   // (replyChanceMultiplier)も無視してほぼ確実に反応する(呼びかけられたのに
@@ -162,21 +167,23 @@ function registerMessageHandler(client) {
     const effectiveCooldownMs = cooldownSeconds * 1000 * (1 + (Math.random() * 2 - 1) * cooldownJitterRatio);
     if (!isTestChannel && now - state.lastReplyTime < effectiveCooldownMs) return;
 
-    let sorted;
-    try {
-      const fetchLimit = Math.max(config.recentDuplicateGuard.fetchLimit, config.crowdGuard?.fetchLimit ?? 0);
-      const recent = await msg.channel.messages.fetch({ limit: fetchLimit });
-      sorted = recent.filter(isRealUser).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
-      if (!isTestChannel) {
-        if (isDuplicateBurst(sorted)) return;
-        if (sorted.size >= 2 && sorted.at(1).author.id === client.user.id) return;
-      }
-    } catch {
-      // ignore fetch failures, fall through to reply attempt
-    }
-
-    const chance = isTestChannel ? 1 : resolveChance(msg, client, state, sorted);
+    // 確率判定を履歴の取得より先にする。以前は全アカウントが人間の発言のたびに
+    // 履歴をfetch(Discord API呼び出し)してから確率判定していたため、アカウント数N
+    // ×発言数のAPI呼び出しが発生し、その大半は確率で落ちて無駄になっていた。
+    // 確率判定に必要な人数(humanPresence)はキャッシュだけで出せる
+    const presenceLevel = humanPresence.level(msg.channel);
+    const chance = isTestChannel ? 1 : resolveChance(msg, client, state, presenceLevel);
     if (Math.random() > chance) return;
+
+    if (!isTestChannel) {
+      try {
+        const sorted = await recentSorted(msg.channel, Math.max(config.recentDuplicateGuard.fetchLimit, config.crowdGuard?.fetchLimit ?? 0));
+        if (isDuplicateBurst(sorted)) return;
+        if (sorted.length >= 2 && sorted[1].author.id === client.user.id) return;
+      } catch {
+        // ignore fetch failures, fall through to reply attempt
+      }
+    }
 
     // cooldownチェック(100行目)はここまでの間にawait(履歴fetch等)を挟んでいるため、
     // 別のメッセージが同時期に届くと両方とも古いlastReplyTimeを見て通過してしまい、
@@ -188,7 +195,7 @@ function registerMessageHandler(client) {
 
     // 同じ発言に複数アカウントが返信しようとした場合、最初の1つがlead(普通に返信)、
     // 2つ目以降はleadの返信に乗っかるfollowerになる(並行して別々の返信を投げない)
-    const crowdRole = crowd.claim(msg.id, state.id, humanPresence.level(msg.channel));
+    const crowdRole = crowd.claim(msg.id, state.id, presenceLevel);
     if (crowdRole === 'none') return;
     if (crowdRole === 'follower') {
       crowd.follow(client, msg).catch((err) => logger.error('CROWD', err));

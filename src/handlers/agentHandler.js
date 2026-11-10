@@ -64,10 +64,13 @@ function isSleepTime() {
   return start <= end ? h >= start && h < end : h >= start || h < end;
 }
 
-// チャンネルの状況を1回のfetchで集計する
+// チャンネルの状況を集計する。直近のメッセージはmessageCreateで受信済みなので、
+// キャッシュに20件以上あればAPIを呼ばない(起動直後など足りない時だけfetch)
 async function observe(channel) {
-  const fetched = await channel.messages.fetch({ limit: 20 });
-  const messages = [...fetched.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+  const OBSERVE_LIMIT = 20;
+  const source =
+    channel.messages.cache.size >= OBSERVE_LIMIT ? channel.messages.cache : await channel.messages.fetch({ limit: OBSERVE_LIMIT });
+  const messages = [...source.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp).slice(-OBSERVE_LIMIT);
   const humans = messages.filter(isRealUserMessage);
   const last = messages.at(-1);
   const lastHuman = humans.at(-1);
@@ -85,7 +88,6 @@ async function observe(channel) {
     minutesSinceHuman: minutesSince(lastHuman?.createdTimestamp),
     lastIsOwn: Boolean(last && isOwnAccount(last.author.id)),
     activeHumanChat: recentHumans.length >= 4 && new Set(recentHumans.map((m) => m.author.id)).size >= 2,
-    humansBefore: humans.filter((m) => minutesSince(m.createdTimestamp) <= AGENT.evalWindowMinutes).length,
     unansweredQuestion: Boolean(unansweredQuestion)
   };
 }
@@ -255,8 +257,8 @@ function scheduleEvaluation(state, channel, type, actedAt) {
   const windowMs = AGENT.evalWindowMinutes * 60000;
   setTimeout(async () => {
     try {
-      const fetched = await channel.messages.fetch({ limit: 50 });
-      const after = [...fetched.values()].filter(
+      // 行動後に届いたメッセージはすべてmessageCreateでキャッシュに入っているのでfetch不要
+      const after = [...channel.messages.cache.values()].filter(
         (m) => isRealUserMessage(m) && m.createdTimestamp > actedAt && m.createdTimestamp <= actedAt + windowMs
       );
       const replies = after.filter((m) => m.mentions?.repliedUser && isOwnAccount(m.mentions.repliedUser.id)).length;

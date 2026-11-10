@@ -55,8 +55,12 @@ function isRealUserMessage(msg) {
 // true(対象)扱いにする
 async function isChannelQuiet(channel) {
   try {
-    const recent = await channel.messages.fetch({ limit: 20 });
-    const lastHuman = [...recent.values()].find(isRealUserMessage);
+    // 直近20件はmessageCreateで受信済みならキャッシュにある。足りない時だけfetchする
+    const recent = channel.messages.cache.size >= 20 ? channel.messages.cache : await channel.messages.fetch({ limit: 20 });
+    const lastHuman = [...recent.values()]
+      .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+      .slice(0, 20)
+      .find(isRealUserMessage);
     if (!lastHuman) return true;
     return Date.now() - lastHuman.createdTimestamp > QUIET_THRESHOLD_MS;
   } catch {
@@ -113,12 +117,9 @@ async function showTyping(channel, accountId) {
 async function humanInterruptedSince(client, channelId, sinceTimestamp) {
   const channel = client.channels.cache.get(channelId);
   if (!channel) return false;
-  try {
-    const recent = await channel.messages.fetch({ limit: 5 });
-    return [...recent.values()].some((m) => m.createdTimestamp > sinceTimestamp && isRealUserMessage(m));
-  } catch {
-    return false;
-  }
+  // sinceTimestamp以降に届いたメッセージはすべてmessageCreateでキャッシュに入っている。
+  // 以前は掛け合いの1ターンごとにfetchしていた(1会話で最大10回前後のAPI呼び出し)
+  return [...channel.messages.cache.values()].some((m) => m.createdTimestamp > sinceTimestamp && isRealUserMessage(m));
 }
 
 // 進行中の掛け合いがあるチャンネルID。alwaysOnモードは短い間隔で次のfn()が

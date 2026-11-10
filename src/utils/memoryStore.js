@@ -38,13 +38,22 @@ function createMemoryStore(accountId) {
   // 変えたくない(いちいちawaitさせたくない)ので、書き込みをキューに繋げて
   // 直列実行することで、非同期化しつつ複数の書き込みが競合して古い状態で
   // 上書きされる(=後から完了した古い書き込みで最新の状態が消える)ことを防ぐ
+  // 返信1回ごとにaddUserNoteとaddRecentReplyの2回保存が走り、そのたびに全ユーザー分の
+  // 記憶をJSON化して書き込んでいた。2秒以内の保存要求は1回の書き込みにまとめる
+  // (書き込み自体は従来通りキューで直列化し、古い状態で上書きされないようにする)
   let writeQueue = Promise.resolve();
+  let saveScheduled = false;
   function save() {
-    const snapshot = JSON.stringify(state, null, 2);
-    writeQueue = writeQueue
-      .then(() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }))
-      .then(() => fs.promises.writeFile(filePath, snapshot))
-      .catch((err) => logger.error('MEMORY', err));
+    if (saveScheduled) return;
+    saveScheduled = true;
+    setTimeout(() => {
+      saveScheduled = false;
+      const snapshot = JSON.stringify(state, null, 2);
+      writeQueue = writeQueue
+        .then(() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }))
+        .then(() => fs.promises.writeFile(filePath, snapshot))
+        .catch((err) => logger.error('MEMORY', err));
+    }, 2000);
   }
 
   function ensureUser(userId) {
