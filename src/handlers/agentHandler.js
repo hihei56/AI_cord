@@ -7,6 +7,7 @@ const { hourOfDayJST } = require('../utils/datetime');
 const { getAllClients } = require('../utils/accountRegistry');
 const { getRandomHeadline } = require('../utils/newsTopics');
 const webSearch = require('../utils/webSearch');
+const usageLedger = require('../utils/usageLedger');
 const { createEngagementStats } = require('../utils/engagementStats');
 const { callChatCompletion, getAIResponse, generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { seedConversation, isSeedActive, isRealUserMessage } = require('./conversationSeedHandler');
@@ -269,8 +270,17 @@ function scheduleEvaluation(state, channel, type, actedAt) {
 }
 
 // 1チャンネル分の観察→判断→行動。force=trueはコマンドからの手動実行用で、ゲートを無視する
-async function runOnce(client, channel, { force = false } = {}) {
+function runOnce(client, channel, options = {}) {
+  return usageLedger.runBackground(() => runOnceInner(client, channel, options));
+}
+
+async function runOnceInner(client, channel, { force = false } = {}) {
   const state = client.accountState;
+  // 履歴fetch無しで判定できる足切りは先に済ませ、Discord APIへの無駄な呼び出しを減らす
+  if (!force) {
+    if (isSeedActive(channel.id)) return { skipped: 'AI同士の掛け合いが進行中' };
+    if (minutesSince(lastChannelActionAt.get(channel.id)) < AGENT.channelCooldownMinutes) return { skipped: 'このチャンネルでは最近行動済み' };
+  }
   const obs = await observe(channel);
 
   const skipReason = force ? null : gate(obs, channel.id);
@@ -309,6 +319,7 @@ async function tick(client) {
   if (config.aiPosting?.enabled === false) return;
   if (isSleepTime()) return;
   if (state.agentStats.actionsToday() >= AGENT.maxActionsPerDay) return;
+  if (!usageLedger.canStartBackground()) return;
 
   const channelIds = [...state.channelStore.listChannels()].sort(() => Math.random() - 0.5);
   for (const channelId of channelIds) {

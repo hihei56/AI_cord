@@ -1,6 +1,7 @@
 const logger = require('../../utils/logger');
 const { formatSummary } = require('../../utils/engagementStats');
 const { runOnce, AGENT } = require('../../handlers/agentHandler');
+const usageLedger = require('../../utils/usageLedger');
 
 module.exports = {
   name: 'agent',
@@ -28,6 +29,7 @@ module.exports = {
 
     return msg.channel.send(
       `🤖 エージェント: **${state.agentEnabled ? '有効' : '無効'}** / 今日の行動 ${state.agentStats.actionsToday()}/${AGENT.maxActionsPerDay}回\n` +
+        `今日のトークン消費: 人間への返信 ${usageLedger.summary().human} / バックグラウンド ${usageLedger.summary().background}(上限 ${usageLedger.summary().backgroundBudget})\n` +
         `行動ごとの効果(行動後${AGENT.evalWindowMinutes}分間に増えた人間の発言数):\n\`\`\`\n${formatSummary(state.agentStats.summary())}\n\`\`\``
     );
   }

@@ -6,6 +6,7 @@ const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
+const usageLedger = require('../utils/usageLedger');
 
 // 会話履歴に「実際は何を送ったか」をそのまま積むと、GIFのURLをLLMがテキストとして
 // 解釈しようとして不自然になるため、GIFを送った時の履歴には代わりにこのプレース
@@ -207,13 +208,14 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
 // 途中でユーザーが発言してきたら打ち切り、通常のmessageHandler(人間には普通に反応する)に譲る
 async function seedConversation(clientA, clientB, channelId) {
   if (activeChannels.has(channelId)) return;
+  if (!usageLedger.canStartBackground()) return;
 
   const channelA = clientA.channels.cache.get(channelId);
   if (!channelA) return;
 
   activeChannels.add(channelId);
   try {
-    await runSeedConversation(clientA, clientB, channelId, channelA);
+    await usageLedger.runBackground(() => runSeedConversation(clientA, clientB, channelId, channelA));
   } finally {
     activeChannels.delete(channelId);
   }
@@ -378,7 +380,10 @@ function registerBotReplyTrigger(clients) {
       const posterClient = clients.find((c) => c.user?.id === msg.author.id);
       if (!posterClient) return;
 
-      reactToSiblingMessage(client, posterClient, msg.channel.id, msg).catch((err) => logger.error('SEED', err));
+      if (!usageLedger.canStartBackground()) return;
+      usageLedger
+        .runBackground(() => reactToSiblingMessage(client, posterClient, msg.channel.id, msg))
+        .catch((err) => logger.error('SEED', err));
     });
   }
 }
@@ -404,6 +409,8 @@ function registerConversationSeedHandler(clients) {
   // ここも毎回ランダムな待機時間で次回をスケジュールする
   scheduleWithJitter(intervalMs, CHECK_INTERVAL_JITTER, async () => {
     if (!ALWAYS_ON && Math.random() > TRIGGER_CHANCE) return;
+    // 上限到達後に過疎チェック(履歴fetch)だけ空回りさせない
+    if (!usageLedger.canStartBackground()) return;
 
     const [clientA, clientB] = ALWAYS_ON ? pickRotationPair(clients) : pickPair(clients);
     if (!clientA?.user || !clientB?.user) return;

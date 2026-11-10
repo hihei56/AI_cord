@@ -5,6 +5,7 @@ const logger = require('./logger');
 const { MarkovChain, loadCorpus, buildTokenizer } = require('./markovChain');
 const { resolveDisplayName } = require('./nicknames');
 const aiProvider = require('./aiProvider');
+const usageLedger = require('./usageLedger');
 const { formatNowJST, timeOfDayLabel } = require('./datetime');
 const { getRandomHeadline, getHeadlines } = require('./newsTopics');
 
@@ -202,6 +203,8 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   // 中断されてしまい、「他のプロバイダが生きていれば会話を止めない」という
   // フォールバック機構の目的を果たせなくなる。そのため他の失敗パターン(HTTPエラー等)
   // と同じくnullを返して呼び出し元でフォールバックを継続できるようにする
+  if (usageLedger.isCoolingDown(conn.provider)) return null;
+
   let res, data;
   try {
     res = await fetch(`${conn.baseUrl}/chat/completions`, {
@@ -230,6 +233,7 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   }
 
   if (!res.ok) {
+    if (res.status === 429) usageLedger.coolDown(conn.provider, res.headers?.get?.('retry-after'));
     logger.error(logTag, `HTTP ${res.status} ${res.statusText} (${conn.provider}): ${JSON.stringify(data)}`);
     return null;
   }
@@ -237,6 +241,7 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   // 実際の消費トークン数をログに残す。レート制限の間隔調整を勘ではなく
   // 実測値ベースでできるようにするため(以前は成功時の消費量が全く見えなかった)
   if (data.usage) {
+    usageLedger.record(conn.provider, data.usage.total_tokens);
     logger.log(logTag, `[usage/${conn.provider}] prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
   }
 
@@ -270,6 +275,13 @@ async function callChatCompletion(
   // kind='seed'(AI同士の掛け合い)は人間向けの通常会話とは別のトークン枠(Gemini等)を使う。
   // baseUrl未指定でmodelだけ指定された場合(アカウント単位のCHAT_MODEL上書き)は、
   // プロバイダの認証・接続先はそのままにモデル名だけ差し替える
+  // バックグラウンド(エージェント・AI同士の掛け合い)の1日の上限を使い切ったら、
+  // 人間への返信用の枠を残すためバックグラウンドからの呼び出しはここで止める
+  if (usageLedger.isBackground() && !usageLedger.canStartBackground()) {
+    logger.log(logTag, 'バックグラウンドの1日のトークン上限に達したため呼び出しを見送り');
+    return null;
+  }
+
   const conn = baseUrl
     ? { provider: null, baseUrl, apiKey, model }
     : { ...aiProvider.getConnection(kind), ...(model ? { model } : {}) };

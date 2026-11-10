@@ -7,6 +7,10 @@
   "aiPosting": {
     "enabled": true
   },
+  "budget": {
+    "backgroundDailyTokens": 80000,
+    "rateLimitCooldownMs": 60000
+  },
   "agent": {
     "enabled": true,
     "tickIntervalMs": 600000,
