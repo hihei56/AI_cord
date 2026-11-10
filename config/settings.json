@@ -18,7 +18,6 @@
     "channelCooldownMinutes": 20,
     "maxActionsPerDay": 30,
     "evalWindowMinutes": 10,
-    "exploreRate": 0.15,
     "decisionMaxTokens": 400
   },
   "cooldownSeconds": 90,
