@@ -52,6 +52,19 @@ const PROVIDER_DEFAULTS = {
     model: 'meta/llama-3.2-11b-vision-instruct',
     visionModel: 'meta/llama-3.2-11b-vision-instruct'
   },
+  logfare: {
+    label: 'Logfare',
+    // https://logfare.ai の無料OpenAI互換API(レート制限なしを謳う)。運営者は不明で、
+    // 第三者の報告では「全リクエスト(プロンプト・応答)を内部研究用に記録、/consentで
+    // オプトアウト可」とされる。Discordの他人の発言を送ることになるので、人間への返信
+    // (chat)の既定には使わず、バックグラウンド処理(エージェント・AI同士の掛け合い=seed)の
+    // 逃がし先として使う想定。モデルIDは頻繁に変わるため、既定は空いているモデルへ自動で
+    // 振り分ける logfare/auto にし、LOGFARE_MODELで固定できるようにする
+    baseUrl: process.env.LOGFARE_BASE_URL || 'https://logfare.ai/v1',
+    apiKeyEnv: 'LOGFARE_API_KEY',
+    model: process.env.LOGFARE_MODEL || 'logfare/auto',
+    visionModel: process.env.LOGFARE_MODEL || 'logfare/auto'
+  },
   cloudflare: {
     label: 'Cloudflare Workers AI',
     // Cloudflareは接続先URLにAccount IDを含める必要があるため、他プロバイダと違い
@@ -125,8 +138,10 @@ function getConnection(kind = 'chat') {
     // 別の余力があるプロバイダに逃がしたい。SEED_AI_PROVIDERで明示指定できるほか、
     // 未指定なら「現在のプロバイダ以外でAPIキーが設定済みのもの」を自動で選ぶ
     // (PROVIDER_DEFAULTSの定義順)。他に無ければ現在のプロバイダを使い回す
+    // LOGFARE_API_KEYがあれば、レート制限の無いLogfareを最優先の逃がし先にする
     const otherAvailable = availableProviders().find((name) => name !== currentProvider);
-    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || otherAvailable || currentProvider;
+    const preferred = apiKeyFor('logfare') && currentProvider !== 'logfare' ? 'logfare' : otherAvailable;
+    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || preferred || currentProvider;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,

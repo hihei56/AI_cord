@@ -282,9 +282,15 @@ async function callChatCompletion(
     return null;
   }
 
+  // バックグラウンド(エージェント・掛け合い)から通常の会話生成(kind='chat')が呼ばれた場合も、
+  // 人間への返信用プロバイダではなくseed用(Logfare等の逃がし先)に回す
+  if (kind === 'chat' && usageLedger.isBackground()) kind = 'seed';
+  const connBase = baseUrl ? null : aiProvider.getConnection(kind);
+  // アカウント単位のCHAT_MODEL上書きは人間向けプロバイダのモデル名なので、
+  // 別プロバイダ(seed)に回した時は使わない(存在しないモデル名で404になるため)
   const conn = baseUrl
     ? { provider: null, baseUrl, apiKey, model }
-    : { ...aiProvider.getConnection(kind), ...(model ? { model } : {}) };
+    : { ...connBase, ...(model && connBase.provider === aiProvider.getProvider() ? { model } : {}) };
 
   const content = await requestChatCompletion(conn, messages, { temperature, maxTokens, logTag, skipGarbledCheck });
   if (content) return content;

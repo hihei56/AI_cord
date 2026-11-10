@@ -4,6 +4,7 @@ const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
 const logger = require('./logger');
 const { todayJST } = require('./datetime');
+const aiProvider = require('./aiProvider');
 
 // LLMのトークン消費の台帳と、レート制限(429)を受けたプロバイダの一時停止。
 //
@@ -30,7 +31,8 @@ try {
 
 function today() {
   const date = todayJST();
-  if (state.date !== date) state = { date, human: 0, background: 0, byProvider: {} };
+  if (state.date !== date) state = { date, human: 0, background: 0, byProvider: {}, backgroundByProvider: {} };
+  state.backgroundByProvider = state.backgroundByProvider || {};
   return state;
 }
 
@@ -59,14 +61,21 @@ function isBackground() {
 function record(provider, tokens) {
   if (!tokens) return;
   const s = today();
-  if (isBackground()) s.background += tokens;
-  else s.human += tokens;
+  if (isBackground()) {
+    s.background += tokens;
+    s.backgroundByProvider[provider || 'custom'] = (s.backgroundByProvider[provider || 'custom'] || 0) + tokens;
+  } else {
+    s.human += tokens;
+  }
   s.byProvider[provider || 'custom'] = (s.byProvider[provider || 'custom'] || 0) + tokens;
   saveSoon();
 }
 
+// 上限の目的は「人間への返信用プロバイダの枠を残すこと」なので、数えるのはバックグラウンドが
+// 人間用プロバイダで消費した分だけ。Logfare等の別プロバイダに逃がせている間は上限に数えず、
+// 逃がし先が落ちてフォールバックで人間用プロバイダに流れ込んだ分だけが上限に効く
 function backgroundBudgetLeft() {
-  return BACKGROUND_DAILY_TOKENS - today().background;
+  return BACKGROUND_DAILY_TOKENS - (today().backgroundByProvider[aiProvider.getProvider()] || 0);
 }
 
 // バックグラウンド処理を新しく始めてよいか(呼び出し側で開始前に確認する)
