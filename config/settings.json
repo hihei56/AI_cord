@@ -11,6 +11,12 @@
     "backgroundDailyTokens": 80000,
     "rateLimitCooldownMs": 60000
   },
+  "serverCoach": {
+    "enabled": true,
+    "reportWeekday": 1,
+    "reportHourJST": 21,
+    "maxTokens": 1800
+  },
   "agent": {
     "enabled": true,
     "tickIntervalMs": 600000,
