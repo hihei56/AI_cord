@@ -75,6 +75,8 @@ function record(provider, tokens) {
 // 人間用プロバイダで消費した分だけ。Logfare等の別プロバイダに逃がせている間は上限に数えず、
 // 逃がし先が落ちてフォールバックで人間用プロバイダに流れ込んだ分だけが上限に効く
 function backgroundBudgetLeft() {
+  // 人間への返信をローカルLLMで回している場合、守るべき有料/無料枠が無いので上限を掛けない
+  if (aiProvider.getProvider() === 'local') return Infinity;
   return BACKGROUND_DAILY_TOKENS - (today().backgroundByProvider[aiProvider.getProvider()] || 0);
 }
 
@@ -85,11 +87,11 @@ function canStartBackground() {
 
 const cooldownUntil = new Map();
 
-function coolDown(provider, retryAfterHeader) {
+function coolDown(provider, retryAfterHeader, fallbackMs = DEFAULT_COOLDOWN_MS, reason = 'レート制限(429)') {
   const sec = Number(retryAfterHeader);
-  const ms = Number.isFinite(sec) && sec > 0 ? sec * 1000 : DEFAULT_COOLDOWN_MS;
+  const ms = Number.isFinite(sec) && sec > 0 ? sec * 1000 : fallbackMs;
   cooldownUntil.set(provider || 'custom', Date.now() + ms);
-  logger.log('USAGE', `${provider || 'custom'}がレート制限(429)を返したため${Math.round(ms / 1000)}秒間スキップ`);
+  logger.log('USAGE', `${provider || 'custom'}が${reason}のため${Math.round(ms / 1000)}秒間スキップ`);
 }
 
 function isCoolingDown(provider) {

@@ -3,6 +3,21 @@
 // .envの書き換え・再起動なしにプロセス実行中に切り替えられる(全アカウント共通)。
 // AI_PROVIDERは起動時点の初期値としてのみ使う。
 const PROVIDER_DEFAULTS = {
+  local: {
+    label: 'ローカル(Ollama/llama.cpp/vLLM等)',
+    // 自前のGPUマシンで動かすOpenAI互換サーバー(例: Ollamaなら http://<TailscaleのIP>:11434/v1)。
+    // Oracle CloudのインスタンスにはGPUが無いので、実際には自宅PC等で動かしてTailscale等で
+    // 繋ぐ構成になる。APIキー不要のサーバーが多いので、LOCAL_BASE_URLさえあれば使用可能扱いにする。
+    // LOCAL_BASE_URLを設定するとプロバイダ一覧の先頭になり、AI_PROVIDER未指定時の既定になる
+    // (ローカル優先)。PCが落ちている時は接続失敗→一定時間スキップ(usageLedger)で他に流れる
+    baseUrl: process.env.LOCAL_BASE_URL || '',
+    apiKeyEnv: 'LOCAL_API_KEY',
+    keylessEnv: 'LOCAL_BASE_URL',
+    model: process.env.LOCAL_MODEL || 'qwen3:8b',
+    visionModel: process.env.LOCAL_VISION_MODEL || process.env.LOCAL_MODEL || 'qwen3:8b',
+    // ローカルGPUは無料枠より遅く、PCがスリープ中だと接続待ちで詰まるので短めに切る
+    timeoutMs: Number(process.env.LOCAL_TIMEOUT_MS) || 30000
+  },
   groq: {
     label: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
@@ -65,6 +80,16 @@ const PROVIDER_DEFAULTS = {
     model: process.env.LOGFARE_MODEL || 'logfare/auto',
     visionModel: process.env.LOGFARE_MODEL || 'logfare/auto'
   },
+  openrouter: {
+    label: 'OpenRouter',
+    // ':free'の付いたモデルが無料(1日の回数制限あり、課金履歴の有無で上限が変わる)。
+    // 無料モデルのカタログは頻繁に入れ替わり、存在しないIDを既定値にすると404になるだけなので、
+    // OPENROUTER_MODEL(例: 何らかのモデルID:free)を明示した時だけ使用可能扱いにする
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    model: process.env.OPENROUTER_MODEL || '',
+    visionModel: process.env.OPENROUTER_VISION_MODEL || process.env.OPENROUTER_MODEL || ''
+  },
   cloudflare: {
     label: 'Cloudflare Workers AI',
     // Cloudflareは接続先URLにAccount IDを含める必要があるため、他プロバイダと違い
@@ -89,12 +114,23 @@ function resolveProviderName(name) {
 }
 
 function apiKeyFor(providerName) {
-  return process.env[PROVIDER_DEFAULTS[providerName].apiKeyEnv];
+  const p = PROVIDER_DEFAULTS[providerName];
+  const key = process.env[p.apiKeyEnv];
+  if (key) return key;
+  // キー不要のプロバイダ(ローカル)は、接続先が設定されていればダミーのキーで使える
+  if (p.keylessEnv && process.env[p.keylessEnv]) return 'none';
+  return undefined;
 }
 
-// 対応するAPIキーが.envに入っているプロバイダだけを「切り替え可能」とする
+// 対応するAPIキー(とモデル名・接続先)が.envに入っているプロバイダだけを「切り替え可能」とする
 function availableProviders() {
-  return Object.keys(PROVIDER_DEFAULTS).filter((name) => Boolean(apiKeyFor(name)));
+  return Object.keys(PROVIDER_DEFAULTS).filter(
+    (name) => Boolean(apiKeyFor(name)) && Boolean(PROVIDER_DEFAULTS[name].model) && Boolean(PROVIDER_DEFAULTS[name].baseUrl)
+  );
+}
+
+function timeoutFor(providerName) {
+  return PROVIDER_DEFAULTS[providerName]?.timeoutMs;
 }
 
 let currentProvider = resolveProviderName(process.env.AI_PROVIDER) || availableProviders()[0] || 'groq';
@@ -108,8 +144,9 @@ function getProvider() {
 function setProvider(name) {
   const resolved = resolveProviderName(name);
   if (!resolved) return { ok: false, reason: `未対応のプロバイダ: ${name} (対応: ${Object.keys(PROVIDER_DEFAULTS).join(', ')})` };
-  if (!apiKeyFor(resolved) && !process.env.AI_API_KEY) {
-    return { ok: false, reason: `${PROVIDER_DEFAULTS[resolved].apiKeyEnv}が.envに未設定です` };
+  if (!availableProviders().includes(resolved) && !process.env.AI_API_KEY) {
+    const p = PROVIDER_DEFAULTS[resolved];
+    return { ok: false, reason: `${p.keylessEnv || p.apiKeyEnv}(と必要ならモデル名)が.envに未設定です` };
   }
   currentProvider = resolved;
   return { ok: true };
@@ -180,4 +217,4 @@ function getFallbackChain(kind = 'chat') {
     });
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, resolveProviderName };
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, resolveProviderName, timeoutFor };

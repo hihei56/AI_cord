@@ -18,6 +18,7 @@ const { registerHouseWatchHandler } = require('./handlers/houseWatchHandler');
 const { registerAgentHandler } = require('./handlers/agentHandler');
 const { registerServerCoachHandler } = require('./handlers/serverCoachHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
+const { registerDiscordGuard } = require('./utils/discordGuard');
 const { initMarkov } = require('./utils/aiClient');
 
 process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
@@ -38,6 +39,7 @@ async function start() {
     registerSelfTalkHandler(client);
     registerCommandHandler(client);
     registerPresenceTrackerHandler(client);
+    registerDiscordGuard(client);
     client.once('ready', () => {
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
       registerOwnAccount(client.user.id);

@@ -203,7 +203,10 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   // 中断されてしまい、「他のプロバイダが生きていれば会話を止めない」という
   // フォールバック機構の目的を果たせなくなる。そのため他の失敗パターン(HTTPエラー等)
   // と同じくnullを返して呼び出し元でフォールバックを継続できるようにする
-  if (usageLedger.isCoolingDown(conn.provider)) return null;
+  // 一時停止・台帳のキー。接続先を明示指定した経路(finetune・vision)はproviderがnullなので、
+  // 別々の接続先が1つのキーにまとめられないようURLで区別する
+  const ledgerKey = conn.provider || conn.baseUrl;
+  if (usageLedger.isCoolingDown(ledgerKey)) return null;
 
   let res, data;
   try {
@@ -213,6 +216,9 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
         Authorization: `Bearer ${conn.apiKey}`,
         'Content-Type': 'application/json'
       },
+      // 以前はタイムアウトが無く、接続先が応答しないまま固まると(スリープ中の自宅PCの
+      // ローカルLLM等)その返信処理が永久に待ち続けていた
+      signal: AbortSignal.timeout(aiProvider.timeoutFor(conn.provider) || config.ai.requestTimeoutMs || 60000),
       body: JSON.stringify({
         model: conn.model,
         messages,
@@ -229,11 +235,14 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
     data = await res.json();
   } catch (err) {
     logger.error(logTag, `リクエスト失敗 (${conn.provider}): ${err.message}`);
+    // 接続できない・応答しない接続先は、しばらく呼ばずに次のプロバイダへ回す
+    // (落ちている自宅PCのために毎回タイムアウトまで待たされないように)
+    usageLedger.coolDown(ledgerKey, null, config.budget?.unreachableCooldownMs ?? 600000, '接続失敗');
     return null;
   }
 
   if (!res.ok) {
-    if (res.status === 429) usageLedger.coolDown(conn.provider, res.headers?.get?.('retry-after'));
+    if (res.status === 429) usageLedger.coolDown(ledgerKey, res.headers?.get?.('retry-after'));
     logger.error(logTag, `HTTP ${res.status} ${res.statusText} (${conn.provider}): ${JSON.stringify(data)}`);
     return null;
   }
@@ -241,7 +250,7 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   // 実際の消費トークン数をログに残す。レート制限の間隔調整を勘ではなく
   // 実測値ベースでできるようにするため(以前は成功時の消費量が全く見えなかった)
   if (data.usage) {
-    usageLedger.record(conn.provider, data.usage.total_tokens);
+    usageLedger.record(ledgerKey, data.usage.total_tokens);
     logger.log(logTag, `[usage/${conn.provider}] prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
   }
 

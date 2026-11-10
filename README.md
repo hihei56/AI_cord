@@ -150,6 +150,13 @@ CORPUS_FILE_2=別のコーパスファイル名
 
 `AI_BASE_URL` / `AI_API_KEY`を明示指定すると`!provider`/`AI_PROVIDER`より優先されるので、自前ホストのvLLM・Ollama・text-generation-inferenceなど、上記2つ以外のOpenAI互換APIに差し替えたい場合はそちらを使う。`messageHandler.js` / `selfTalkHandler.js` / persona周りはバックエンドに依存しないため変更不要。
 
+### ローカルLLM・OpenRouter・接続失敗時の扱い
+
+- **ローカルLLM(`local`)**: `.env`に`LOCAL_BASE_URL`(例: 自宅PCのOllamaを`http://<TailscaleのIP>:11434/v1`)と`LOCAL_MODEL`を入れると、プロバイダ一覧の先頭になり、`AI_PROVIDER`未指定時の既定になる(ローカル優先)。APIキーは不要(必要なサーバーなら`LOCAL_API_KEY`)。Oracle CloudのインスタンスにはGPUが無いので、GPUのあるPCで動かして繋ぐ前提。人間への返信をローカルで回している間は、バックグラウンドのトークン上限は掛けない
+- **OpenRouter(`openrouter`)**: `OPENROUTER_API_KEY`と`OPENROUTER_MODEL`(`:free`の付いたモデルID)の両方を入れた時だけ使う。無料モデルのカタログは頻繁に変わるため既定のモデルIDは持たない
+- **タイムアウトと接続失敗**: LLM呼び出しにはタイムアウト(`ai.requestTimeoutMs`、既定60秒。ローカルは`LOCAL_TIMEOUT_MS`、既定30秒)がある。接続できない・応答しない接続先は`budget.unreachableCooldownMs`(既定10分)スキップして次のプロバイダに回す。PCが落ちていても毎回待たされない
+- **Discordのレート制限での自動停止**: 10分間にDiscordのレート制限を5回踏んだアカウントは30分間自動で`lockedDown`になり、時間が来たら自動で解除される(`discordGuard`で調整可。手動の`!pause`は自動解除しない)
+
 ### アカウント単位でのファインチューニングモデル切り替え
 
 `AI_BASE_URL`は全アカウント共通だが、特定のアカウントだけ別のファインチューニング済みモデルを使いたい場合(例: PC側でOllama/vLLM等を立てて動かす3体目)は、そのアカウント番号で`FINETUNE_BASE_URL_N` / `FINETUNE_API_KEY_N` / `FINETUNE_MODEL_N`を`.env`に設定した上で、`!set mode @account finetune`で切り替える。
