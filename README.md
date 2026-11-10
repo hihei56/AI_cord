@@ -331,6 +331,15 @@ nitter等のRSSフィードを定期的にポーリングし、フィード内�
 - LLM呼び出し(`getAIResponse`/`generateSelfTalk`/`planConversationTopic`)は該当箇所で丸ごとスキップされるため、この間はAPIコストが一切発生しない。画像添付の読み取り(vision API)もLLM返信にしか使わないため合わせてスキップする
 - `false`に戻せば、既存の通常のLLM返信(+ときどきGIFを混ぜる従来の`gif`セクションの挙動)にそのまま戻る
 
+### 宣伝RPC(`promo`)
+
+各アカウントのRPCの先頭に「〇〇をプレイ中」+「サーバーに参加」ボタン(招待リンク)を出す。RPCはそのアカウントがいる**全サーバー**のメンバー一覧・プロフィールに表示されるので、別サーバーにいるだけ(発言不要)で入口になる。
+
+- 必要なもの: `.env`の`PROMO_INVITE_URL`(招待リンク。期限なし・使用回数無制限で作る)と`PROMO_APPLICATION_ID`(https://discord.com/developers/applications で作ったアプリのID。ボタン表示に必須)
+- 文言は`config/settings.json`の`promo.names/details/states`の候補から、アカウントごとに固定で1つずつ選ばれる(全アカウントが同じ文言だと量産アカウントだと一目で分かるため)。`promo.accounts`で対象アカウントを絞れる
+- 自分のRPCのボタンは自分の画面には表示されない(Discordの仕様)ので、表示確認は別アカウントから行う
+- 招待リンクの使用回数を週次レポート(`ai! report`)に出す(要: そのアカウントにサーバー管理権限)。宣伝が効いているかはこの数字で判断する
+
 ### サーバー活性化コーチ(`serverCoach`)
 
 週1回(既定: 月曜21時以降)、サーバー全体の状態を数字で診断し、問題の具体化と打ち手をレポートとして投稿する。投稿先は`!coach channel`(または`.env`の`SERVER_COACH_CHANNEL_ID`)で指定する。`!coach now`で今すぐ作れる。

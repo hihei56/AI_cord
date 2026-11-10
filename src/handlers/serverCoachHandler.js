@@ -167,6 +167,20 @@ function chunk(text, size = 1900) {
   return out;
 }
 
+// 宣伝RPCのボタンに載せた招待リンクの使用回数(=宣伝経由で入った人数の上限)。
+// 招待の使用数の取得には「サーバー管理」権限が要るので、取れない時はnull
+async function promoInviteUses(guild) {
+  const url = process.env.PROMO_INVITE_URL || config.promo?.inviteUrl;
+  const code = url?.match(/(?:discord\.gg|discord(?:app)?\.com\/invite)\/([\w-]+)/)?.[1];
+  if (!code) return null;
+  try {
+    const invites = await guild.invites.fetch();
+    return invites.get(code)?.uses ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function buildReport(guild, { save = true } = {}) {
   serverStats.flushAll();
   const m = serverStats.computeMetrics(guild.id);
@@ -177,6 +191,12 @@ async function buildReport(guild, { save = true } = {}) {
   const follow = followUp(conf, problems);
 
   const parts = [`📊 **サーバー活性化レポート**(直近${m.daysCovered}日分${m.daysCovered < 7 ? '、データ不足のため参考値' : ''})`, metricsBlock(m, guild)];
+  const uses = await promoInviteUses(guild);
+  if (uses !== null) {
+    const delta = conf.lastPromoInviteUses !== undefined ? uses - conf.lastPromoInviteUses : null;
+    parts.push(`宣伝RPCの招待リンク: 累計${uses}回使用${delta !== null ? `(前回レポートから+${delta})` : ''}`);
+    if (save) conf.lastPromoInviteUses = uses;
+  }
   if (follow.length) parts.push(`\n**前回指摘した問題の経過**\n${follow.join('\n')}`);
 
   if (problems.length === 0) {

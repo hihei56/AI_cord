@@ -132,6 +132,16 @@
     }
   },
   "presenceFile": "default.json",
+  "promo": {
+    "enabled": true,
+    "accounts": "all",
+    "inviteUrl": "",
+    "applicationId": "",
+    "buttonLabel": "サーバーに参加",
+    "names": ["雑談"],
+    "details": ["まったり雑談中", "誰でも歓迎", "夜に人が増えます"],
+    "states": ["気軽にどうぞ"]
+  },
   "relay": {
     "delayMs": 5000,
     "delayJitter": 0.4
