@@ -6,6 +6,7 @@ const { resolveDisplayName } = require('../utils/nicknames');
 const { pickReactionEmoji } = require('../utils/reactionEmoji');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 const crowd = require('../utils/crowd');
+const humanPresence = require('../utils/humanPresence');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -58,22 +59,6 @@ function isDuplicateBurst(sorted) {
   return false;
 }
 
-// 直近の発言者がcrowdGuard.minDistinctUsers人以上いたら「盛り上がってる人間の会話に
-// わざわざ割り込まない」ようそっと返信確率を下げる
-function crowdMultiplier(sortedMessages, selfId) {
-  const { windowMs, minDistinctUsers, backoffMultiplier } = config.crowdGuard || {};
-  if (!minDistinctUsers || !sortedMessages) return 1;
-
-  const now = Date.now();
-  const distinct = new Set();
-  for (const m of sortedMessages.values()) {
-    if (now - m.createdTimestamp > windowMs) break;
-    if (m.author.id !== selfId) distinct.add(m.author.id);
-  }
-
-  return distinct.size >= minDistinctUsers ? backoffMultiplier : 1;
-}
-
 // config.replyChanceの値(mention/reply/normal)は固定の定数なので、そのまま
 // 使うと「外から見た反応率が常にきっちり同じ割合」になり、観測され続けると
 // 機械的なパターンとして見えやすい(実際に「反応が規則的すぎる」と指摘された)。
@@ -91,8 +76,10 @@ function resolveChance(msg, client, state, sortedMessages) {
 
   chance = Math.min(1, Math.max(0, chance * (1 + (Math.random() * 2 - 1) * REPLY_CHANCE_JITTER)));
 
-  // メンション・リプライで直接呼ばれた時は混雑してても普通に反応する
-  if (!isMention && !isReply) chance *= crowdMultiplier(sortedMessages, client.user.id);
+  // 人間の人数でbotの出しゃばり具合を変える(humanPresence参照)。人間同士で回っている時は
+  // 引っ込み、1人しかいない時は寂しくならないよう反応を増やす。
+  // メンション・リプライで直接呼ばれた時は人数に関係なく普通に反応する
+  if (!isMention && !isReply) chance = Math.min(1, chance * humanPresence.replyFactor(humanPresence.level(msg.channel)));
 
   // ユーザーが直接リプライしてきた時は、アカウントごとの確率ばらつき
   // (replyChanceMultiplier)も無視してほぼ確実に反応する(呼びかけられたのに
@@ -201,7 +188,7 @@ function registerMessageHandler(client) {
 
     // 同じ発言に複数アカウントが返信しようとした場合、最初の1つがlead(普通に返信)、
     // 2つ目以降はleadの返信に乗っかるfollowerになる(並行して別々の返信を投げない)
-    const crowdRole = crowd.claim(msg.id, state.id);
+    const crowdRole = crowd.claim(msg.id, state.id, humanPresence.level(msg.channel));
     if (crowdRole === 'none') return;
     if (crowdRole === 'follower') {
       crowd.follow(client, msg).catch((err) => logger.error('CROWD', err));

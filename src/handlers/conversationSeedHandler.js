@@ -9,6 +9,7 @@ const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply')
 const usageLedger = require('../utils/usageLedger');
 const { getAllClients } = require('../utils/accountRegistry');
 const { CROWD } = require('../utils/crowd');
+const humanPresence = require('../utils/humanPresence');
 
 // 会話履歴に「実際は何を送ったか」をそのまま積むと、GIFのURLをLLMがテキストとして
 // 解釈しようとして不自然になるため、GIFを送った時の履歴には代わりにこのプレース
@@ -415,6 +416,8 @@ function registerBotReplyTrigger(clients) {
       if (!client.accountState.channelStore.isAllowedChannel(msg.channel.id)) return;
       if (activeChannels.has(msg.channel.id)) return;
       if (!canTriggerReactive(msg.channel.id)) return;
+      // AI同士の割り込み会話は「人間が少ない時の代わり」なので、人間が2人以上いる時はしない
+      if (!['empty', 'few'].includes(humanPresence.level(msg.channel))) return;
       if (Math.random() > BOT_REPLY_CHANCE) return;
 
       const posterClient = clients.find((c) => c.user?.id === msg.author.id);

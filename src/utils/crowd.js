@@ -4,6 +4,8 @@ const { getAllClients } = require('./accountRegistry');
 const usageLedger = require('./usageLedger');
 const { resolveDisplayName } = require('./nicknames');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('./emojiGifReply');
+const humanPresence = require('./humanPresence');
+const { pickReactionEmoji } = require('./reactionEmoji');
 
 // 複数アカウントが「同じ場に同時にいる」感じを出すための調整役。
 //
@@ -19,7 +21,6 @@ const CROWD = {
   maxFollowers: 2,
   followDelayMinMs: 3000,
   followDelayMaxMs: 15000,
-  replyToHumanChance: 0.3,
   ...(config.crowd || {})
 };
 
@@ -40,13 +41,15 @@ function session(messageId) {
 
 // 返信すると決めたアカウントが呼ぶ。最初に呼んだアカウントがlead、以降はfollower(上限あり)。
 // 同期的に判定する(awaitを挟まない)ので、同時に呼ばれても2つのleadにはならない
-function claim(messageId, accountId) {
+function claim(messageId, accountId, level = 'normal') {
   const s = session(messageId);
   if (!s.leadId) {
     s.leadId = accountId;
     return 'lead';
   }
   if (s.leadId === accountId || s.followers.has(accountId) || s.followers.size >= CROWD.maxFollowers) return 'none';
+  // 人間が多い時は乗っからない(人間同士の会話の主役を奪わない)
+  if (Math.random() >= humanPresence.followFactor(level)) return 'none';
   s.followers.add(accountId);
   return 'follower';
 }
@@ -60,10 +63,12 @@ function leadDone(leadClient, humanMsg, sentMsg) {
   s.resolve(sentMsg || null);
   if (!sentMsg) return;
 
+  const level = humanPresence.level(humanMsg.channel);
+  const chance = CROWD.followChance * humanPresence.followFactor(level);
   for (const c of getAllClients()) {
     if (s.followers.size >= CROWD.maxFollowers) break;
     if (c === leadClient || !canParticipate(c, humanMsg.channel.id)) continue;
-    if (s.followers.has(c.accountState.id) || Math.random() > CROWD.followChance) continue;
+    if (s.followers.has(c.accountState.id) || Math.random() >= chance) continue;
     s.followers.add(c.accountState.id);
     follow(c, humanMsg).catch((err) => logger.error('CROWD', err));
   }
@@ -86,6 +91,24 @@ async function follow(client, humanMsg) {
   const state = client.accountState;
   const channel = client.channels.cache.get(humanMsg.channel.id);
   if (!channel) return;
+
+  // 毎回「返信役+乗っかり返信」の同じ型になると単調なので、人数に応じて
+  // リアクションだけ・人間に話しかける・返信役に乗っかる、を重み付きで選ぶ
+  const level = humanPresence.level(channel);
+  const action = humanPresence.pickFollowAction(level === 'busy' ? 'normal' : level) || 'react';
+
+  if (action === 'react') {
+    await sleep(CROWD.followDelayMinMs + Math.random() * (CROWD.followDelayMaxMs - CROWD.followDelayMinMs));
+    try {
+      const own = channel.messages.cache.get(humanMsg.id) || (await channel.messages.fetch(humanMsg.id));
+      await own.react(pickReactionEmoji(humanMsg.content));
+      logger.log('CROWD', `[${state.id}] リアクションで乗っかり (${level})`);
+    } catch (err) {
+      logger.error('CROWD', `[${state.id}] リアクション失敗: ${err.message}`);
+    }
+    return;
+  }
+
   state.lastReplyTime = Date.now();
   await channel.sendTyping().catch(() => {});
 
@@ -97,7 +120,7 @@ async function follow(client, humanMsg) {
 
   // 遅延requireで循環参照を避ける(aiClient → usageLedger → … の読み込み順の都合)
   const { getAIResponse, recordReply } = require('./aiClient');
-  const toHuman = Math.random() < CROWD.replyToHumanChance;
+  const toHuman = action === 'replyHuman';
   const leadName = resolveDisplayName(leadMsg.author, leadMsg.member);
 
   // 追従の返信はバックグラウンド扱いにして、Logfare等の逃がし先(無ければ上限つき)で生成する。
@@ -122,7 +145,7 @@ async function follow(client, humanMsg) {
     allowedMentions: { repliedUser: false }
   });
   recordReply(state, text);
-  logger.log('CROWD', `[${state.id}] ${toHuman ? '人間に' : `${leadName}に`}乗っかり: ${text.slice(0, 50)}`);
+  logger.log('CROWD', `[${state.id}] ${toHuman ? '人間に' : `${leadName}に`}乗っかり (${level}): ${text.slice(0, 50)}`);
 }
 
 module.exports = { claim, leadDone, follow, canParticipate, CROWD };
