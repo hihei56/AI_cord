@@ -7,6 +7,8 @@ const { resolveDisplayName } = require('../utils/nicknames');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 const usageLedger = require('../utils/usageLedger');
+const { getAllClients } = require('../utils/accountRegistry');
+const { CROWD } = require('../utils/crowd');
 
 // 会話履歴に「実際は何を送ったか」をそのまま積むと、GIFのURLをLLMがテキストとして
 // 解釈しようとして不自然になるため、GIFを送った時の履歴には代わりにこのプレース
@@ -131,7 +133,17 @@ const activeChannels = new Set();
 // (最初の1通はgenerateSelfTalkで新規に切り出す)と、兄弟BOTの発言に割り込む
 // reactToSiblingMessage(最初の1通は割り込み先へのリプライ)の両方から、
 // 「最初の1往復を終えた状態」を渡して呼び出す
-async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSentMsg, lastActionAt, topicHint, totalTurns, roleOf }) {
+// 2人で交互に話すだけだと「botが2体いる」以上に見えないため、参加者(participants)が
+// 3人以上いる時は、次の話者を直前の話者以外からランダムに選ぶ(順番が決まっていない
+// グループの雑談のようにする)。さらに一定確率で、次に話しそうな別のアカウントも
+// 同時に入力中表示を出し、「〇〇と△△が入力中…」という複数人の気配を作る
+function nextSpeaker(participants, current) {
+  const others = participants.filter((c) => c !== current && !c.accountState.lockedDown);
+  return others[Math.floor(Math.random() * others.length)] || null;
+}
+
+async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSentMsg, lastActionAt, topicHint, totalTurns, roleOf, participants = null }) {
+  const group = participants && participants.length > 2 ? participants : null;
   for (let turn = 1; turn < totalTurns; turn++) {
     if (speaker.accountState.lockedDown) break;
 
@@ -145,6 +157,10 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
     const channel = speaker.channels.cache.get(channelId);
     if (!channel) break;
 
+    if (group && Math.random() < (CROWD.overlapTypingChance ?? 0.5)) {
+      const bystander = nextSpeaker(group, speaker);
+      bystander?.channels.cache.get(channelId)?.sendTyping().catch(() => {});
+    }
     await showTyping(channel, speaker.accountState.id);
 
     // 絵文字/GIFのみモードでは常にどちらか一方だけを送る(LLMは一切呼ばない)。
@@ -196,7 +212,13 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
     lastMsg = reply;
     lastActionAt = Date.now();
 
-    [speaker, listener] = [listener, speaker];
+    if (group) {
+      const next = nextSpeaker(group, speaker);
+      if (!next) break;
+      [speaker, listener] = [next, speaker];
+    } else {
+      [speaker, listener] = [listener, speaker];
+    }
 
     // 最低ターン数を超えたら確率で切り上げる(毎回律儀に上限まで続くと不自然)
     if (turn + 1 >= MIN_TURNS && Math.random() > CONTINUE_CHANCE) break;
@@ -222,6 +244,8 @@ async function seedConversation(clientA, clientB, channelId) {
 }
 
 async function runSeedConversation(clientA, clientB, channelId, channelA) {
+  const participants = [clientA, clientB, ...pickExtraParticipants(clientA, clientB, channelId)];
+  if (participants.length > 2) logger.log('SEED', `グループ会話: ${participants.map((c) => c.accountState.id).join(', ')}`);
   await showTyping(channelA, clientA.accountState.id);
 
   // 絵文字/GIFのみモードでは話題決め自体が不要(お題はLLMへのプロンプト材料でしかないため)
@@ -273,9 +297,25 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
     lastSentMsg: openerMsg,
     lastActionAt: Date.now(),
     topicHint,
-    totalTurns: randomTurnCount(),
-    roleOf
+    // 3人以上の時は全員に出番が回るよう少しターンを増やす
+    totalTurns: randomTurnCount() + (participants.length - 2) * 2,
+    roleOf,
+    participants
   });
+}
+
+// 掛け合いに途中参加させる3人目以降。同じチャンネルを担当している兄弟アカウントから
+// groupJoinChanceの確率で1人ずつ(最大groupMaxSize人まで)加える
+function pickExtraParticipants(clientA, clientB, channelId) {
+  const extra = [];
+  const pool = getAllClients().filter(
+    (c) => c !== clientA && c !== clientB && c.user && !c.accountState.lockedDown && c.accountState.channelStore.isAllowedChannel(channelId)
+  );
+  for (const c of pool.sort(() => Math.random() - 0.5)) {
+    if (2 + extra.length >= (CROWD.groupMaxSize ?? 4)) break;
+    if (Math.random() < (CROWD.groupJoinChance ?? 0.5)) extra.push(c);
+  }
+  return extra;
 }
 
 // チャンネルごとに、直近いつ「割り込みリプライ」を発火させたか。botReplyChance自体は

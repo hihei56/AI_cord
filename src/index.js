@@ -8,6 +8,7 @@ const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
 const { registerPresenceTrackerHandler } = require('./handlers/presenceTrackerHandler');
 const { registerCommandHandler } = require('./commands/handler');
+const { registerControlCommand } = require('./commands/control');
 const { registerReminderScheduler } = require('./reminderScheduler');
 const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
 const { registerPriceAlertHandler } = require('./handlers/priceAlertHandler');
@@ -55,6 +56,7 @@ async function start() {
   registerMarketReportHandler(clients);
   registerHouseWatchHandler(clients);
   registerAgentHandler(clients);
+  registerControlCommand(clients);
   registerServerCoachHandler(clients);
 
   const results = await loginStaggered(clients);

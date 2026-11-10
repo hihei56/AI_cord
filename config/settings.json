@@ -1,5 +1,6 @@
 {
   "commandPrefix": "!",
+  "controlPrefix": "ai!",
   "loginStagger": {
     "minMs": 8000,
     "maxMs": 30000
@@ -10,6 +11,16 @@
   "budget": {
     "backgroundDailyTokens": 80000,
     "rateLimitCooldownMs": 60000
+  },
+  "crowd": {
+    "followChance": 0.45,
+    "maxFollowers": 2,
+    "followDelayMinMs": 3000,
+    "followDelayMaxMs": 15000,
+    "replyToHumanChance": 0.3,
+    "groupJoinChance": 0.5,
+    "groupMaxSize": 4,
+    "overlapTypingChance": 0.5
   },
   "serverCoach": {
     "enabled": true,

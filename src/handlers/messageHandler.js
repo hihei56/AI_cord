@@ -5,6 +5,7 @@ const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
 const { pickReactionEmoji } = require('../utils/reactionEmoji');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
+const crowd = require('../utils/crowd');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -197,10 +198,20 @@ function registerMessageHandler(client) {
     // 他のイベントがすり抜けるのを防ぐ(Nodeはシングルスレッドなので、
     // このチェックと代入の間に他のmessageCreateハンドラが割り込むことはない)
     if (!isTestChannel && Date.now() - state.lastReplyTime < effectiveCooldownMs) return;
+
+    // 同じ発言に複数アカウントが返信しようとした場合、最初の1つがlead(普通に返信)、
+    // 2つ目以降はleadの返信に乗っかるfollowerになる(並行して別々の返信を投げない)
+    const crowdRole = crowd.claim(msg.id, state.id);
+    if (crowdRole === 'none') return;
+    if (crowdRole === 'follower') {
+      crowd.follow(client, msg).catch((err) => logger.error('CROWD', err));
+      return;
+    }
     state.lastReplyTime = Date.now();
 
     logger.log('TRIG', `[${state.id}] ${msg.author.username}: ${msg.content.slice(0, 30)}`);
 
+    let sentMsg = null;
     try {
       const { minMs, maxMs, longPauseChance = 0, longPauseMinMs = 0, longPauseMaxMs = 0 } = config.typingDelay;
 
@@ -247,7 +258,7 @@ function registerMessageHandler(client) {
       // falseにしてメンション通知は飛ばさない「サイレントリプライ」にする。
       // 普通のmsg.reply()だと毎回通知が飛んでbotっぽく見えるが、通知無しなら
       // 会話の繋がりを見せつつ不自然さも出ない
-      await msg.channel.send({
+      sentMsg = await msg.channel.send({
         content: reply,
         reply: { messageReference: msg.id, failIfNotExists: false },
         allowedMentions: { repliedUser: false }
@@ -262,6 +273,9 @@ function registerMessageHandler(client) {
       compressUserMemoryIfNeeded(state, msg.author.id, speakerLabel).catch((err) => logger.error('MEMORY', err));
     } catch (err) {
       logger.error('MESSAGE', err);
+    } finally {
+      // 失敗・見送りでも必ず呼ぶ(待っているfollowerを解放するため)
+      crowd.leadDone(client, msg, sentMsg);
     }
   });
 }
