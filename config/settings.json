@@ -5,10 +5,10 @@
     "maxMs": 30000
   },
   "aiPosting": {
-    "enabled": false
+    "enabled": true
   },
   "agent": {
-    "enabled": false,
+    "enabled": true,
     "tickIntervalMs": 600000,
     "tickJitter": 0.4,
     "quietMinMinutes": 10,
