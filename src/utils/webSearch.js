@@ -6,13 +6,28 @@ const logger = require('./logger');
 // 選択肢にすら出さない(キー無しで呼んで毎回失敗→トークンだけ消費、を防ぐ)
 const ENDPOINT = 'https://api.tavily.com/search';
 
+// 無料枠(Tavilyは月1000回程度)を使い切らないよう、1日の検索回数に上限を設ける
+const MAX_PER_DAY = Number(process.env.SEARCH_MAX_PER_DAY) || 30;
+let day = '';
+let usedToday = 0;
+
+function todayKey() {
+  return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+}
+
 function isAvailable() {
-  return Boolean(process.env.TAVILY_API_KEY);
+  if (!process.env.TAVILY_API_KEY) return false;
+  if (day !== todayKey()) {
+    day = todayKey();
+    usedToday = 0;
+  }
+  return usedToday < MAX_PER_DAY;
 }
 
 // 戻り値: { answer, results: [{ title, url, content }] } または null
 async function search(query, { maxResults = 3 } = {}) {
   if (!isAvailable() || !query) return null;
+  usedToday++;
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',

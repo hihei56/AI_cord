@@ -157,6 +157,9 @@ function loadAccounts() {
       // trueにすると、他機能の有効/無効に関係なく単独で一定間隔ごとに、直近の
       // ニュース見出しをネタにした自発投稿(newsPostHandler.js)をする
       newsPostEnabled: boolEnv('NEWS_POST') ?? false,
+      // 会話での役割(knower=物知り / tsukkomi=ツッコミ / boke=ボケ / listener=聞き役)。
+      // settings.jsonのrolesに定義がある名前だけ有効。未指定なら役割なし(従来通り)
+      charRole: process.env.ROLE || null,
       replyLanguage: resolveReplyLanguage(process.env.REPLY_LANGUAGE, 1)
     });
   }
@@ -189,6 +192,7 @@ function loadAccounts() {
       markovDirectReplyMinLengthOverride: numEnv(`MARKOV_DIRECT_REPLY_MIN_LENGTH_${i}`),
       gifGenres: idListEnv(process.env[`GIF_GENRE_${i}`]),
       newsPostEnabled: boolEnv(`NEWS_POST_${i}`) ?? false,
+      charRole: process.env[`ROLE_${i}`] || null,
       replyLanguage: resolveReplyLanguage(process.env[`REPLY_LANGUAGE_${i}`], i)
     });
     i++;

@@ -56,6 +56,8 @@ function buildAccountState(account) {
     newsPostEnabled: account.newsPostEnabled || false,
     // 返信・自発投稿をこの言語に固定する(.envのREPLY_LANGUAGE[_N]、nullなら日本語のまま)
     replyLanguage: account.replyLanguage || null,
+    // 会話での役割(settings.jsonのroles参照)。設定に無い名前なら役割なし扱い
+    charRole: config.roles?.[account.charRole] ? account.charRole : null,
     channelStore: createChannelStore(account.id, account.allowedChannelId),
     reminderStore: createReminderStore(account.id),
     // ユーザーごとの長期記憶(特徴メモ)。会話が続くと相手について「覚えている」ように見せる

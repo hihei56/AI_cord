@@ -7,6 +7,7 @@ const { pickReactionEmoji } = require('../utils/reactionEmoji');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 const crowd = require('../utils/crowd');
 const humanPresence = require('../utils/humanPresence');
+const { factsFor } = require('../utils/questionFacts');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -241,7 +242,11 @@ function registerMessageHandler(client) {
       const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
       const reply = isEmojiGifOnlyMode()
         ? await pickEmojiOrGif(state, userMsg)
-        : await getAIResponse(state, userMsg, ctxMsgs, msg, { allowMarkovDirect: !isMention && !isReply });
+        : await getAIResponse(state, userMsg, ctxMsgs, msg, {
+            allowMarkovDirect: !isMention && !isReply,
+            // 物知り役は、事実を聞く質問なら調べてから答える(それ以外の役割・質問ならnull)
+            facts: await factsFor(state, msg.content)
+          });
       if (!reply) return;
 
       const { minMs: replyMinMs, perCharMs, capMs, jitterMs } = config.replyDelay;

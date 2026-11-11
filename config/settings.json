@@ -12,6 +12,27 @@
     "backgroundDailyTokens": 80000,
     "rateLimitCooldownMs": 60000
   },
+  "knowledge": {
+    "maxChunks": 2,
+    "minScore": 0.3,
+    "minMatchedGrams": 3
+  },
+  "roles": {
+    "knower": {
+      "instruction": "グループの物知り役。聞かれたことには知っている範囲でちゃんと答える。ただし説明口調・箇条書き・ですます調にせず雑談のノリで1〜3文。自信がない所は「たしか」「らしい」とぼかす",
+      "maxReplyLength": 140,
+      "searchQuestions": true
+    },
+    "tsukkomi": {
+      "instruction": "グループのツッコミ役。人の発言の変な所やズレに軽くツッコむ。冷静め"
+    },
+    "boke": {
+      "instruction": "グループのボケ役。ちょっとズレたことや冗談を言う。真面目に答えすぎない"
+    },
+    "listener": {
+      "instruction": "グループの聞き役。相手の話に反応して質問を返す。自分の話は控えめ"
+    }
+  },
   "crowd": {
     "followChance": 0.45,
     "maxFollowers": 2,

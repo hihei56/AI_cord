@@ -6,6 +6,7 @@ const { resolveDisplayName } = require('./nicknames');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('./emojiGifReply');
 const humanPresence = require('./humanPresence');
 const { pickReactionEmoji } = require('./reactionEmoji');
+const { factsFor, isFactQuestion } = require('./questionFacts');
 
 // 複数アカウントが「同じ場に同時にいる」感じを出すための調整役。
 //
@@ -95,7 +96,9 @@ async function follow(client, humanMsg) {
   // 毎回「返信役+乗っかり返信」の同じ型になると単調なので、人数に応じて
   // リアクションだけ・人間に話しかける・返信役に乗っかる、を重み付きで選ぶ
   const level = humanPresence.level(channel);
-  const action = humanPresence.pickFollowAction(level === 'busy' ? 'normal' : level) || 'react';
+  // 物知り役は、人間の質問には(返信役が答えていても)補足として人間に答えに行く
+  const knowsAndAsked = state.charRole && config.roles?.[state.charRole]?.searchQuestions && isFactQuestion(humanMsg.content);
+  const action = knowsAndAsked ? 'replyHuman' : humanPresence.pickFollowAction(level === 'busy' ? 'normal' : level) || 'react';
 
   if (action === 'react') {
     await sleep(CROWD.followDelayMinMs + Math.random() * (CROWD.followDelayMaxMs - CROWD.followDelayMinMs));
@@ -129,7 +132,9 @@ async function follow(client, humanMsg) {
     ? await pickEmojiOrGif(state, leadMsg.content)
     : await usageLedger.runBackground(() =>
         toHuman
-          ? getAIResponse(state, humanMsg.content, [humanMsg, leadMsg], humanMsg, { allowMarkovDirect: false })
+          ? factsFor(state, humanMsg.content).then((facts) =>
+              getAIResponse(state, humanMsg.content, [humanMsg, leadMsg], humanMsg, { allowMarkovDirect: false, facts })
+            )
           : getAIResponse(state, leadMsg.content, [humanMsg, leadMsg], null, {
               partnerIsAi: true,
               speakerLabelOverride: leadName,
