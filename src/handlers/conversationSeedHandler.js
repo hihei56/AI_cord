@@ -1,6 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply } = require('../utils/aiClient');
+const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName } = require('../utils/nicknames');
@@ -139,15 +139,48 @@ const activeChannels = new Set();
 // 3人以上いる時は、次の話者を直前の話者以外からランダムに選ぶ(順番が決まっていない
 // グループの雑談のようにする)。さらに一定確率で、次に話しそうな別のアカウントも
 // 同時に入力中表示を出し、「〇〇と△△が入力中…」という複数人の気配を作る
-function nextSpeaker(participants, current) {
+// 次の話者の選び方はSillyTavernのグループチャット(natural/pooled order)を参考にした:
+// 1) 直前の発言で名前を呼ばれた参加者がいればその人(呼ばれたのに別の人が答えると不自然)
+// 2) この会話でまだ喋っていない参加者を優先(同じ2人だけで回り続けるのを防ぐ)
+// 3) それ以外は「喋りやすさ」(役割のtalkativeness、無ければアカウントの返信確率倍率)で重み付けして抽選
+function talkativeness(client) {
+  const st = client.accountState;
+  return Math.max(0.05, config.roles?.[st.charRole]?.talkativeness ?? st.replyChanceMultiplier ?? 1);
+}
+
+function nextSpeaker(participants, current, { lastText = '', spoken = null, channelId = null } = {}) {
   const others = participants.filter((c) => c !== current && !c.accountState.lockedDown);
-  return others[Math.floor(Math.random() * others.length)] || null;
+  if (others.length === 0) return null;
+
+  if (lastText && channelId) {
+    const called = others.find((c) => {
+      const ch = c.channels.cache.get(channelId);
+      const name = ch ? resolveBotDisplayName(c, ch) : c.user?.username;
+      return name && name.length >= 2 && lastText.includes(name);
+    });
+    if (called) return called;
+  }
+
+  const notYet = spoken ? others.filter((c) => !spoken.has(c.accountState.id)) : [];
+  const pool = notYet.length ? notYet : others;
+  const total = pool.reduce((a, c) => a + talkativeness(c), 0);
+  let r = Math.random() * total;
+  for (const c of pool) {
+    if ((r -= talkativeness(c)) <= 0) return c;
+  }
+  return pool.at(-1);
 }
 
 async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSentMsg, lastActionAt, topicHint, totalTurns, roleOf, participants = null }) {
   const group = participants && participants.length > 2 ? participants : null;
+  const spoken = new Set([listener.accountState.id]);
   for (let turn = 1; turn < totalTurns; turn++) {
     if (speaker.accountState.lockedDown) break;
+    // 最低ターン数を超えたら確率で切り上げる(毎回律儀に上限まで続くと不自然)。
+    // ai-townのleaveConversation同様、最後の発言は一定確率で「切り上げの一言」にして
+    // 会話がぶつ切りで終わらないようにする(そのため終わるかどうかを発言の前に決める)
+    const isLast = turn === totalTurns - 1 || (turn + 1 >= MIN_TURNS && Math.random() > CONTINUE_CHANCE);
+    const closing = isLast && Math.random() < (CROWD.closingChance ?? 0.5);
 
     await new Promise((r) => setTimeout(r, turnDelay()));
 
@@ -160,7 +193,7 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
     if (!channel) break;
 
     if (group && Math.random() < (CROWD.overlapTypingChance ?? 0.5)) {
-      const bystander = nextSpeaker(group, speaker);
+      const bystander = nextSpeaker(group, speaker, { spoken });
       bystander?.channels.cache.get(channelId)?.sendTyping().catch(() => {});
     }
     await showTyping(channel, speaker.accountState.id);
@@ -196,7 +229,9 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
         partnerIsAi: true,
         speakerLabelOverride: resolveBotDisplayName(listener, channel),
         topicHint,
-        role: roleOf(speaker)
+        role: closing ? 'closing' : roleOf(speaker),
+        // 相手(AI)とのこれまでのやり取りの記憶を使う(ai-townの「前回の会話」と同じ考え方)
+        partnerUserId: listener.user?.id
       });
       if (!reply) break;
 
@@ -207,23 +242,30 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
         reply: { messageReference: lastSentMsg.id, failIfNotExists: false }
       });
       recordReply(speaker.accountState, reply);
-      logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
+      logger.log('SEED', `[${speaker.accountState.id}] ${reply}${closing ? '(切り上げ)' : ''}`);
+
+      // AI同士のやり取りも記憶する(次に同じ相手と話す時に前の話題を拾えるように)
+      const partnerName = resolveBotDisplayName(listener, channel);
+      if (listener.user?.id) {
+        recordMemory(speaker.accountState, listener.user.id, partnerName, lastMsg, reply);
+        compressUserMemoryIfNeeded(speaker.accountState, listener.user.id, partnerName).catch((err) => logger.error('MEMORY', err));
+      }
     }
 
+    spoken.add(speaker.accountState.id);
     history.push({ author: { username: resolveBotDisplayName(speaker, channel) }, content: reply });
     lastMsg = reply;
     lastActionAt = Date.now();
 
+    if (isLast) break;
+
     if (group) {
-      const next = nextSpeaker(group, speaker);
+      const next = nextSpeaker(group, speaker, { lastText: reply, spoken, channelId });
       if (!next) break;
       [speaker, listener] = [next, speaker];
     } else {
       [speaker, listener] = [listener, speaker];
     }
-
-    // 最低ターン数を超えたら確率で切り上げる(毎回律儀に上限まで続くと不自然)
-    if (turn + 1 >= MIN_TURNS && Math.random() > CONTINUE_CHANCE) break;
   }
 }
 
@@ -480,4 +522,4 @@ function isSeedActive(channelId) {
   return activeChannels.has(channelId);
 }
 
-module.exports = { registerConversationSeedHandler, seedConversation, isSeedActive, isRealUserMessage };
+module.exports = { registerConversationSeedHandler, seedConversation, isSeedActive, isRealUserMessage, nextSpeaker };

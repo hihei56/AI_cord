@@ -33,6 +33,11 @@
       "instruction": "グループの聞き役。相手の話に反応して質問を返す。自分の話は控えめ"
     }
   },
+  "conversationHold": {
+    "windowMs": 180000,
+    "cooldownSeconds": 15,
+    "batchWindowMs": 20000
+  },
   "crowd": {
     "followChance": 0.45,
     "maxFollowers": 2,
@@ -40,7 +45,8 @@
     "followDelayMaxMs": 15000,
     "groupJoinChance": 0.5,
     "groupMaxSize": 4,
-    "overlapTypingChance": 0.5
+    "overlapTypingChance": 0.5,
+    "closingChance": 0.5
   },
   "serverCoach": {
     "enabled": true,

@@ -72,9 +72,39 @@ function isDuplicateBurst(sorted) {
 // 反応頻度のようにばらつきを持たせる
 const REPLY_CHANCE_JITTER = 0.15;
 
+// 会話の継続(Discord-AI-Selfbotのhold_conversationを参考): 一度返信した相手が、
+// その後しばらくの間に続けて喋った時は、リプライされた時と同じ扱いにして会話を続ける。
+// 以前は返信直後にクールダウン(既定90秒)と「直前が自分の発言なら返さない」ガードが
+// 掛かるため、人間が返事をしてきても無視して会話がそこで途切れていた
+const HOLD = { windowMs: 180000, cooldownSeconds: 15, batchWindowMs: 20000, ...(config.conversationHold || {}) };
+
+function holdKey(msg) {
+  return `${msg.channel.id}:${msg.author.id}`;
+}
+
+function isEngaged(state, msg) {
+  return Date.now() - (state.engagedWith?.get(holdKey(msg)) || 0) < HOLD.windowMs;
+}
+
+function markEngaged(state, msg) {
+  state.engagedWith = state.engagedWith || new Map();
+  state.engagedWith.set(holdKey(msg), Date.now());
+  if (state.engagedWith.size > 200) state.engagedWith.delete(state.engagedWith.keys().next().value);
+}
+
+// @メンションだけでなく、本文で名前(呼び名・ニックネーム・ユーザー名)を呼ばれた時も
+// 呼びかけとして扱う(SillyTavernのグループチャットの「名前で呼ばれたキャラが答える」と同じ)
+function isCalledByName(msg, client) {
+  const names = [resolveDisplayName(client.user, msg.guild?.members?.me), client.user.username]
+    .filter((n) => n && n.length >= 2)
+    .map((n) => n.toLowerCase());
+  const text = (msg.content || '').toLowerCase();
+  return names.some((n) => text.includes(n));
+}
+
 function resolveChance(msg, client, state, presenceLevel) {
-  const isMention = msg.mentions.has(client.user.id);
-  const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
+  const isMention = msg.mentions.has(client.user.id) || isCalledByName(msg, client);
+  const isReply = (msg.type === 'REPLY' && msg.reference?.messageId) || isEngaged(state, msg);
 
   let chance = config.replyChance.normal;
   if (isMention) chance = config.replyChance.mention;
@@ -165,7 +195,9 @@ function registerMessageHandler(client) {
     // クールダウンが毎回きっちり同じ長さだと機械的に見えるので、
     // 判定のたびに±cooldownJitterの範囲でランダムに揺らす
     const cooldownJitterRatio = config.cooldownJitter ?? 0.3;
-    const effectiveCooldownMs = cooldownSeconds * 1000 * (1 + (Math.random() * 2 - 1) * cooldownJitterRatio);
+    const engaged = isEngaged(state, msg);
+    // 会話を続けている相手には短いクールダウンで返す(テンポよく会話が続くように)
+    const effectiveCooldownMs = (engaged ? HOLD.cooldownSeconds : cooldownSeconds) * 1000 * (1 + (Math.random() * 2 - 1) * cooldownJitterRatio);
     if (!isTestChannel && now - state.lastReplyTime < effectiveCooldownMs) return;
 
     // 確率判定を履歴の取得より先にする。以前は全アカウントが人間の発言のたびに
@@ -180,7 +212,8 @@ function registerMessageHandler(client) {
       try {
         const sorted = await recentSorted(msg.channel, Math.max(config.recentDuplicateGuard.fetchLimit, config.crowdGuard?.fetchLimit ?? 0));
         if (isDuplicateBurst(sorted)) return;
-        if (sorted.length >= 2 && sorted[1].author.id === client.user.id) return;
+        // 直前が自分の発言でも、その相手と会話を続けている/名前を呼ばれた時は返す
+        if (sorted.length >= 2 && sorted[1].author.id === client.user.id && !engaged && !isCalledByName(msg, client)) return;
       } catch {
         // ignore fetch failures, fall through to reply attempt
       }
@@ -222,7 +255,21 @@ function registerMessageHandler(client) {
 
       const ctxMsgs = await recentHistory(msg.channel, config.ai.reply.historyFetchLimit);
 
-      let userMsg = msg.content;
+      // 連投のまとめ(Discord-AI-Selfbotのbatch_messagesを参考): 人間は短文を数回に分けて
+      // 送ることが多い(「てか」「何話そう」等)。入力中の待ち時間の間に同じ人が続けて
+      // 送った発言をまとめて1つの発言として読み、返信は最後の発言に付ける。
+      // 以前は2通目以降が連投ガードで無視され、1通目にだけ返事をしていた
+      const batch = [...msg.channel.messages.cache.values()]
+        .filter(
+          (m) =>
+            m.author.id === msg.author.id &&
+            m.createdTimestamp >= msg.createdTimestamp &&
+            m.createdTimestamp - msg.createdTimestamp <= HOLD.batchWindowMs
+        )
+        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+      const replyTarget = batch.at(-1) || msg;
+
+      let userMsg = batch.length > 1 ? batch.map((m) => m.content).filter(Boolean).join('\n') : msg.content;
       // 絵文字/GIFのみモードではLLMを一切呼ばないため、画像読み取り(vision API)も
       // 不要(読み取った説明文はLLMへの返信生成にしか使っていないため)
       if (!isEmojiGifOnlyMode()) {
@@ -238,14 +285,14 @@ function registerMessageHandler(client) {
       }
 
       // メンション/リプライで直接呼ばれた時はマルコフ直接採用を避け、ちゃんと文脈に沿った返信にする
-      const isMention = msg.mentions.has(client.user.id);
+      const isMention = msg.mentions.has(client.user.id) || isCalledByName(msg, client);
       const isReply = msg.type === 'REPLY' && msg.reference?.messageId;
       const reply = isEmojiGifOnlyMode()
         ? await pickEmojiOrGif(state, userMsg)
         : await getAIResponse(state, userMsg, ctxMsgs, msg, {
             allowMarkovDirect: !isMention && !isReply,
             // 物知り役は、事実を聞く質問なら調べてから答える(それ以外の役割・質問ならnull)
-            facts: await factsFor(state, msg.content)
+            facts: await factsFor(state, userMsg)
           });
       if (!reply) return;
 
@@ -259,9 +306,10 @@ function registerMessageHandler(client) {
       // 会話の繋がりを見せつつ不自然さも出ない
       sentMsg = await msg.channel.send({
         content: reply,
-        reply: { messageReference: msg.id, failIfNotExists: false },
+        reply: { messageReference: replyTarget.id, failIfNotExists: false },
         allowedMentions: { repliedUser: false }
       });
+      markEngaged(state, msg);
       recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
 

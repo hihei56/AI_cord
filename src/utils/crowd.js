@@ -150,6 +150,11 @@ async function follow(client, humanMsg) {
     allowedMentions: { repliedUser: false }
   });
   recordReply(state, text);
+  // 人間に話しかけた場合は、その人との会話を続けている扱いにする(messageHandlerの会話継続)
+  if (toHuman) {
+    state.engagedWith = state.engagedWith || new Map();
+    state.engagedWith.set(`${channel.id}:${humanMsg.author.id}`, Date.now());
+  }
   logger.log('CROWD', `[${state.id}] ${toHuman ? '人間に' : `${leadName}に`}乗っかり (${level}): ${text.slice(0, 50)}`);
 }
 
