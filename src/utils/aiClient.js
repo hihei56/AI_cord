@@ -11,6 +11,7 @@ const { getRandomHeadline, getHeadlines } = require('./newsTopics');
 const knowledgeBase = require('./knowledgeBase');
 const observedLog = require('./observedLog');
 const userProfiles = require('./userProfiles');
+const mood = require('./mood');
 const { isFactQuestion } = require('./questionFacts');
 
 // 言語固定アカウント(accountState.replyLanguage)向けの指示。人格設定・下書き・
@@ -189,6 +190,8 @@ function recordReply(accountState, text) {
   accountState.recentReplies = accountState.recentReplies || [];
   accountState.recentReplies.push(text);
   if (accountState.recentReplies.length > RECENT_REPLIES_MAX) accountState.recentReplies.shift();
+  // 喋るたびに少し疲れる(同じアカウントが延々喋り続けず、口数に波ができる)
+  mood.nudge(accountState, { energy: -0.04 });
   accountState.memoryStore?.addRecentReply(text);
 }
 
@@ -649,7 +652,7 @@ async function getAIResponseOnce(
   // 以前はsystemプロンプトの末尾に会話履歴+相手の発言を埋め込んだ上で、userメッセージにも
   // 同じ発言(userMsg)を重ねて送っていた(相手の発言が毎回2回分トークンを食っていた)。
   // system=人格・ルールなど「変わらない側」、user=会話履歴と今の発言、に分けて重複を無くす
-  const systemPrompt = `${accountState.persona}${memorySection}${profileSection}${knowledgeSection}${factsSection}${examplesSection(examples)}${antiRepeatSection}${rejectedSection(rejected)}${rulesSection}${dateSection()}${topicSection}${draftSection}`;
+  const systemPrompt = `${accountState.persona}${memorySection}${profileSection}${knowledgeSection}${factsSection}${examplesSection(examples)}${antiRepeatSection}${rejectedSection(rejected)}${rulesSection}${mood.promptSection(accountState)}${dateSection()}${topicSection}${draftSection}`;
   const userPrompt = `【会話履歴】\n${ctx || 'なし'}\n【${speakerLabel}】\n${userMsg}${languageSection(accountState)}\n【返信】`;
 
   try {
@@ -662,7 +665,7 @@ async function getAIResponseOnce(
       // aiProvider側の設定に従う。modelはアカウント単位のCHAT_MODEL上書きがあれば
       // それを使う(未設定ならプロバイダの既定モデルのまま)
       {
-        temperature,
+        temperature: temperature + mood.temperatureOffset(accountState),
         maxTokens,
         kind: partnerIsAi ? 'seed' : 'chat',
         model: accountState.chatModel,
@@ -729,7 +732,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     const { all: examples, observed: observedExamples } = exampleLines(accountState, topicHint || '');
     const avoidLine = `${examplesSection(examples)}${rejectedSection(rejected)}`;
     const systemPrompt = accountState?.persona
-      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${charRoleLine}${avoidLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。${languageSection(accountState)}`
+      ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${charRoleLine}${avoidLine}${mood.promptSection(accountState)}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。${languageSection(accountState)}`
       : `あなたは適当な人間です。深く考えずに雑談します。${dateLine}${newsLine}${roleLine}${charRoleLine}${avoidLine}${ANTI_FILLER_SPAM_CONSTRAINT}${languageSection(accountState)}`;
 
     const text = await callChatCompletion(
@@ -738,7 +741,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
         { role: 'user', content: config.selfTalkPrompt }
       ],
       {
-        temperature: config.ai.selfTalk.temperature,
+        temperature: config.ai.selfTalk.temperature + mood.temperatureOffset(accountState),
         maxTokens: config.ai.selfTalk.maxTokens,
         skipGarbledCheck: Boolean(accountState?.replyLanguage)
       }

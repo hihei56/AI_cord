@@ -13,7 +13,7 @@
     "rateLimitCooldownMs": 60000
   },
   "knowledge": {
-    "maxChunks": 2,
+    "maxChunks": 3,
     "minScore": 0.3,
     "minMatchedGrams": 3
   },
@@ -32,6 +32,15 @@
     "listener": {
       "instruction": "グループの聞き役。相手の話に反応して質問を返す。自分の話は控えめ"
     }
+  },
+  "mood": {
+    "enabled": true,
+    "tauHours": 3,
+    "sigma": 0.45,
+    "dayOffset": 0.35,
+    "circadian": 0.35,
+    "peakHourJST": 23,
+    "quirkChance": 0.3
   },
   "conversationHold": {
     "windowMs": 180000,
