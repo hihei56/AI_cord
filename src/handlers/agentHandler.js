@@ -11,6 +11,7 @@ const usageLedger = require('../utils/usageLedger');
 const { createEngagementStats } = require('../utils/engagementStats');
 const { callChatCompletion, getAIResponse, generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { seedConversation, isSeedActive } = require('./conversationSeedHandler');
+const { recentContext } = require('./selfTalkHandler');
 const { isHuman } = require('../utils/humanPresence');
 
 // 自律エージェント: 一定間隔で「観察 → 判断 → 行動 → 効果測定」を回す。
@@ -217,7 +218,7 @@ async function sendLikeHuman(channel, content, replyTo = null) {
 async function execute(client, channel, decision, obs) {
   const state = client.accountState;
   const post = async (topicHint) => {
-    const text = await generateSelfTalk(state, topicHint, 'center');
+    const text = await generateSelfTalk(state, topicHint, 'center', recentContext(channel));
     if (!text) return false;
     await sendLikeHuman(channel, text);
     recordReply(state, text);

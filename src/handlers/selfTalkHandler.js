@@ -5,7 +5,22 @@ const { generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
 const { scheduleWithJitter } = require('../utils/scheduler');
+const { resolveDisplayName } = require('../utils/nicknames');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
+
+const CONTEXT_MESSAGES = 8;
+const CONTEXT_MAX_AGE_MS = 6 * 3600000;
+
+// 自発投稿に渡す、チャンネルの直近の会話(受信済みのキャッシュから。古すぎる会話は流れとして扱わない)
+function recentContext(channel) {
+  const since = Date.now() - CONTEXT_MAX_AGE_MS;
+  return [...(channel?.messages?.cache?.values() || [])]
+    .filter((m) => m.content && m.createdTimestamp >= since)
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+    .slice(-CONTEXT_MESSAGES)
+    .map((m) => `${resolveDisplayName(m.author, m.member)}: ${m.content.slice(0, 100)}`)
+    .join('\n');
+}
 
 async function selfPost(channel, accountState) {
   if (!channel) return;
@@ -46,7 +61,7 @@ async function selfPost(channel, accountState) {
       const query = animalTypes[Math.floor(Math.random() * animalTypes.length)];
       const img = await getAnimalImage(query);
       if (img) {
-        const caption = await generateSelfTalk(accountState);
+        const caption = await generateSelfTalk(accountState, null, null, recentContext(channel));
         await channel.send({
           content: caption || '（画像）',
           files: [new MessageAttachment(img)]
@@ -57,7 +72,7 @@ async function selfPost(channel, accountState) {
       }
     }
 
-    const text = await generateSelfTalk(accountState);
+    const text = await generateSelfTalk(accountState, null, null, recentContext(channel));
     if (text) {
       await channel.send(text);
       recordReply(accountState, text);
@@ -86,4 +101,4 @@ function registerSelfTalkHandler(client) {
   });
 }
 
-module.exports = { registerSelfTalkHandler, selfPost };
+module.exports = { registerSelfTalkHandler, selfPost, recentContext };
