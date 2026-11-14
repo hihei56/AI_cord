@@ -61,13 +61,16 @@ const PROVIDER_DEFAULTS = {
     // - 上限は通常アカウントで毎分40・毎時1000・1日5000リクエスト、同時6件。登録後24時間は
     //   毎分10・1日500・同時2件。429にはRetry-Afterが付く(usageLedgerが従う)
     // - DiscordアカウントがLogfareのサーバーに参加している間だけキーが使える
-    // 既定のlogfare/autoは空いているモデルへ自動で振り分けるが、テキスト専用。
+    // logfare/autoは空いているモデルへ自動で振り分けるが、テキスト専用。
     // 画像を読めるのは gemma-4-31b-it / qwen-3.8-27b / economy/deepseek-v4.1-flash(standard)、
     // glm-5.3-flash(premium)など。glm-5.3(premium)はテキスト専用。
     // モデルIDは頻繁に変わるので、動かなくなったら https://logfare.ai/v1/models を確認する
     baseUrl: process.env.LOGFARE_BASE_URL || 'https://logfare.ai/v1',
     apiKeyEnv: 'LOGFARE_API_KEY',
-    model: process.env.LOGFARE_MODEL || 'logfare/auto',
+    // 既定は固定のモデルにする。logfare/auto(=logfare/random)は呼び出しのたびに別のモデルへ
+    // 振り分けるため、同じアカウントの口調や賢さが発言ごとに変わり、キャラが一貫しなくなる。
+    // economy/deepseek-v4.1-flashは同意不要(standard)・画像対応・リクエスト上限の対象外
+    model: process.env.LOGFARE_MODEL || 'economy/deepseek-v4.1-flash',
     // 画像読み取りの既定は、同意不要で画像入力に対応し、推論(reasoning)が既定で切れている
     // モデルにする(推論が入ると短い説明文の生成でもトークンを使い切りやすい)
     visionModel: process.env.LOGFARE_VISION_MODEL || 'gemma-4-31b-it',
@@ -76,7 +79,10 @@ const PROVIDER_DEFAULTS = {
     // 推論を弱め、本文の分とは別に推論用の余裕をmax_tokensに足す
     reasoningModels: /glm|qwen|deepseek|kimi/i,
     reasoningEffort: process.env.LOGFARE_REASONING_EFFORT || 'low',
-    reasoningTokenHeadroom: 1200
+    reasoningTokenHeadroom: 1200,
+    // 上限がリクエスト回数で数えられ(トークン量では数えない)、文脈も20万トークン以上あるので、
+    // 口調の手本を大量に見せられる(many-shot)。トークンに日次上限があるGroq等では使わない
+    manyShotExamples: 100
   },
   openrouter: {
     label: 'OpenRouter',
@@ -182,6 +188,17 @@ function getConnection(kind = 'chat') {
     };
   }
 
+  // 'think': 返信の中身(何を言うか)だけを決める役。THINK_AI_PROVIDER / THINK_MODELで、
+  // 口調に直して書く役(chat)とは別の、考えるのが得意なモデルを割り当てられる。
+  // 未指定なら会話用と同じ接続を使う
+  if (kind === 'think') {
+    const explicit = resolveProviderName(process.env.THINK_AI_PROVIDER);
+    const base = explicit
+      ? { provider: explicit, baseUrl: PROVIDER_DEFAULTS[explicit].baseUrl, apiKey: apiKeyFor(explicit), model: PROVIDER_DEFAULTS[explicit].model }
+      : getConnection('chat');
+    return { ...base, model: process.env.THINK_MODEL || base.model };
+  }
+
   if (kind === 'seed') {
     // AI同士の掛け合いは大量に呼ばれるため、人間向け会話(currentProvider)とは
     // 別の余力があるプロバイダに逃がしたい。SEED_AI_PROVIDERで明示指定できるほか、
@@ -214,10 +231,16 @@ function getConnection(kind = 'chat') {
 // 試せるよう、フォールバック候補を「1つだけ」ではなく「残り全部」返す設計にしている
 // (以前は1つ試して失敗したらそこで諦めていたため、主プロバイダ+フォールバック先の
 // 両方が同時に落ちる複合障害に対応できなかった)
+// 既定の画像用モデルが実際に画像を読めるプロバイダ。それ以外(Cerebras・Cloudflare等)の
+// visionModelはテキストモデルで、画像を見ずにそれらしい説明を作ってしまうので、
+// 画像読み取りのフォールバック先には使わない
+const VISION_CAPABLE = new Set(['groq', 'gemini', 'nvidia', 'logfare']);
+
 function getFallbackChain(kind = 'chat') {
   const primary = getConnection(kind);
   return availableProviders()
     .filter((name) => name !== primary.provider)
+    .filter((name) => kind !== 'vision' || VISION_CAPABLE.has(name))
     .map((name) => {
       const p = PROVIDER_DEFAULTS[name];
       return {
@@ -229,4 +252,9 @@ function getFallbackChain(kind = 'chat') {
     });
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, requestExtras };
+// そのプロバイダで口調の手本を何件まで見せるか(0なら少数の既定件数を使う)
+function manyShotCount(providerName) {
+  return PROVIDER_DEFAULTS[providerName]?.manyShotExamples || 0;
+}
+
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, requestExtras, manyShotCount };

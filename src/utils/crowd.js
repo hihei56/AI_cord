@@ -7,6 +7,7 @@ const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('./emojiGifReply');
 const humanPresence = require('./humanPresence');
 const { pickReactionEmoji } = require('./reactionEmoji');
 const { factsFor, isFactQuestion } = require('./questionFacts');
+const userRules = require('./userRules');
 
 // 複数アカウントが「同じ場に同時にいる」感じを出すための調整役。
 //
@@ -137,7 +138,11 @@ async function follow(client, humanMsg) {
     : await usageLedger.runBackground(() =>
         toHuman
           ? factsFor(state, humanMsg.content).then((facts) =>
-              getAIResponse(state, humanMsg.content, [humanMsg, leadMsg], humanMsg, { allowMarkovDirect: false, facts })
+              getAIResponse(state, humanMsg.content, [humanMsg, leadMsg], humanMsg, {
+                allowMarkovDirect: false,
+                facts,
+                speakerRules: userRules.rulesFor(humanMsg.author, humanMsg.member, client.user, humanMsg.guild?.members?.me).instructions
+              })
             )
           : getAIResponse(state, leadMsg.content, [humanMsg, leadMsg], null, {
               partnerIsAi: true,

@@ -79,7 +79,9 @@ function examplesFor(query, count = OBS.examples) {
 
 const RECENT_POOL = 300;
 
-function pickExamples(lines, query, count) {
+// relevantMax: 話題が近い発言として選ぶ上限(既定は半分)。pool: 残りをランダムに取る範囲
+// (既定は直近RECENT_POOL件。固定のコーパスなら全体から取るようInfinityを渡す)
+function pickExamples(lines, query, count, { relevantMax = Math.ceil(count / 2), pool = RECENT_POOL } = {}) {
   if (!lines?.length || count <= 0) return [];
   const picked = new Set();
   const q = grams(query || '');
@@ -88,10 +90,10 @@ function pickExamples(lines, query, count) {
       .map((line) => ({ line, score: [...grams(line)].filter((g) => q.has(g)).length }))
       .filter((x) => x.score >= 2)
       .sort((a, b) => b.score - a.score)
-      .slice(0, Math.ceil(count / 2))
+      .slice(0, relevantMax)
       .forEach((x) => picked.add(x.line));
   }
-  const recent = lines.slice(-RECENT_POOL);
+  const recent = Number.isFinite(pool) ? lines.slice(-pool) : lines;
   for (let tries = 0; picked.size < Math.min(count, lines.length) && tries < count * 5; tries++) {
     picked.add(recent[Math.floor(Math.random() * recent.length)]);
   }

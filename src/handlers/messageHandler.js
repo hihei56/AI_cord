@@ -9,6 +9,7 @@ const crowd = require('../utils/crowd');
 const humanPresence = require('../utils/humanPresence');
 const { factsFor } = require('../utils/questionFacts');
 const mood = require('../utils/mood');
+const userRules = require('../utils/userRules');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -145,7 +146,12 @@ function resolveChance(msg, client, state, presenceLevel) {
   if (isMention) chance = config.replyChance.mention;
   if (isReply) chance = config.replyChance.reply;
 
+  // 特定の相手への接し方(config/user_rules.json)で返信確率が決まっていれば、それを下限にする
+  const ruleChance = userRules.rulesFor(msg.author, msg.member, client.user, msg.guild?.members?.me).replyChance;
+  if (ruleChance !== null) chance = Math.max(chance, ruleChance);
+
   chance = Math.min(1, Math.max(0, chance * (1 + (Math.random() * 2 - 1) * REPLY_CHANCE_JITTER)));
+  if (ruleChance !== null && !isMention && !isReply) return chance;
 
   // 人間の人数でbotの出しゃばり具合を変える(humanPresence参照)。人間同士で回っている時は
   // 引っ込み、1人しかいない時は寂しくならないよう反応を増やす。
@@ -305,6 +311,7 @@ function registerMessageHandler(client) {
             allowSkip: !isMention && !isReply && !engaged,
             // 直接話しかけられた時は、質問や知っている話題に数文でちゃんと答える
             direct: Boolean(isMention || isReply || engaged),
+            speakerRules: userRules.rulesFor(msg.author, msg.member, client.user, msg.guild?.members?.me).instructions,
             // 物知り役は、事実を聞く質問なら調べてから答える(それ以外の役割・質問ならnull)
             facts: await factsFor(state, userMsg)
           });

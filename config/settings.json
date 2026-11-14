@@ -40,7 +40,7 @@
     "dayOffset": 0.35,
     "circadian": 0.35,
     "peakHourJST": 23,
-    "quirkChance": 0.3
+    "quirkChance": 0.15
   },
   "conversationHold": {
     "windowMs": 180000,
@@ -157,6 +157,13 @@
     "selfTalk": {
       "temperature": 1.3,
       "maxTokens": 400
+    },
+    "twoStage": {
+      "enabled": true
+    },
+    "manyShot": {
+      "enabled": true,
+      "count": 100
     },
     "vision": {
       "enabled": true,
