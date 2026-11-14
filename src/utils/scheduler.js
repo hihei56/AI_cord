@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 // setIntervalは常に寸分違わず同じ周期で発火するため、投稿タイミングが機械的な
 // パターンとして見えやすい(AI/botバレの原因になる)。代わりに、次回までの待機時間を
 // 呼び出すたびにランダムに決めてsetTimeoutを繰り返すことで、人間の投稿頻度のような
@@ -13,9 +15,10 @@ function scheduleWithJitter(baseMs, jitterRatio, fn) {
   async function tick() {
     try {
       await fn();
-    } catch {
-      // fn側で必要なログは出している前提。ここで握りつぶさないとunhandledRejectionで
-      // スケジュールが止まりかねないため
+    } catch (err) {
+      // ここで受けないとunhandledRejectionでスケジュールが止まりかねない。ただし黙って
+      // 捨てると「定期処理が毎回失敗しているのに誰も気付かない」状態になるのでログは残す
+      logger.error('SCHEDULER', err);
     } finally {
       setTimeout(tick, nextDelay(baseMs, jitterRatio));
     }

@@ -1,11 +1,15 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply } = require('../utils/aiClient');
+const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
-const { resolveDisplayName } = require('../utils/nicknames');
+const { resolveDisplayName, textMentionsName } = require('../utils/nicknames');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
+const usageLedger = require('../utils/usageLedger');
+const { getAllClients } = require('../utils/accountRegistry');
+const { CROWD } = require('../utils/crowd');
+const humanPresence = require('../utils/humanPresence');
 
 // 会話履歴に「実際は何を送ったか」をそのまま積むと、GIFのURLをLLMがテキストとして
 // 解釈しようとして不自然になるため、GIFを送った時の履歴には代わりにこのプレース
@@ -36,10 +40,6 @@ const {
   botReplyCooldownMs: BOT_REPLY_COOLDOWN_MS = 600000
 } = config.conversationSeed;
 
-// 本物のユーザー(botでも自アカウント群でもない)の発言か
-function isRealUserMessage(msg) {
-  return !msg.author.bot && !isOwnAccount(msg.author.id);
-}
 
 // チャンネルが「盛り上げ対象」かどうか。「ユーザーが一定時間会話しなかったら
 // AI同士が自発的に会話する」という要件なので、直近の"人間の"発言が
@@ -49,13 +49,23 @@ function isRealUserMessage(msg) {
 // 直近フェッチした範囲に人間の発言が1件も無ければ、誰も一度も発言していない
 // 完全な無人チャンネルの可能性が高く、そここそ最優先で賑やかすべき対象なので
 // true(対象)扱いにする
+const QUIET_CHECK_LIMIT = 20;
+
 async function isChannelQuiet(channel) {
   try {
-    const recent = await channel.messages.fetch({ limit: 20 });
-    const lastHuman = [...recent.values()].find(isRealUserMessage);
+    // 直近20件はmessageCreateで受信済みならキャッシュにある。足りない時だけfetchする
+    const recent =
+      channel.messages.cache.size >= QUIET_CHECK_LIMIT ? channel.messages.cache : await channel.messages.fetch({ limit: QUIET_CHECK_LIMIT });
+    const lastHuman = [...recent.values()]
+      .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+      .slice(0, QUIET_CHECK_LIMIT)
+      .find(humanPresence.isHuman);
     if (!lastHuman) return true;
     return Date.now() - lastHuman.createdTimestamp > QUIET_THRESHOLD_MS;
-  } catch {
+  } catch (err) {
+    // 判定できない時は「賑やか」扱いにして何もしない。権限不足などで毎回失敗している場合に
+    // 気付けるようログは残す
+    logger.error('SEED', `過疎チェックに失敗 (#${channel.name || channel.id}): ${err.message}`);
     return false;
   }
 }
@@ -109,12 +119,9 @@ async function showTyping(channel, accountId) {
 async function humanInterruptedSince(client, channelId, sinceTimestamp) {
   const channel = client.channels.cache.get(channelId);
   if (!channel) return false;
-  try {
-    const recent = await channel.messages.fetch({ limit: 5 });
-    return [...recent.values()].some((m) => m.createdTimestamp > sinceTimestamp && isRealUserMessage(m));
-  } catch {
-    return false;
-  }
+  // sinceTimestamp以降に届いたメッセージはすべてmessageCreateでキャッシュに入っている。
+  // 以前は掛け合いの1ターンごとにfetchしていた(1会話で最大10回前後のAPI呼び出し)
+  return [...channel.messages.cache.values()].some((m) => m.createdTimestamp > sinceTimestamp && humanPresence.isHuman(m));
 }
 
 // 進行中の掛け合いがあるチャンネルID。alwaysOnモードは短い間隔で次のfn()が
@@ -130,9 +137,52 @@ const activeChannels = new Set();
 // (最初の1通はgenerateSelfTalkで新規に切り出す)と、兄弟BOTの発言に割り込む
 // reactToSiblingMessage(最初の1通は割り込み先へのリプライ)の両方から、
 // 「最初の1往復を終えた状態」を渡して呼び出す
-async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSentMsg, lastActionAt, topicHint, totalTurns, roleOf }) {
+// 2人で交互に話すだけだと「botが2体いる」以上に見えないため、参加者(participants)が
+// 3人以上いる時は、次の話者を直前の話者以外からランダムに選ぶ(順番が決まっていない
+// グループの雑談のようにする)。さらに一定確率で、次に話しそうな別のアカウントも
+// 同時に入力中表示を出し、「〇〇と△△が入力中…」という複数人の気配を作る
+// 次の話者の選び方はSillyTavernのグループチャット(natural/pooled order)を参考にした:
+// 1) 直前の発言で名前を呼ばれた参加者がいればその人(呼ばれたのに別の人が答えると不自然)
+// 2) この会話でまだ喋っていない参加者を優先(同じ2人だけで回り続けるのを防ぐ)
+// 3) それ以外は「喋りやすさ」(役割のtalkativeness、無ければアカウントの返信確率倍率)で重み付けして抽選
+function talkativeness(client) {
+  const st = client.accountState;
+  return Math.max(0.05, config.roles?.[st.charRole]?.talkativeness ?? st.replyChanceMultiplier ?? 1);
+}
+
+function nextSpeaker(participants, current, { lastText = '', spoken = null, channelId = null } = {}) {
+  const others = participants.filter((c) => c !== current && !c.accountState.lockedDown);
+  if (others.length === 0) return null;
+
+  if (lastText && channelId) {
+    const called = others.find((c) => {
+      const ch = c.channels.cache.get(channelId);
+      const name = ch ? resolveBotDisplayName(c, ch) : c.user?.username;
+      return textMentionsName(lastText, name);
+    });
+    if (called) return called;
+  }
+
+  const notYet = spoken ? others.filter((c) => !spoken.has(c.accountState.id)) : [];
+  const pool = notYet.length ? notYet : others;
+  const total = pool.reduce((a, c) => a + talkativeness(c), 0);
+  let r = Math.random() * total;
+  for (const c of pool) {
+    if ((r -= talkativeness(c)) <= 0) return c;
+  }
+  return pool.at(-1);
+}
+
+async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSentMsg, lastActionAt, topicHint, totalTurns, roleOf, participants = null }) {
+  const group = participants && participants.length > 2 ? participants : null;
+  const spoken = new Set([listener.accountState.id]);
   for (let turn = 1; turn < totalTurns; turn++) {
     if (speaker.accountState.lockedDown) break;
+    // 最低ターン数を超えたら確率で切り上げる(毎回律儀に上限まで続くと不自然)。
+    // ai-townのleaveConversation同様、最後の発言は一定確率で「切り上げの一言」にして
+    // 会話がぶつ切りで終わらないようにする(そのため終わるかどうかを発言の前に決める)
+    const isLast = turn === totalTurns - 1 || (turn + 1 >= MIN_TURNS && Math.random() > CONTINUE_CHANCE);
+    const closing = isLast && Math.random() < (CROWD.closingChance ?? 0.5);
 
     await new Promise((r) => setTimeout(r, turnDelay()));
 
@@ -144,6 +194,10 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
     const channel = speaker.channels.cache.get(channelId);
     if (!channel) break;
 
+    if (group && Math.random() < (CROWD.overlapTypingChance ?? 0.5)) {
+      const bystander = nextSpeaker(group, speaker, { spoken });
+      bystander?.channels.cache.get(channelId)?.sendTyping().catch(() => {});
+    }
     await showTyping(channel, speaker.accountState.id);
 
     // 絵文字/GIFのみモードでは常にどちらか一方だけを送る(LLMは一切呼ばない)。
@@ -177,7 +231,9 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
         partnerIsAi: true,
         speakerLabelOverride: resolveBotDisplayName(listener, channel),
         topicHint,
-        role: roleOf(speaker)
+        role: closing ? 'closing' : roleOf(speaker),
+        // 相手(AI)とのこれまでのやり取りの記憶を使う(ai-townの「前回の会話」と同じ考え方)
+        partnerUserId: listener.user?.id
       });
       if (!reply) break;
 
@@ -188,17 +244,30 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
         reply: { messageReference: lastSentMsg.id, failIfNotExists: false }
       });
       recordReply(speaker.accountState, reply);
-      logger.log('SEED', `[${speaker.accountState.id}] ${reply}`);
+      logger.log('SEED', `[${speaker.accountState.id}] ${reply}${closing ? '(切り上げ)' : ''}`);
+
+      // AI同士のやり取りも記憶する(次に同じ相手と話す時に前の話題を拾えるように)
+      const partnerName = resolveBotDisplayName(listener, channel);
+      if (listener.user?.id) {
+        recordMemory(speaker.accountState, listener.user.id, partnerName, lastMsg, reply);
+        compressUserMemoryIfNeeded(speaker.accountState, listener.user.id, partnerName).catch((err) => logger.error('MEMORY', err));
+      }
     }
 
+    spoken.add(speaker.accountState.id);
     history.push({ author: { username: resolveBotDisplayName(speaker, channel) }, content: reply });
     lastMsg = reply;
     lastActionAt = Date.now();
 
-    [speaker, listener] = [listener, speaker];
+    if (isLast) break;
 
-    // 最低ターン数を超えたら確率で切り上げる(毎回律儀に上限まで続くと不自然)
-    if (turn + 1 >= MIN_TURNS && Math.random() > CONTINUE_CHANCE) break;
+    if (group) {
+      const next = nextSpeaker(group, speaker, { lastText: reply, spoken, channelId });
+      if (!next) break;
+      [speaker, listener] = [next, speaker];
+    } else {
+      [speaker, listener] = [listener, speaker];
+    }
   }
 }
 
@@ -207,19 +276,22 @@ async function runTurns({ channelId, speaker, listener, history, lastMsg, lastSe
 // 途中でユーザーが発言してきたら打ち切り、通常のmessageHandler(人間には普通に反応する)に譲る
 async function seedConversation(clientA, clientB, channelId) {
   if (activeChannels.has(channelId)) return;
+  if (!usageLedger.canStartBackground()) return;
 
   const channelA = clientA.channels.cache.get(channelId);
   if (!channelA) return;
 
   activeChannels.add(channelId);
   try {
-    await runSeedConversation(clientA, clientB, channelId, channelA);
+    await usageLedger.runBackground(() => runSeedConversation(clientA, clientB, channelId, channelA));
   } finally {
     activeChannels.delete(channelId);
   }
 }
 
 async function runSeedConversation(clientA, clientB, channelId, channelA) {
+  const participants = [clientA, clientB, ...pickExtraParticipants(clientA, clientB, channelId)];
+  if (participants.length > 2) logger.log('SEED', `グループ会話: ${participants.map((c) => c.accountState.id).join(', ')}`);
   await showTyping(channelA, clientA.accountState.id);
 
   // 絵文字/GIFのみモードでは話題決め自体が不要(お題はLLMへのプロンプト材料でしかないため)
@@ -271,9 +343,25 @@ async function runSeedConversation(clientA, clientB, channelId, channelA) {
     lastSentMsg: openerMsg,
     lastActionAt: Date.now(),
     topicHint,
-    totalTurns: randomTurnCount(),
-    roleOf
+    // 3人以上の時は全員に出番が回るよう少しターンを増やす
+    totalTurns: randomTurnCount() + (participants.length - 2) * 2,
+    roleOf,
+    participants
   });
+}
+
+// 掛け合いに途中参加させる3人目以降。同じチャンネルを担当している兄弟アカウントから
+// groupJoinChanceの確率で1人ずつ(最大groupMaxSize人まで)加える
+function pickExtraParticipants(clientA, clientB, channelId) {
+  const extra = [];
+  const pool = getAllClients().filter(
+    (c) => c !== clientA && c !== clientB && c.user && !c.accountState.lockedDown && c.accountState.channelStore.isAllowedChannel(channelId)
+  );
+  for (const c of pool.sort(() => Math.random() - 0.5)) {
+    if (2 + extra.length >= (CROWD.groupMaxSize ?? 4)) break;
+    if (Math.random() < (CROWD.groupJoinChance ?? 0.5)) extra.push(c);
+  }
+  return extra;
 }
 
 // チャンネルごとに、直近いつ「割り込みリプライ」を発火させたか。botReplyChance自体は
@@ -373,12 +461,17 @@ function registerBotReplyTrigger(clients) {
       if (!client.accountState.channelStore.isAllowedChannel(msg.channel.id)) return;
       if (activeChannels.has(msg.channel.id)) return;
       if (!canTriggerReactive(msg.channel.id)) return;
+      // AI同士の割り込み会話は「人間が少ない時の代わり」なので、人間が2人以上いる時はしない
+      if (!['empty', 'few'].includes(humanPresence.level(msg.channel))) return;
       if (Math.random() > BOT_REPLY_CHANCE) return;
 
       const posterClient = clients.find((c) => c.user?.id === msg.author.id);
       if (!posterClient) return;
 
-      reactToSiblingMessage(client, posterClient, msg.channel.id, msg).catch((err) => logger.error('SEED', err));
+      if (!usageLedger.canStartBackground()) return;
+      usageLedger
+        .runBackground(() => reactToSiblingMessage(client, posterClient, msg.channel.id, msg))
+        .catch((err) => logger.error('SEED', err));
     });
   }
 }
@@ -404,6 +497,8 @@ function registerConversationSeedHandler(clients) {
   // ここも毎回ランダムな待機時間で次回をスケジュールする
   scheduleWithJitter(intervalMs, CHECK_INTERVAL_JITTER, async () => {
     if (!ALWAYS_ON && Math.random() > TRIGGER_CHANCE) return;
+    // 上限到達後に過疎チェック(履歴fetch)だけ空回りさせない
+    if (!usageLedger.canStartBackground()) return;
 
     const [clientA, clientB] = ALWAYS_ON ? pickRotationPair(clients) : pickPair(clients);
     if (!clientA?.user || !clientB?.user) return;
@@ -424,4 +519,9 @@ function registerConversationSeedHandler(clients) {
   });
 }
 
-module.exports = { registerConversationSeedHandler };
+// 自律エージェント(agentHandler)が「AI同士の掛け合いを始める」を行動として選んだ時に使う
+function isSeedActive(channelId) {
+  return activeChannels.has(channelId);
+}
+
+module.exports = { registerConversationSeedHandler, seedConversation, isSeedActive };

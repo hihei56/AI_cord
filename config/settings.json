@@ -1,11 +1,71 @@
 {
   "commandPrefix": "!",
+  "controlPrefix": "ai!",
   "loginStagger": {
     "minMs": 8000,
     "maxMs": 30000
   },
   "aiPosting": {
-    "enabled": false
+    "enabled": true
+  },
+  "budget": {
+    "backgroundDailyTokens": 80000,
+    "rateLimitCooldownMs": 60000
+  },
+  "knowledge": {
+    "maxChunks": 2,
+    "minScore": 0.3,
+    "minMatchedGrams": 3
+  },
+  "roles": {
+    "knower": {
+      "instruction": "グループの物知り役。聞かれたことには知っている範囲でちゃんと答える。ただし説明口調・箇条書き・ですます調にせず雑談のノリで1〜3文。自信がない所は「たしか」「らしい」とぼかす",
+      "maxReplyLength": 140,
+      "searchQuestions": true
+    },
+    "tsukkomi": {
+      "instruction": "グループのツッコミ役。人の発言の変な所やズレに軽くツッコむ。冷静め"
+    },
+    "boke": {
+      "instruction": "グループのボケ役。ちょっとズレたことや冗談を言う。真面目に答えすぎない"
+    },
+    "listener": {
+      "instruction": "グループの聞き役。相手の話に反応して質問を返す。自分の話は控えめ"
+    }
+  },
+  "conversationHold": {
+    "windowMs": 180000,
+    "cooldownSeconds": 15,
+    "batchWindowMs": 20000
+  },
+  "crowd": {
+    "followChance": 0.45,
+    "maxFollowers": 2,
+    "followDelayMinMs": 3000,
+    "followDelayMaxMs": 15000,
+    "groupJoinChance": 0.5,
+    "groupMaxSize": 4,
+    "overlapTypingChance": 0.5,
+    "closingChance": 0.5
+  },
+  "serverCoach": {
+    "enabled": true,
+    "reportWeekday": 1,
+    "reportHourJST": 21,
+    "maxTokens": 1800
+  },
+  "agent": {
+    "enabled": true,
+    "tickIntervalMs": 600000,
+    "tickJitter": 0.4,
+    "quietMinMinutes": 10,
+    "maxQuietHours": 12,
+    "ownSilenceMinutes": 45,
+    "sleepHoursJST": [2, 7],
+    "channelCooldownMinutes": 20,
+    "maxActionsPerDay": 30,
+    "evalWindowMinutes": 10,
+    "decisionMaxTokens": 400
   },
   "cooldownSeconds": 90,
   "cooldownJitter": 0.3,
@@ -13,12 +73,6 @@
     "mention": 0.95,
     "reply": 0.93,
     "normal": 0.35
-  },
-  "crowdGuard": {
-    "fetchLimit": 20,
-    "windowMs": 120000,
-    "minDistinctUsers": 4,
-    "backoffMultiplier": 0.1
   },
   "recentDuplicateGuard": {
     "fetchLimit": 3,
@@ -102,6 +156,16 @@
     }
   },
   "presenceFile": "default.json",
+  "promo": {
+    "enabled": true,
+    "accounts": "all",
+    "inviteUrl": "",
+    "applicationId": "",
+    "buttonLabel": "サーバーに参加",
+    "names": ["雑談"],
+    "details": ["まったり雑談中", "誰でも歓迎", "夜に人が増えます"],
+    "states": ["気軽にどうぞ"]
+  },
   "relay": {
     "delayMs": 5000,
     "delayJitter": 0.4

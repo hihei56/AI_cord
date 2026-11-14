@@ -13,6 +13,7 @@ module.exports = {
       const nextLockedDown = !client.accountState.lockedDown;
       for (const c of allClients) {
         c.accountState.lockedDown = nextLockedDown;
+        c.accountState.autoPaused = false;
       }
       logger.log('LOCKDOWN', `[全アカウント] ${nextLockedDown ? '有効化' : '解除'} (一括, ${allClients.length}件)`);
       await msg.channel.send(
@@ -36,6 +37,7 @@ module.exports = {
 
     const state = client.accountState;
     state.lockedDown = !state.lockedDown;
+    state.autoPaused = false;
     logger.log('LOCKDOWN', `[${state.id}] ${state.lockedDown ? '有効化' : '解除'}`);
     await msg.channel.send(state.lockedDown ? '🔒 ロックダウン: 自動応答を停止しました' : '🔓 ロックダウン解除: 自動応答を再開しました');
   }

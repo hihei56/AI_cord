@@ -8,6 +8,7 @@ const { registerSelfTalkHandler } = require('./handlers/selfTalkHandler');
 const { registerPresenceHandler } = require('./handlers/presenceHandler');
 const { registerPresenceTrackerHandler } = require('./handlers/presenceTrackerHandler');
 const { registerCommandHandler } = require('./commands/handler');
+const { registerControlCommand } = require('./commands/control');
 const { registerReminderScheduler } = require('./reminderScheduler');
 const { registerConversationSeedHandler } = require('./handlers/conversationSeedHandler');
 const { registerPriceAlertHandler } = require('./handlers/priceAlertHandler');
@@ -15,7 +16,10 @@ const { registerMarketReportHandler } = require('./handlers/marketReportHandler'
 const { registerGifPostHandler } = require('./handlers/gifPostHandler');
 const { registerNewsPostHandler } = require('./handlers/newsPostHandler');
 const { registerHouseWatchHandler } = require('./handlers/houseWatchHandler');
+const { registerAgentHandler } = require('./handlers/agentHandler');
+const { registerServerCoachHandler } = require('./handlers/serverCoachHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
+const { registerDiscordGuard } = require('./utils/discordGuard');
 const { initMarkov } = require('./utils/aiClient');
 
 process.on('unhandledRejection', (err) => logger.error('UNHANDLED', err));
@@ -36,6 +40,7 @@ async function start() {
     registerSelfTalkHandler(client);
     registerCommandHandler(client);
     registerPresenceTrackerHandler(client);
+    registerDiscordGuard(client);
     client.once('ready', () => {
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
       registerOwnAccount(client.user.id);
@@ -50,6 +55,9 @@ async function start() {
   registerPriceAlertHandler(clients);
   registerMarketReportHandler(clients);
   registerHouseWatchHandler(clients);
+  registerAgentHandler(clients);
+  registerControlCommand(clients);
+  registerServerCoachHandler(clients);
 
   const results = await loginStaggered(clients);
 

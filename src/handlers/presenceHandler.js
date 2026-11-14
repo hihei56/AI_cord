@@ -1,5 +1,52 @@
+const crypto = require('crypto');
+const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { scheduleWithJitter } = require('../utils/scheduler');
+
+// 宣伝用のRPC: 「〇〇をプレイ中」+「サーバーに参加」ボタン(招待リンク)をプロフィールに出す。
+// RPCはアカウント単位で、そのアカウントがいる全サーバーのメンバー一覧・プロフィールに
+// 表示されるので、別サーバーにいるだけで(発言しなくても)入口になる。
+// ボタンを表示するにはDiscordアプリケーションのID(application_id)が必要。
+// 全アカウントが同じ文言・同じボタンだと同一人物の量産アカウントだと一目で分かるため、
+// 対象アカウントを絞れる(promo.accounts)ようにし、文言は候補からアカウントごとに固定で選ぶ
+const PROMO = config.promo || {};
+const promoStartedAt = Date.now() - Math.floor(Math.random() * 3 * 3600000);
+
+function promoTargets(accountId) {
+  const list = PROMO.accounts;
+  return !list || list === 'all' || (Array.isArray(list) && list.map(String).includes(String(accountId)));
+}
+
+// アカウントIDから決まる固定の選択(再起動しても同じ文言になる)
+function stablePick(arr, accountId, salt) {
+  if (!Array.isArray(arr) || arr.length === 0) return arr || undefined;
+  const h = crypto.createHash('md5').update(`${salt}:${accountId}`).digest()[0];
+  return arr[h % arr.length];
+}
+
+function buildPromoActivity(client, presence) {
+  const inviteUrl = process.env.PROMO_INVITE_URL || PROMO.inviteUrl;
+  const applicationId = process.env.PROMO_APPLICATION_ID || PROMO.applicationId || presence.watching?.applicationId;
+  if (!PROMO.enabled || !inviteUrl || !promoTargets(client.accountState.id)) return null;
+  if (!applicationId) {
+    if (!client.accountState.promoWarned) {
+      client.accountState.promoWarned = true;
+      logger.error('RPC', `[${client.accountState.id}] 宣伝RPCにはPROMO_APPLICATION_ID(DiscordアプリのID)が必要なため表示しません`);
+    }
+    return null;
+  }
+  const id = client.accountState.id;
+  return {
+    name: stablePick(PROMO.names, id, 'name') || PROMO.name || '雑談',
+    type: 0,
+    application_id: applicationId,
+    details: stablePick(PROMO.details, id, 'details'),
+    state: stablePick(PROMO.states, id, 'state'),
+    timestamps: { start: promoStartedAt },
+    buttons: [PROMO.buttonLabel || 'サーバーに参加'],
+    metadata: { button_urls: [inviteUrl] }
+  };
+}
 
 function pickSpotifyTrack(presence) {
   const tracks = presence.spotifyTracks;
@@ -52,24 +99,34 @@ function buildActivities(client, presence) {
     });
   }
 
+  // 宣伝RPCは先頭に置く(メンバー一覧に表示されるのは基本的に先頭のアクティビティのため)
+  const promo = buildPromoActivity(client, presence);
+  if (promo) activities.unshift(promo);
+
   return activities;
 }
 
+// 表示内容が変わらない時は送り直さない(既定30秒ごとに全アカウントがGatewayへ同じ
+// プレゼンスを送り続けていた)。再接続等で表示が消えていても直るよう、この間隔ごとには送る
+const PRESENCE_REFRESH_MS = 10 * 60000;
+
 async function updatePresence(client) {
   const { presence } = client.accountState;
+  const state = client.accountState;
   try {
     const activities = buildActivities(client, presence);
+    const signature = activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)';
+    if (signature === state.lastRpcSignature && Date.now() - (state.lastRpcSentAt || 0) < PRESENCE_REFRESH_MS) return;
+
     await client.user.setPresence({
       activities,
       status: presence.status
     });
+    state.lastRpcSentAt = Date.now();
 
-    // 更新間隔が短い(既定30秒)ため、選ばれた内容が前回と同じ時まで毎回ログすると
-    // 他のログが埋もれてしまう。実際に表示内容が変わった時だけログする
-    const signature = activities.map((a) => `${a.name}(${a.details || ''})`).join(', ') || '(なし)';
-    if (signature !== client.accountState.lastRpcSignature) {
-      client.accountState.lastRpcSignature = signature;
-      logger.log('RPC', `[${client.accountState.id}] 更新: ${signature}`);
+    if (signature !== state.lastRpcSignature) {
+      state.lastRpcSignature = signature;
+      logger.log('RPC', `[${state.id}] 更新: ${signature}`);
     }
   } catch (err) {
     logger.error('RPC', err);

@@ -12,6 +12,9 @@ const resolvedCache = new Map();
 // 送ると403で弾くことがある(本番で全リクエストが403になっていた)。無料のDemo APIキー
 // (coingecko.comのDeveloper Dashboardで発行)を.envのCOINGECKO_API_KEYに入れると
 // x-cg-demo-api-keyヘッダで送る。接続先URLは無料APIと同じ
+// 応答しない外部APIで価格チェックのループごと固まらないようにする
+const FETCH_TIMEOUT_MS = 10000;
+
 function coingeckoHeaders() {
   const headers = { 'User-Agent': 'Mozilla/5.0 (compatible; ai_cord/2.0)', Accept: 'application/json' };
   if (process.env.COINGECKO_API_KEY) headers['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
@@ -21,7 +24,8 @@ function coingeckoHeaders() {
 async function searchCoinGecko(symbol) {
   try {
     const res = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`, {
-      headers: coingeckoHeaders()
+      headers: coingeckoHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -37,7 +41,9 @@ async function searchCoinGecko(symbol) {
 // シンボル一致かつ流動性が最大のペアを採用する
 async function searchDexScreener(symbol) {
   try {
-    const res = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(symbol)}`);
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(symbol)}`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
     if (!res.ok) return null;
     const data = await res.json();
     const candidates = (data.pairs || []).filter((p) => p.baseToken?.symbol?.toLowerCase() === symbol);
@@ -90,7 +96,7 @@ async function fetchCoinGeckoPrices(ids, currency) {
   try {
     const res = await fetch(
       `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=${currency}&include_24hr_change=true`,
-      { headers: coingeckoHeaders() }
+      { headers: coingeckoHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
     );
     if (!res.ok) {
       logger.error('PRICE', `CoinGecko HTTP ${res.status}${res.status === 403 && !process.env.COINGECKO_API_KEY ? '(.envにCOINGECKO_API_KEYを設定すると解消する可能性)' : ''}`);
@@ -105,7 +111,9 @@ async function fetchCoinGeckoPrices(ids, currency) {
 
 async function fetchDexScreenerPair(chainId, pairAddress) {
   try {
-    const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/${chainId}/${pairAddress}`);
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/${chainId}/${pairAddress}`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
     if (!res.ok) return null;
     const data = await res.json();
     const pair = data.pairs?.[0] || data.pair;

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
+const { readJson } = require('./jsonFile');
 
 function storePath(accountId) {
   return path.join(__dirname, '..', '..', 'data', `memory-${accountId}.json`);
@@ -14,21 +15,15 @@ function createMemoryStore(accountId) {
   const filePath = storePath(accountId);
 
   function load() {
-    try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    } catch {
-      return { users: {}, topics: [] };
-    }
+    return readJson(filePath, { users: {} });
   }
 
   const state = load();
   state.users = state.users || {};
-  state.topics = state.topics || [];
   state.recentReplies = state.recentReplies || [];
 
   const MAX_RAW_NOTES = 8;
   const MAX_SUMMARY_NOTES = 6;
-  const MAX_TOPICS = 12;
   const MAX_RECENT_REPLIES = 4;
 
   // 返信のたびに(addUserNote/addRecentReply経由で)呼ばれるため、同期的な
@@ -38,13 +33,22 @@ function createMemoryStore(accountId) {
   // 変えたくない(いちいちawaitさせたくない)ので、書き込みをキューに繋げて
   // 直列実行することで、非同期化しつつ複数の書き込みが競合して古い状態で
   // 上書きされる(=後から完了した古い書き込みで最新の状態が消える)ことを防ぐ
+  // 返信1回ごとにaddUserNoteとaddRecentReplyの2回保存が走り、そのたびに全ユーザー分の
+  // 記憶をJSON化して書き込んでいた。2秒以内の保存要求は1回の書き込みにまとめる
+  // (書き込み自体は従来通りキューで直列化し、古い状態で上書きされないようにする)
   let writeQueue = Promise.resolve();
+  let saveScheduled = false;
   function save() {
-    const snapshot = JSON.stringify(state, null, 2);
-    writeQueue = writeQueue
-      .then(() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }))
-      .then(() => fs.promises.writeFile(filePath, snapshot))
-      .catch((err) => logger.error('MEMORY', err));
+    if (saveScheduled) return;
+    saveScheduled = true;
+    setTimeout(() => {
+      saveScheduled = false;
+      const snapshot = JSON.stringify(state, null, 2);
+      writeQueue = writeQueue
+        .then(() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }))
+        .then(() => fs.promises.writeFile(filePath, snapshot))
+        .catch((err) => logger.error('MEMORY', err));
+    }, 2000);
   }
 
   function ensureUser(userId) {
@@ -81,17 +85,6 @@ function createMemoryStore(accountId) {
       const user = ensureUser(userId);
       user.notes = notes.slice(-MAX_SUMMARY_NOTES);
       user.summarized = true;
-      save();
-    },
-
-    getTopics() {
-      return state.topics;
-    },
-
-    addTopic(topic) {
-      if (!topic || state.topics.includes(topic)) return;
-      state.topics.push(topic);
-      if (state.topics.length > MAX_TOPICS) state.topics.shift();
       save();
     },
 

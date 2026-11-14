@@ -52,6 +52,29 @@ const PROVIDER_DEFAULTS = {
     model: 'meta/llama-3.2-11b-vision-instruct',
     visionModel: 'meta/llama-3.2-11b-vision-instruct'
   },
+  logfare: {
+    label: 'Logfare',
+    // https://logfare.ai の無料OpenAI互換API(レート制限なしを謳う)。運営者は不明で、
+    // 第三者の報告では「全リクエスト(プロンプト・応答)を内部研究用に記録、/consentで
+    // オプトアウト可」とされる。Discordの他人の発言を送ることになるので、人間への返信
+    // (chat)の既定には使わず、バックグラウンド処理(エージェント・AI同士の掛け合い=seed)の
+    // 逃がし先として使う想定。モデルIDは頻繁に変わるため、既定は空いているモデルへ自動で
+    // 振り分ける logfare/auto にし、LOGFARE_MODELで固定できるようにする
+    baseUrl: process.env.LOGFARE_BASE_URL || 'https://logfare.ai/v1',
+    apiKeyEnv: 'LOGFARE_API_KEY',
+    model: process.env.LOGFARE_MODEL || 'logfare/auto',
+    visionModel: process.env.LOGFARE_MODEL || 'logfare/auto'
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    // ':free'の付いたモデルが無料(1日の回数制限あり、課金履歴の有無で上限が変わる)。
+    // 無料モデルのカタログは頻繁に入れ替わり、存在しないIDを既定値にすると404になるだけなので、
+    // OPENROUTER_MODEL(例: 何らかのモデルID:free)を明示した時だけ使用可能扱いにする
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    model: process.env.OPENROUTER_MODEL || '',
+    visionModel: process.env.OPENROUTER_VISION_MODEL || process.env.OPENROUTER_MODEL || ''
+  },
   cloudflare: {
     label: 'Cloudflare Workers AI',
     // Cloudflareは接続先URLにAccount IDを含める必要があるため、他プロバイダと違い
@@ -79,9 +102,11 @@ function apiKeyFor(providerName) {
   return process.env[PROVIDER_DEFAULTS[providerName].apiKeyEnv];
 }
 
-// 対応するAPIキーが.envに入っているプロバイダだけを「切り替え可能」とする
+// 対応するAPIキー(とモデル名・接続先)が.envに入っているプロバイダだけを「切り替え可能」とする
 function availableProviders() {
-  return Object.keys(PROVIDER_DEFAULTS).filter((name) => Boolean(apiKeyFor(name)));
+  return Object.keys(PROVIDER_DEFAULTS).filter(
+    (name) => Boolean(apiKeyFor(name)) && Boolean(PROVIDER_DEFAULTS[name].model) && Boolean(PROVIDER_DEFAULTS[name].baseUrl)
+  );
 }
 
 let currentProvider = resolveProviderName(process.env.AI_PROVIDER) || availableProviders()[0] || 'groq';
@@ -95,8 +120,9 @@ function getProvider() {
 function setProvider(name) {
   const resolved = resolveProviderName(name);
   if (!resolved) return { ok: false, reason: `未対応のプロバイダ: ${name} (対応: ${Object.keys(PROVIDER_DEFAULTS).join(', ')})` };
-  if (!apiKeyFor(resolved) && !process.env.AI_API_KEY) {
-    return { ok: false, reason: `${PROVIDER_DEFAULTS[resolved].apiKeyEnv}が.envに未設定です` };
+  if (!availableProviders().includes(resolved) && !process.env.AI_API_KEY) {
+    const p = PROVIDER_DEFAULTS[resolved];
+    return { ok: false, reason: `${p.apiKeyEnv}(と必要ならモデル名)が.envに未設定です` };
   }
   currentProvider = resolved;
   return { ok: true };
@@ -125,8 +151,10 @@ function getConnection(kind = 'chat') {
     // 別の余力があるプロバイダに逃がしたい。SEED_AI_PROVIDERで明示指定できるほか、
     // 未指定なら「現在のプロバイダ以外でAPIキーが設定済みのもの」を自動で選ぶ
     // (PROVIDER_DEFAULTSの定義順)。他に無ければ現在のプロバイダを使い回す
+    // LOGFARE_API_KEYがあれば、レート制限の無いLogfareを最優先の逃がし先にする
     const otherAvailable = availableProviders().find((name) => name !== currentProvider);
-    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || otherAvailable || currentProvider;
+    const preferred = apiKeyFor('logfare') && currentProvider !== 'logfare' ? 'logfare' : otherAvailable;
+    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || preferred || currentProvider;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,
@@ -165,4 +193,4 @@ function getFallbackChain(kind = 'chat') {
     });
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, resolveProviderName };
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain };
