@@ -231,10 +231,16 @@ function getConnection(kind = 'chat') {
 // 試せるよう、フォールバック候補を「1つだけ」ではなく「残り全部」返す設計にしている
 // (以前は1つ試して失敗したらそこで諦めていたため、主プロバイダ+フォールバック先の
 // 両方が同時に落ちる複合障害に対応できなかった)
+// 既定の画像用モデルが実際に画像を読めるプロバイダ。それ以外(Cerebras・Cloudflare等)の
+// visionModelはテキストモデルで、画像を見ずにそれらしい説明を作ってしまうので、
+// 画像読み取りのフォールバック先には使わない
+const VISION_CAPABLE = new Set(['groq', 'gemini', 'nvidia', 'logfare']);
+
 function getFallbackChain(kind = 'chat') {
   const primary = getConnection(kind);
   return availableProviders()
     .filter((name) => name !== primary.provider)
+    .filter((name) => kind !== 'vision' || VISION_CAPABLE.has(name))
     .map((name) => {
       const p = PROVIDER_DEFAULTS[name];
       return {
