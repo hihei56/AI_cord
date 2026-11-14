@@ -2,7 +2,7 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { getAIResponse, describeImage, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { isOwnAccount } = require('../utils/ownAccounts');
-const { resolveDisplayName } = require('../utils/nicknames');
+const { resolveDisplayName, textMentionsName } = require('../utils/nicknames');
 const { pickReactionEmoji } = require('../utils/reactionEmoji');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 const crowd = require('../utils/crowd');
@@ -59,6 +59,43 @@ async function recentSorted(channel, limit) {
   return [...source.values()].filter(isRealUser).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
 }
 
+// 連投のまとめ(Discord-AI-Selfbotのbatch_messagesを参考): 人間は短文を数回に分けて
+// 送ることが多い(「てか」「何話そう」等)。入力中の待ち時間の間に同じ人が続けて
+// 送った発言をまとめて1つの発言として扱う
+function collectBatch(msg) {
+  const batch = [...msg.channel.messages.cache.values()]
+    .filter(
+      (m) =>
+        m.author.id === msg.author.id &&
+        m.createdTimestamp >= msg.createdTimestamp &&
+        m.createdTimestamp - msg.createdTimestamp <= HOLD.batchWindowMs
+    )
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+  // キャッシュに無い場合(起動直後など)でも、きっかけの発言だけは必ず含める
+  return batch.length ? batch : [msg];
+}
+
+// 返信の元になる「相手の発言」を組み立てる(連投のまとめ+添付画像の説明)。
+// 返信は連投の最後の発言に付ける
+async function readUserMessage(msg) {
+  const batch = collectBatch(msg);
+  let userMsg = batch.map((m) => m.content).filter(Boolean).join('\n');
+
+  // 絵文字/GIFのみモードではLLMを一切呼ばないため、画像読み取り(vision API)も不要
+  if (!isEmojiGifOnlyMode()) {
+    // visionモデルに一度に投げられる画像枚数には上限がある(超えるとエラーになったり
+    // 後半が無視されたりする)ため、先頭maxImages枚だけ読み取る。連投の2通目以降に
+    // 貼られた画像も対象にする
+    const maxImages = config.ai.vision?.maxImages ?? DEFAULT_MAX_IMAGES;
+    const imageUrls = [...new Set(batch.flatMap(extractImageUrls))].slice(0, maxImages);
+    const description = imageUrls.length > 0 ? await describeImage(imageUrls) : null;
+    if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
+  }
+  return { userMsg, replyTarget: batch.at(-1) };
+}
+
+const DEFAULT_MAX_IMAGES = 4;
+
 function isDuplicateBurst(sorted) {
   const { minGapMs } = config.recentDuplicateGuard;
   if (sorted.length < 2) return false;
@@ -95,11 +132,8 @@ function markEngaged(state, msg) {
 // @メンションだけでなく、本文で名前(呼び名・ニックネーム・ユーザー名)を呼ばれた時も
 // 呼びかけとして扱う(SillyTavernのグループチャットの「名前で呼ばれたキャラが答える」と同じ)
 function isCalledByName(msg, client) {
-  const names = [resolveDisplayName(client.user, msg.guild?.members?.me), client.user.username]
-    .filter((n) => n && n.length >= 2)
-    .map((n) => n.toLowerCase());
-  const text = (msg.content || '').toLowerCase();
-  return names.some((n) => text.includes(n));
+  const names = [resolveDisplayName(client.user, msg.guild?.members?.me), client.user.username];
+  return names.some((name) => textMentionsName(msg.content, name));
 }
 
 function resolveChance(msg, client, state, presenceLevel) {
@@ -210,12 +244,13 @@ function registerMessageHandler(client) {
 
     if (!isTestChannel) {
       try {
-        const sorted = await recentSorted(msg.channel, Math.max(config.recentDuplicateGuard.fetchLimit, config.crowdGuard?.fetchLimit ?? 0));
+        const sorted = await recentSorted(msg.channel, config.recentDuplicateGuard.fetchLimit);
         if (isDuplicateBurst(sorted)) return;
         // 直前が自分の発言でも、その相手と会話を続けている/名前を呼ばれた時は返す
         if (sorted.length >= 2 && sorted[1].author.id === client.user.id && !engaged && !isCalledByName(msg, client)) return;
-      } catch {
-        // ignore fetch failures, fall through to reply attempt
+      } catch (err) {
+        // 連投チェックができなくても返信自体は試みる(チェックのために返信を止めない)
+        logger.error('MESSAGE', `[${state.id}] 連投チェック用の履歴取得に失敗: ${err.message}`);
       }
     }
 
@@ -255,34 +290,7 @@ function registerMessageHandler(client) {
 
       const ctxMsgs = await recentHistory(msg.channel, config.ai.reply.historyFetchLimit);
 
-      // 連投のまとめ(Discord-AI-Selfbotのbatch_messagesを参考): 人間は短文を数回に分けて
-      // 送ることが多い(「てか」「何話そう」等)。入力中の待ち時間の間に同じ人が続けて
-      // 送った発言をまとめて1つの発言として読み、返信は最後の発言に付ける。
-      // 以前は2通目以降が連投ガードで無視され、1通目にだけ返事をしていた
-      const batch = [...msg.channel.messages.cache.values()]
-        .filter(
-          (m) =>
-            m.author.id === msg.author.id &&
-            m.createdTimestamp >= msg.createdTimestamp &&
-            m.createdTimestamp - msg.createdTimestamp <= HOLD.batchWindowMs
-        )
-        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-      const replyTarget = batch.at(-1) || msg;
-
-      let userMsg = batch.length > 1 ? batch.map((m) => m.content).filter(Boolean).join('\n') : msg.content;
-      // 絵文字/GIFのみモードではLLMを一切呼ばないため、画像読み取り(vision API)も
-      // 不要(読み取った説明文はLLMへの返信生成にしか使っていないため)
-      if (!isEmojiGifOnlyMode()) {
-        // visionモデルに一度に投げる画像枚数には上限がある(モデルによって受付枚数の
-        // 上限が違い、4枚を超えるとエラーになったり後半が無視されたりする)ため、
-        // 添付が多い時は先頭maxImages枚だけ読み取る
-        const maxImages = config.ai.vision?.maxImages ?? 4;
-        const imageUrls = extractImageUrls(msg).slice(0, maxImages);
-        if (imageUrls.length > 0) {
-          const description = await describeImage(imageUrls);
-          if (description) userMsg = `${userMsg}\n[添付画像の内容: ${description}]`.trim();
-        }
-      }
+      const { userMsg, replyTarget } = await readUserMessage(msg);
 
       // メンション/リプライで直接呼ばれた時はマルコフ直接採用を避け、ちゃんと文脈に沿った返信にする
       const isMention = msg.mentions.has(client.user.id) || isCalledByName(msg, client);

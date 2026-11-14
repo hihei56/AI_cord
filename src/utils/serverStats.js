@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
 const { todayJST, hourOfDayJST } = require('./datetime');
+const { readJson } = require('./jsonFile');
 
 // サーバー活性化コーチ(serverCoachHandler)用の統計収集。
 // 既に受信しているmessageCreateイベントを数えるだけで、履歴の追加fetch等の
@@ -24,12 +25,7 @@ function storePath(guildId) {
 
 function loadStore(guildId) {
   if (stores.has(guildId)) return stores.get(guildId);
-  let state;
-  try {
-    state = JSON.parse(fs.readFileSync(storePath(guildId), 'utf-8'));
-  } catch {
-    state = {};
-  }
+  const state = readJson(storePath(guildId), {});
   state.salt = state.salt || crypto.randomBytes(16).toString('hex');
   state.days = state.days || {};
   // 参加した人(ハッシュ) → { joinedAt, firstMsgAt, responded }

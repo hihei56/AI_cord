@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
 const { todayJST } = require('./datetime');
+const { readJson } = require('./jsonFile');
 
 // 自律エージェントの「どの行動が実際に人間の発言を増やしたか」の実測記録。
 // 行動の種類(arm)ごとに、行動後evalWindowの間に増えた人間の発言数(報酬)の
@@ -11,12 +12,7 @@ const { todayJST } = require('./datetime');
 function createEngagementStats(accountId) {
   const filePath = path.join(__dirname, '..', '..', 'data', `agent-stats-${accountId}.json`);
 
-  let state;
-  try {
-    state = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    state = {};
-  }
+  const state = readJson(filePath, {});
   state.arms = state.arms || {};
   state.daily = state.daily || { date: todayJST(), actions: 0 };
   state.intervalMultiplier = state.intervalMultiplier || 1;

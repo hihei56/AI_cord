@@ -25,6 +25,10 @@ const CROWD = {
   ...(config.crowd || {})
 };
 
+// 返信役の返信を追従役が待つ上限(返信役の長考+生成+入力時間より長く取る)と、判定用の記録を捨てるまでの時間
+const LEAD_WAIT_TIMEOUT_MS = 2 * 60000;
+const SESSION_TTL_MS = 10 * 60000;
+
 // 人間の発言ID → { leadId, followers:Set, resolve, promise, done }
 const sessions = new Map();
 
@@ -35,7 +39,7 @@ function session(messageId) {
     const promise = new Promise((r) => (resolve = r));
     s = { leadId: null, followers: new Set(), resolve, promise, done: false };
     sessions.set(messageId, s);
-    setTimeout(() => sessions.delete(messageId), 10 * 60000).unref();
+    setTimeout(() => sessions.delete(messageId), SESSION_TTL_MS).unref();
   }
   return s;
 }
@@ -115,7 +119,7 @@ async function follow(client, humanMsg) {
   state.lastReplyTime = Date.now();
   await channel.sendTyping().catch(() => {});
 
-  const leadMsg = await Promise.race([session(humanMsg.id).promise, sleep(120000).then(() => null)]);
+  const leadMsg = await Promise.race([session(humanMsg.id).promise, sleep(LEAD_WAIT_TIMEOUT_MS).then(() => null)]);
   if (!leadMsg || !canParticipate(client, channel.id)) return;
 
   await sleep(CROWD.followDelayMinMs + Math.random() * (CROWD.followDelayMaxMs - CROWD.followDelayMinMs));
@@ -158,4 +162,4 @@ async function follow(client, humanMsg) {
   logger.log('CROWD', `[${state.id}] ${toHuman ? '人間に' : `${leadName}に`}乗っかり (${level}): ${text.slice(0, 50)}`);
 }
 
-module.exports = { claim, leadDone, follow, canParticipate, CROWD };
+module.exports = { claim, leadDone, follow, CROWD };

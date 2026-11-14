@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
+const { readJson } = require('./jsonFile');
 
 function storePath(accountId) {
   return path.join(__dirname, '..', '..', 'data', `memory-${accountId}.json`);
@@ -14,21 +15,15 @@ function createMemoryStore(accountId) {
   const filePath = storePath(accountId);
 
   function load() {
-    try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    } catch {
-      return { users: {}, topics: [] };
-    }
+    return readJson(filePath, { users: {} });
   }
 
   const state = load();
   state.users = state.users || {};
-  state.topics = state.topics || [];
   state.recentReplies = state.recentReplies || [];
 
   const MAX_RAW_NOTES = 8;
   const MAX_SUMMARY_NOTES = 6;
-  const MAX_TOPICS = 12;
   const MAX_RECENT_REPLIES = 4;
 
   // 返信のたびに(addUserNote/addRecentReply経由で)呼ばれるため、同期的な
@@ -90,17 +85,6 @@ function createMemoryStore(accountId) {
       const user = ensureUser(userId);
       user.notes = notes.slice(-MAX_SUMMARY_NOTES);
       user.summarized = true;
-      save();
-    },
-
-    getTopics() {
-      return state.topics;
-    },
-
-    addTopic(topic) {
-      if (!topic || state.topics.includes(topic)) return;
-      state.topics.push(topic);
-      if (state.topics.length > MAX_TOPICS) state.topics.shift();
       save();
     },
 

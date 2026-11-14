@@ -153,4 +153,4 @@ function registerControlCommand(clients) {
   }
 }
 
-module.exports = { registerControlCommand, resolveTargets, PREFIX };
+module.exports = { registerControlCommand };

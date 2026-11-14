@@ -5,6 +5,8 @@ const logger = require('../utils/logger');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { todayJST, hourOfDayJST } = require('../utils/datetime');
 const serverStats = require('../utils/serverStats');
+const { readJson } = require('../utils/jsonFile');
+const { isHuman } = require('../utils/humanPresence');
 const usageLedger = require('../utils/usageLedger');
 const { callChatCompletion } = require('../utils/aiClient');
 
@@ -27,12 +29,7 @@ const COACH = {
 };
 
 const STORE_PATH = path.join(__dirname, '..', '..', 'data', 'server-coach.json');
-let store;
-try {
-  store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf-8'));
-} catch {
-  store = {};
-}
+const store = readJson(STORE_PATH, {});
 store.guilds = store.guilds || {};
 
 function saveStore() {
@@ -158,7 +155,13 @@ function chunk(text, size = 1900) {
   for (const line of text.split('\n')) {
     if ((buf + '\n' + line).length > size) {
       if (buf) out.push(buf);
-      buf = line.slice(0, size);
+      // 1行だけで上限を超える場合は、切り捨てずに上限ごとに分けて全部送る
+      let rest = line;
+      while (rest.length > size) {
+        out.push(rest.slice(0, size));
+        rest = rest.slice(size);
+      }
+      buf = rest;
     } else {
       buf = buf ? `${buf}\n${line}` : line;
     }
@@ -224,6 +227,40 @@ function reportChannelId(guildId) {
   return guildConf(guildId).channelId || process.env.SERVER_COACH_CHANNEL_ID || null;
 }
 
+const HOUR_MS = 3600000;
+const JST_OFFSET_MS = 9 * HOUR_MS;
+const REPORT_CHECK_INTERVAL_MS = HOUR_MS;
+
+// 今日が報告曜日で報告時刻を過ぎているか(日本時間)
+function isReportTime(now = new Date()) {
+  const weekdayJST = new Date(now.getTime() + JST_OFFSET_MS).getUTCDay(); // 0=日
+  return weekdayJST === COACH.reportWeekday && hourOfDayJST(now) >= COACH.reportHourJST;
+}
+
+// このサーバーに今日のレポートをまだ出していなければ、投稿先チャンネルを返す
+function dueReportChannel(client, guild) {
+  if (!client.accountState.guildStore.isAllowedGuild(guild.id)) return null;
+  if (guildConf(guild.id).lastReportDate === todayJST()) return null;
+  const channelId = reportChannelId(guild.id);
+  return (channelId && client.channels.cache.get(channelId)) || null;
+}
+
+async function postDueReports(clients) {
+  if (!isReportTime()) return;
+  const done = new Set();
+  for (const client of clients.filter((c) => c.user)) {
+    for (const guild of client.guilds.cache.values()) {
+      const channel = done.has(guild.id) ? null : dueReportChannel(client, guild);
+      if (!channel) continue;
+      done.add(guild.id);
+      await sendReport(channel, await buildReport(guild)).then(
+        () => logger.log('COACH', `${guild.name}のレポートを投稿`),
+        (err) => logger.error('COACH', err)
+      );
+    }
+  }
+}
+
 function registerServerCoachHandler(clients) {
   if (!COACH.enabled) return;
 
@@ -231,35 +268,11 @@ function registerServerCoachHandler(clients) {
     client.on('messageCreate', (msg) => {
       if (!msg.guild || !client.accountState.guildStore.isAllowedGuild(msg.guild.id)) return;
       const isOwn = isOwnAccount(msg.author.id) || msg.author.id === client.user?.id;
-      const isHuman = !isOwn && (!msg.author.bot || Boolean(msg.webhookId));
-      serverStats.recordMessage(msg, { isOwn, isHuman });
+      serverStats.recordMessage(msg, { isOwn, isHuman: !isOwn && isHuman(msg) });
     });
   }
 
-  // 1時間ごとに「今日が報告曜日・報告時刻を過ぎた・今日まだ出していない」を確認する
-  setInterval(async () => {
-    const now = new Date();
-    const weekday = new Date(now.getTime() + 9 * 3600000).getUTCDay(); // 日本時間の曜日(0=日)
-    if (weekday !== COACH.reportWeekday || hourOfDayJST(now) < COACH.reportHourJST) return;
-
-    const done = new Set();
-    for (const client of clients) {
-      if (!client.user) continue;
-      for (const guild of client.guilds.cache.values()) {
-        if (done.has(guild.id) || !client.accountState.guildStore.isAllowedGuild(guild.id)) continue;
-        const channelId = reportChannelId(guild.id);
-        const channel = channelId && client.channels.cache.get(channelId);
-        if (!channel || guildConf(guild.id).lastReportDate === todayJST()) continue;
-        done.add(guild.id);
-        try {
-          await sendReport(channel, await buildReport(guild));
-          logger.log('COACH', `${guild.name}のレポートを投稿`);
-        } catch (err) {
-          logger.error('COACH', err);
-        }
-      }
-    }
-  }, 3600000).unref();
+  setInterval(() => postDueReports(clients).catch((err) => logger.error('COACH', err)), REPORT_CHECK_INTERVAL_MS).unref();
 }
 
 module.exports = { registerServerCoachHandler, buildReport, sendReport, guildConf, saveStore, reportChannelId, COACH };

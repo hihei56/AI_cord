@@ -96,6 +96,7 @@ function textSimilarity(a, b) {
 const ANTI_FILLER_SPAM_CONSTRAINT =
   '\n【重要】素っ気ない性格でも、相手の発言の中身を無視した「そう」「知らん」「へえ」「まあ」のような同じ単語だけの相槌を連発しないこと。反応が薄いキャラクターでも、その時々の話題に応じた違う言葉を選ぶこと。';
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 const SIMILARITY_THRESHOLD = 0.6;
 // 以前は「同じプロンプトのまま最大3回再生成」していたため、口癖の強いペルソナでは
 // 4回連続で似た結果になりトークンだけを消費して見送り、という無駄が多かった。
@@ -170,8 +171,8 @@ async function initMarkov(accountState) {
     let available = [];
     try {
       available = fs.readdirSync(path.dirname(accountState.corpusPath));
-    } catch {
-      // ignore
+    } catch (err) {
+      logger.error('MARKOV', `config/corpus/ の一覧取得に失敗: ${err.message}`);
     }
     logger.error(
       'MARKOV',
@@ -225,9 +226,8 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
         Authorization: `Bearer ${conn.apiKey}`,
         'Content-Type': 'application/json'
       },
-      // 以前はタイムアウトが無く、接続先が応答しないまま固まると(スリープ中の自宅PCの
-      // ローカルLLM等)その返信処理が永久に待ち続けていた
-      signal: AbortSignal.timeout(aiProvider.timeoutFor(conn.provider) || config.ai.requestTimeoutMs || 60000),
+      // 以前はタイムアウトが無く、接続先が応答しないまま固まるとその返信処理が永久に待ち続けていた
+      signal: AbortSignal.timeout(config.ai.requestTimeoutMs || DEFAULT_REQUEST_TIMEOUT_MS),
       body: JSON.stringify({
         model: conn.model,
         messages,
@@ -746,7 +746,6 @@ async function compressUserMemoryIfNeeded(accountState, userId, displayName) {
 }
 
 module.exports = {
-  charRoleOf,
   getAIResponse,
   generateSelfTalk,
   planConversationTopic,

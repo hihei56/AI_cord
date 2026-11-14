@@ -10,7 +10,8 @@ const webSearch = require('../utils/webSearch');
 const usageLedger = require('../utils/usageLedger');
 const { createEngagementStats } = require('../utils/engagementStats');
 const { callChatCompletion, getAIResponse, generateSelfTalk, recordReply } = require('../utils/aiClient');
-const { seedConversation, isSeedActive, isRealUserMessage } = require('./conversationSeedHandler');
+const { seedConversation, isSeedActive } = require('./conversationSeedHandler');
+const { isHuman } = require('../utils/humanPresence');
 
 // 自律エージェント: 一定間隔で「観察 → 判断 → 行動 → 効果測定」を回す。
 //
@@ -66,28 +67,34 @@ function isSleepTime() {
 
 // チャンネルの状況を集計する。直近のメッセージはmessageCreateで受信済みなので、
 // キャッシュに20件以上あればAPIを呼ばない(起動直後など足りない時だけfetch)
+const OBSERVE_LIMIT = 20;
+// 「人間同士で盛り上がっている最中」とみなす条件: 直近この時間に、この件数・この人数以上
+const ACTIVE_CHAT = { windowMinutes: 5, minMessages: 4, minHumans: 2 };
+// 「放置された質問」とみなす経過時間(分)。早すぎると人間が答える前に割り込み、遅すぎると今さらになる
+const UNANSWERED = { minMinutes: 2, maxMinutes: 60 };
+
 async function observe(channel) {
-  const OBSERVE_LIMIT = 20;
   const source =
     channel.messages.cache.size >= OBSERVE_LIMIT ? channel.messages.cache : await channel.messages.fetch({ limit: OBSERVE_LIMIT });
   const messages = [...source.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp).slice(-OBSERVE_LIMIT);
-  const humans = messages.filter(isRealUserMessage);
+  const humans = messages.filter(isHuman);
   const last = messages.at(-1);
   const lastHuman = humans.at(-1);
-  const recentWindowMs = 5 * 60000;
-  const recentHumans = humans.filter((m) => Date.now() - m.createdTimestamp < recentWindowMs);
+  const recentHumans = humans.filter((m) => minutesSince(m.createdTimestamp) < ACTIVE_CHAT.windowMinutes);
 
-  // 最後の発言が人間の質問で、2分〜60分放置されているか
+  // 最後の発言が人間の質問で、誰も答えないまま放置されているか
+  const sinceLastHuman = minutesSince(lastHuman?.createdTimestamp);
   const unansweredQuestion =
     last && lastHuman && last.id === lastHuman.id && /[?？]\s*$/.test(lastHuman.content) &&
-    minutesSince(lastHuman.createdTimestamp) >= 2 && minutesSince(lastHuman.createdTimestamp) <= 60;
+    sinceLastHuman >= UNANSWERED.minMinutes && sinceLastHuman <= UNANSWERED.maxMinutes;
 
   return {
     messages,
     minutesSinceAny: minutesSince(last?.createdTimestamp),
     minutesSinceHuman: minutesSince(lastHuman?.createdTimestamp),
     lastIsOwn: Boolean(last && isOwnAccount(last.author.id)),
-    activeHumanChat: recentHumans.length >= 4 && new Set(recentHumans.map((m) => m.author.id)).size >= 2,
+    activeHumanChat:
+      recentHumans.length >= ACTIVE_CHAT.minMessages && new Set(recentHumans.map((m) => m.author.id)).size >= ACTIVE_CHAT.minHumans,
     unansweredQuestion: Boolean(unansweredQuestion)
   };
 }
@@ -177,7 +184,9 @@ async function propose(client, obs, actions) {
     return null;
   }
 
-  const targetMsg = shown[Number(parsed.target)];
+  // targetがnull・文字列・範囲外の時は返信先なしとする(Number(null)は0になるため、
+  // そのまま添字に使うと「返信先の指定なし」が「一番古い発言への返信」に化けていた)
+  const targetMsg = Number.isInteger(parsed.target) ? shown[parsed.target] : undefined;
   const suitable = parsed.suitable.filter((a) => {
     if (!actions.includes(a)) return false;
     if (a === 'reply') return Boolean(targetMsg) && !isOwnAccount(targetMsg.author.id);
@@ -189,7 +198,7 @@ async function propose(client, obs, actions) {
 
 // LLMが失敗・応答不能でもループを止めないための、LLM無しで中身を決められる候補
 function fallbackProposal(actions, obs) {
-  const targetMsg = obs.messages.filter(isRealUserMessage).at(-1);
+  const targetMsg = obs.messages.filter(isHuman).at(-1);
   const suitable = actions.filter((a) => a !== 'search' && (a !== 'reply' || targetMsg));
   return { suitable, targetMsg, topic: null, query: null };
 }
@@ -259,7 +268,7 @@ function scheduleEvaluation(state, channel, type, actedAt) {
     try {
       // 行動後に届いたメッセージはすべてmessageCreateでキャッシュに入っているのでfetch不要
       const after = [...channel.messages.cache.values()].filter(
-        (m) => isRealUserMessage(m) && m.createdTimestamp > actedAt && m.createdTimestamp <= actedAt + windowMs
+        (m) => isHuman(m) && m.createdTimestamp > actedAt && m.createdTimestamp <= actedAt + windowMs
       );
       const replies = after.filter((m) => m.mentions?.repliedUser && isOwnAccount(m.mentions.repliedUser.id)).length;
       const reward = after.length + replies;

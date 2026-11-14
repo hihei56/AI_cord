@@ -3,7 +3,7 @@ const logger = require('../utils/logger');
 const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
 const { isOwnAccount } = require('../utils/ownAccounts');
-const { resolveDisplayName } = require('../utils/nicknames');
+const { resolveDisplayName, textMentionsName } = require('../utils/nicknames');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 const usageLedger = require('../utils/usageLedger');
@@ -40,10 +40,6 @@ const {
   botReplyCooldownMs: BOT_REPLY_COOLDOWN_MS = 600000
 } = config.conversationSeed;
 
-// 本物のユーザー(botでも自アカウント群でもない)の発言か
-function isRealUserMessage(msg) {
-  return !msg.author.bot && !isOwnAccount(msg.author.id);
-}
 
 // チャンネルが「盛り上げ対象」かどうか。「ユーザーが一定時間会話しなかったら
 // AI同士が自発的に会話する」という要件なので、直近の"人間の"発言が
@@ -53,17 +49,23 @@ function isRealUserMessage(msg) {
 // 直近フェッチした範囲に人間の発言が1件も無ければ、誰も一度も発言していない
 // 完全な無人チャンネルの可能性が高く、そここそ最優先で賑やかすべき対象なので
 // true(対象)扱いにする
+const QUIET_CHECK_LIMIT = 20;
+
 async function isChannelQuiet(channel) {
   try {
     // 直近20件はmessageCreateで受信済みならキャッシュにある。足りない時だけfetchする
-    const recent = channel.messages.cache.size >= 20 ? channel.messages.cache : await channel.messages.fetch({ limit: 20 });
+    const recent =
+      channel.messages.cache.size >= QUIET_CHECK_LIMIT ? channel.messages.cache : await channel.messages.fetch({ limit: QUIET_CHECK_LIMIT });
     const lastHuman = [...recent.values()]
       .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
-      .slice(0, 20)
-      .find(isRealUserMessage);
+      .slice(0, QUIET_CHECK_LIMIT)
+      .find(humanPresence.isHuman);
     if (!lastHuman) return true;
     return Date.now() - lastHuman.createdTimestamp > QUIET_THRESHOLD_MS;
-  } catch {
+  } catch (err) {
+    // 判定できない時は「賑やか」扱いにして何もしない。権限不足などで毎回失敗している場合に
+    // 気付けるようログは残す
+    logger.error('SEED', `過疎チェックに失敗 (#${channel.name || channel.id}): ${err.message}`);
     return false;
   }
 }
@@ -119,7 +121,7 @@ async function humanInterruptedSince(client, channelId, sinceTimestamp) {
   if (!channel) return false;
   // sinceTimestamp以降に届いたメッセージはすべてmessageCreateでキャッシュに入っている。
   // 以前は掛け合いの1ターンごとにfetchしていた(1会話で最大10回前後のAPI呼び出し)
-  return [...channel.messages.cache.values()].some((m) => m.createdTimestamp > sinceTimestamp && isRealUserMessage(m));
+  return [...channel.messages.cache.values()].some((m) => m.createdTimestamp > sinceTimestamp && humanPresence.isHuman(m));
 }
 
 // 進行中の掛け合いがあるチャンネルID。alwaysOnモードは短い間隔で次のfn()が
@@ -156,7 +158,7 @@ function nextSpeaker(participants, current, { lastText = '', spoken = null, chan
     const called = others.find((c) => {
       const ch = c.channels.cache.get(channelId);
       const name = ch ? resolveBotDisplayName(c, ch) : c.user?.username;
-      return name && name.length >= 2 && lastText.includes(name);
+      return textMentionsName(lastText, name);
     });
     if (called) return called;
   }
@@ -522,4 +524,4 @@ function isSeedActive(channelId) {
   return activeChannels.has(channelId);
 }
 
-module.exports = { registerConversationSeedHandler, seedConversation, isSeedActive, isRealUserMessage, nextSpeaker };
+module.exports = { registerConversationSeedHandler, seedConversation, isSeedActive };

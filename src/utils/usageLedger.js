@@ -5,6 +5,7 @@ const config = require('./config');
 const logger = require('./logger');
 const { todayJST } = require('./datetime');
 const aiProvider = require('./aiProvider');
+const { readJson } = require('./jsonFile');
 
 // LLMのトークン消費の台帳と、レート制限(429)を受けたプロバイダの一時停止。
 //
@@ -22,12 +23,7 @@ const filePath = path.join(__dirname, '..', '..', 'data', 'token-usage.json');
 const BACKGROUND_DAILY_TOKENS = config.budget?.backgroundDailyTokens ?? 80000;
 const DEFAULT_COOLDOWN_MS = config.budget?.rateLimitCooldownMs ?? 60000;
 
-let state;
-try {
-  state = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-} catch {
-  state = {};
-}
+let state = readJson(filePath, {});
 
 function today() {
   const date = todayJST();
@@ -75,8 +71,6 @@ function record(provider, tokens) {
 // 人間用プロバイダで消費した分だけ。Logfare等の別プロバイダに逃がせている間は上限に数えず、
 // 逃がし先が落ちてフォールバックで人間用プロバイダに流れ込んだ分だけが上限に効く
 function backgroundBudgetLeft() {
-  // 人間への返信をローカルLLMで回している場合、守るべき有料/無料枠が無いので上限を掛けない
-  if (aiProvider.getProvider() === 'local') return Infinity;
   return BACKGROUND_DAILY_TOKENS - (today().backgroundByProvider[aiProvider.getProvider()] || 0);
 }
 
@@ -103,4 +97,4 @@ function summary() {
   return { ...s, backgroundBudget: BACKGROUND_DAILY_TOKENS };
 }
 
-module.exports = { runBackground, isBackground, record, canStartBackground, backgroundBudgetLeft, coolDown, isCoolingDown, summary };
+module.exports = { runBackground, isBackground, record, canStartBackground, coolDown, isCoolingDown, summary };

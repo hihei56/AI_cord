@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const { todayJST } = require('./datetime');
 
 // 自律エージェントの「調べてから話題にする」行動用のWeb検索。
 // Tavily(https://tavily.com、無料枠あり)をTAVILY_API_KEYで使う。
@@ -11,14 +12,10 @@ const MAX_PER_DAY = Number(process.env.SEARCH_MAX_PER_DAY) || 30;
 let day = '';
 let usedToday = 0;
 
-function todayKey() {
-  return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
-}
-
 function isAvailable() {
   if (!process.env.TAVILY_API_KEY) return false;
-  if (day !== todayKey()) {
-    day = todayKey();
+  if (day !== todayJST()) {
+    day = todayJST();
     usedToday = 0;
   }
   return usedToday < MAX_PER_DAY;

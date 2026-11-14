@@ -74,9 +74,6 @@
     "reply": 0.93,
     "normal": 0.35
   },
-  "crowdGuard": {
-    "fetchLimit": 20
-  },
   "recentDuplicateGuard": {
     "fetchLimit": 3,
     "minGapMs": 2000

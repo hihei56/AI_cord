@@ -29,6 +29,9 @@ const P = {
   ...(config.humanPresence || {})
 };
 
+// 「人間の発言か」の判定はここ1か所に置く。以前は同じ判定がハンドラごとに少しずつ違う形で
+// 書かれていて、AI同士の掛け合い側だけTupperbox等のWebhookプロキシ経由の人間を
+// 人間として数えていなかった(その人が話しかけても掛け合いが止まらなかった)
 function isHuman(m) {
   return (!m.author.bot || Boolean(m.webhookId)) && !isOwnAccount(m.author.id);
 }
@@ -54,9 +57,9 @@ function pickWeighted(weights) {
 }
 
 module.exports = {
+  isHuman,
   level,
   replyFactor: (lv) => P.replyFactor[lv] ?? 1,
   followFactor: (lv) => P.followFactor[lv] ?? 0,
-  pickFollowAction: (lv) => pickWeighted(P.followActions[lv]),
-  PRESENCE: P
+  pickFollowAction: (lv) => pickWeighted(P.followActions[lv])
 };
