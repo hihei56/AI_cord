@@ -219,8 +219,33 @@ function recordReply(accountState, text) {
   accountState.memoryStore?.addRecentReply(text);
 }
 
+// 発言の「出だし」(「は？」「えぇ…」のような短い感嘆、または最初の2文字)。
+// 文全体が違っていても、同じ出だしが続くと口癖が機械的に繰り返されているように見える
+// (「は？」「は？笑えるんだろw」のように、数回に1回は必ず同じ言葉で始まる状態になっていた)
+const OPENER_REPEAT_LIMIT = 2;
+
+// 記号違い(「は？」「は?!」「は…」)は同じ出だしとして数える
+function openerOf(text) {
+  const t = (text || '').trim();
+  const interjection = t.match(/^(\S{1,4}?)[?？!！…]/);
+  if (interjection) return `${interjection[1]}？`;
+  const m = t.match(/^\S{1,2}/);
+  return m ? m[0] : null;
+}
+
+// 直近の発言でOPENER_REPEAT_LIMIT回以上使った出だし(次の発言では使わせない)
+function overusedOpeners(recentReplies) {
+  const counts = new Map();
+  for (const r of recentReplies || []) {
+    const o = openerOf(r);
+    if (o) counts.set(o, (counts.get(o) || 0) + 1);
+  }
+  return [...counts].filter(([, n]) => n >= OPENER_REPEAT_LIMIT).map(([o]) => o);
+}
+
 function isTooSimilarToRecent(text, recentReplies) {
-  return (recentReplies || []).some((prev) => textSimilarity(text, prev) >= SIMILARITY_THRESHOLD);
+  if ((recentReplies || []).some((prev) => textSimilarity(text, prev) >= SIMILARITY_THRESHOLD)) return true;
+  return overusedOpeners(recentReplies).includes(openerOf(text));
 }
 
 // 生成関数を、直近の自分の発言と似すぎていたら数回まで再生成するようラップする。
@@ -657,6 +682,10 @@ async function getAIResponseOnce(
   const antiRepeatSection = accountState.recentReplies?.length
     ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文や同じ締め方をそのまま繰り返さない)】\n${accountState.recentReplies.join('\n')}`
     : '';
+  const bannedOpeners = overusedOpeners(accountState.recentReplies);
+  const openerSection = bannedOpeners.length
+    ? `\n【最近使いすぎている出だし(今回の発言はこれで始めない。発言の途中にも入れない)】${bannedOpeners.map((o) => `「${o}」`).join(' ')}`
+    : '';
 
   const roleInstructionPool = ROLE_INSTRUCTIONS[role];
   const charRole = charRoleOf(accountState);
@@ -705,6 +734,7 @@ async function getAIResponseOnce(
     // 演じようとすること。人間は性格を毎回見せない。中身(相手の話の理解)を先、口調を後にする
     'まず相手が何を言いたいのか・会話がどういう流れなのかを読み取り、それに対して中身のある反応をする。口調はその次',
     '人格設定はあなたの背景であって、毎回の発言で見せるものではない。特徴を全部盛りにせず、大半は普通の一言でいい',
+    '人格設定の中で「」に入っている言い回しは雰囲気の例であって、決まり文句ではない。その言葉そのものを口癖のように何度も使わない',
     '1つの発言の中で態度や口調を切り替えない(普通に答えた直後に突き放す・急に煽る、のような継ぎはぎにしない)。発言全体を1つの気持ちで言い切る',
     replyLanguageOf(accountState) ? null : '必ず日本語で書く',
     allowSkip
@@ -774,7 +804,7 @@ async function getAIResponseOnce(
     if (plan) planSection = `\n【言う内容(考えた結果。これを自分の口調の発言にする。内容を変えない・足さない・説明調にしない)】\n${plan}`;
   }
 
-  const systemPrompt = `${accountState.persona}${memorySection}${profileSection}${knowledgeSection}${factsSection}${examplesSection(examples)}${antiRepeatSection}${rejectedSection(rejected)}${rulesSection}${moodSection}${dateSection()}${topicSection}${draftSection}${planSection}`;
+  const systemPrompt = `${accountState.persona}${memorySection}${profileSection}${knowledgeSection}${factsSection}${examplesSection(examples)}${antiRepeatSection}${openerSection}${rejectedSection(rejected)}${rulesSection}${moodSection}${dateSection()}${topicSection}${draftSection}${planSection}`;
   const userPrompt = `${conversation}${languageSection(accountState)}\n【返信】`;
 
   try {
