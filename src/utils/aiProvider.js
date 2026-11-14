@@ -54,16 +54,29 @@ const PROVIDER_DEFAULTS = {
   },
   logfare: {
     label: 'Logfare',
-    // https://logfare.ai の無料OpenAI互換API(レート制限なしを謳う)。運営者は不明で、
-    // 第三者の報告では「全リクエスト(プロンプト・応答)を内部研究用に記録、/consentで
-    // オプトアウト可」とされる。Discordの他人の発言を送ることになるので、人間への返信
-    // (chat)の既定には使わず、バックグラウンド処理(エージェント・AI同士の掛け合い=seed)の
-    // 逃がし先として使う想定。モデルIDは頻繁に変わるため、既定は空いているモデルへ自動で
-    // 振り分ける logfare/auto にし、LOGFARE_MODELで固定できるようにする
+    // https://logfare.ai の無料OpenAI互換API(Solexsis Research LLC運営)。公式ドキュメント
+    // (2026-11時点)で確認した仕様:
+    // - 全リクエスト(プロンプト・応答)が記録される。standardのモデルは同意不要、premiumは
+    //   学習利用への同意(/consent)が必要で、未同意だと403(training_optin_required)になる
+    // - 上限は通常アカウントで毎分40・毎時1000・1日5000リクエスト、同時6件。登録後24時間は
+    //   毎分10・1日500・同時2件。429にはRetry-Afterが付く(usageLedgerが従う)
+    // - DiscordアカウントがLogfareのサーバーに参加している間だけキーが使える
+    // 既定のlogfare/autoは空いているモデルへ自動で振り分けるが、テキスト専用。
+    // 画像を読めるのは gemma-4-31b-it / qwen-3.8-27b / economy/deepseek-v4.1-flash(standard)、
+    // glm-5.3-flash(premium)など。glm-5.3(premium)はテキスト専用。
+    // モデルIDは頻繁に変わるので、動かなくなったら https://logfare.ai/v1/models を確認する
     baseUrl: process.env.LOGFARE_BASE_URL || 'https://logfare.ai/v1',
     apiKeyEnv: 'LOGFARE_API_KEY',
     model: process.env.LOGFARE_MODEL || 'logfare/auto',
-    visionModel: process.env.LOGFARE_MODEL || 'logfare/auto'
+    // 画像読み取りの既定は、同意不要で画像入力に対応し、推論(reasoning)が既定で切れている
+    // モデルにする(推論が入ると短い説明文の生成でもトークンを使い切りやすい)
+    visionModel: process.env.LOGFARE_VISION_MODEL || 'gemma-4-31b-it',
+    // GLM・Qwen・DeepSeek・Kimiは推論つきのモデルで、強さの既定が最大(glm-5.3は推論を切れない)。
+    // そのままだと推論だけでmax_tokens(返信は400)を使い切り、本文が空のまま失敗する。
+    // 推論を弱め、本文の分とは別に推論用の余裕をmax_tokensに足す
+    reasoningModels: /glm|qwen|deepseek|kimi/i,
+    reasoningEffort: process.env.LOGFARE_REASONING_EFFORT || 'low',
+    reasoningTokenHeadroom: 1200
   },
   openrouter: {
     label: 'OpenRouter',
@@ -144,6 +157,19 @@ function sharedOrOwnKey(providerName) {
   return process.env.AI_BASE_URL ? process.env.AI_API_KEY || own : own || process.env.AI_API_KEY;
 }
 
+// プロバイダ・モデルごとにリクエストへ足すパラメータ。reasoning_effortは対応していない
+// モデルに送るとエラーになりうるので、対応が分かっている組み合わせにだけ付ける
+function requestExtras(providerName, model, maxTokens, groqEffort) {
+  const p = PROVIDER_DEFAULTS[providerName];
+  if (providerName === 'groq' && model?.includes('gpt-oss') && groqEffort) {
+    return { reasoning_effort: groqEffort };
+  }
+  if (p?.reasoningModels?.test(model || '')) {
+    return { reasoning_effort: p.reasoningEffort, max_tokens: (maxTokens || 0) + p.reasoningTokenHeadroom };
+  }
+  return {};
+}
+
 function getConnection(kind = 'chat') {
   if (kind === 'vision') {
     const providerName = resolveProviderName(process.env.VISION_AI_PROVIDER) || currentProvider;
@@ -203,4 +229,4 @@ function getFallbackChain(kind = 'chat') {
     });
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain };
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, requestExtras };

@@ -397,7 +397,15 @@ nitter等のRSSフィードを定期的にポーリングし、フィード内�
 5. **効果測定**: 行動を送信してから`evalWindowMinutes`(既定10分)の間に増えた人間の発言数(自分たちへの返信は2倍)を数え、行動ごとに`data/agent-stats-<id>.json`へ記録する(`!agent status`で平均・標準誤差・`wait`との差を表示)
 6. **自動調整**: 「何かした時」と「waitの時」の報酬差の95%信頼区間が0を下回ったら(=口を出すと逆に人間が黙る)、行動間隔を1.5倍に伸ばす(最大4倍)。有意に上回ったら縮める(設定値より短くはしない)。誤差の範囲なら何もしない
 
-**Logfareへの逃がし**: `.env`に`LOGFARE_API_KEY`を入れると、エージェントとAI同士の掛け合い(バックグラウンド処理)のLLM呼び出しはすべて[Logfare](https://logfare.ai)(無料・レート制限なしを謳うOpenAI互換API、既定モデル`logfare/auto`)に回り、人間への返信用プロバイダ(Groq等)の枠を使わなくなる。Logfareが落ちた時だけ通常のフォールバックで人間用プロバイダに流れ、その分だけが下記の上限に数えられる。Logfareは運営者不明で全リクエストを記録すると報告されているため、人間への返信の既定には使っていない。
+**Logfare**: `.env`に`LOGFARE_API_KEY`を入れると、エージェントとAI同士の掛け合い(バックグラウンド処理)のLLM呼び出しは[Logfare](https://logfare.ai)に回り、人間への返信用プロバイダ(Groq等)の枠を使わなくなる。`AI_PROVIDER=logfare`にすれば人間への返信もLogfareになる。公式ドキュメント(2026-11時点)の仕様:
+
+- 全リクエストが記録される。モデルは3段階で、standardは同意不要、premium(`glm-5.3`等)は学習利用への同意(https://logfare.ai/consent)が必要(未同意だと403)
+- 上限は毎分40・毎時1000・1日5000リクエスト、同時6件(登録後24時間は毎分10・1日500・同時2件)。DiscordアカウントがLogfareのサーバーに参加している間だけ使える。1人1アカウント
+- モデルは`LOGFARE_MODEL`で指定(既定`logfare/auto`はテキスト専用)。同意不要で使えるのは`economy/deepseek-v4.1-flash`(画像対応・リクエスト上限の対象外)、`gemma-4-31b-it`、`qwen-3.8-27b`など。一覧は https://logfare.ai/v1/models
+- 画像読み取りは`VISION_AI_PROVIDER=logfare`(または`AI_PROVIDER=logfare`)で有効になり、`LOGFARE_VISION_MODEL`(既定`gemma-4-31b-it`)を使う。`glm-5.3`は画像を読めない(`glm-5.3-flash`は読める)
+- GLM・Qwen・DeepSeek・Kimiは推論つきで既定の強さが最大のため、`reasoning_effort`を`LOGFARE_REASONING_EFFORT`(既定`low`)にし、`max_tokens`に推論分の余裕を足して送る
+
+Logfareが落ちた・上限に達した時は他のプロバイダにフォールバックし、バックグラウンド処理が人間用プロバイダに流れた分だけが下記の上限に数えられる。
 
 **トークン上限**: エージェントとAI同士の掛け合いの消費は「バックグラウンド」として`data/token-usage.json`に日ごとに記録し、`budget.backgroundDailyTokens`(既定8万)に達したらその日はバックグラウンド側だけ止める。Groqの無料枠(1日20万)のうち人間への返信用を必ず残すため。429を返したプロバイダは`retry-after`(無ければ`budget.rateLimitCooldownMs`)の間スキップする。消費量は`!agent status`で見られる。
 
