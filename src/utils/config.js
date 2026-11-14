@@ -73,17 +73,12 @@ function resolveGuildIds(envVal) {
 
 const DEFAULT_COMMAND_ROLE_IDS = ['1495971497016164492', '1543226849788825620'];
 
-// アカウントごとに返信の言語を固定する(日本語圏でなじみの無い言語で喋らせる用)。
-// キーはアカウント番号。.envのREPLY_LANGUAGE[_N]で上書きでき、offを指定すると
-// 固定しない(通常通り日本語で喋る)。DEFAULT_REPLY_LANGUAGE_ALLを設定すると、
-// .envで個別指定していない全アカウントがその言語になる(nullで無効)
-const DEFAULT_REPLY_LANGUAGE_ALL = 'タミル語';
-const DEFAULT_REPLY_LANGUAGES = { 2: 'ヒンディー語' };
-
-function resolveReplyLanguage(envVal, index) {
-  const value = envVal ?? DEFAULT_REPLY_LANGUAGE_ALL ?? DEFAULT_REPLY_LANGUAGES[index];
-  if (!value || value.toLowerCase() === 'off') return null;
-  return value;
+// アカウントごとに返信の言語を固定する(.envのREPLY_LANGUAGE[_N])。未設定・offなら
+// 固定せず日本語で喋る。以前は未設定の全アカウントがタミル語(アカウント2はヒンディー語)に
+// なる既定値があったが、不要になったので既定では固定しない
+function resolveReplyLanguage(envVal) {
+  if (!envVal || envVal.toLowerCase() === 'off') return null;
+  return envVal;
 }
 
 function resolveCommandRoleIds(envVal) {
@@ -160,7 +155,7 @@ function loadAccounts() {
       // 会話での役割(knower=物知り / tsukkomi=ツッコミ / boke=ボケ / listener=聞き役)。
       // settings.jsonのrolesに定義がある名前だけ有効。未指定なら役割なし(従来通り)
       charRole: process.env.ROLE || null,
-      replyLanguage: resolveReplyLanguage(process.env.REPLY_LANGUAGE, 1)
+      replyLanguage: resolveReplyLanguage(process.env.REPLY_LANGUAGE)
     });
   }
 
@@ -193,7 +188,7 @@ function loadAccounts() {
       gifGenres: idListEnv(process.env[`GIF_GENRE_${i}`]),
       newsPostEnabled: boolEnv(`NEWS_POST_${i}`) ?? false,
       charRole: process.env[`ROLE_${i}`] || null,
-      replyLanguage: resolveReplyLanguage(process.env[`REPLY_LANGUAGE_${i}`], i)
+      replyLanguage: resolveReplyLanguage(process.env[`REPLY_LANGUAGE_${i}`])
     });
     i++;
   }

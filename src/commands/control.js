@@ -102,6 +102,36 @@ const SUBCOMMANDS = {
     return loadCore('agent').execute(msg, args, client);
   },
 
+  // 他サーバーの会話の観察(口調の手本用)。監視先のサーバーでコマンドを打たずに済むよう、
+  // チャンネルIDを指定して自分のサーバーから登録する
+  async watch(msg, args) {
+    const observedLog = require('../utils/observedLog');
+    const [action, channelId] = [args[0]?.toLowerCase(), args[1]?.replace(/[<#>]/g, '')];
+    if ((action === 'add' || action === 'remove') && !/^\d{15,25}$/.test(channelId || '')) {
+      return msg.channel.send(`チャンネルIDを指定してください: \`${PREFIX} watch ${action} <チャンネルID>\``);
+    }
+    if (action === 'add') {
+      observedLog.addChannel(channelId);
+      const visible = getAllClients().some((c) => c.channels.cache.has(channelId));
+      return msg.channel.send(`👀 監視に追加: ${channelId}${visible ? '' : '(⚠️ どのアカウントからも見えないチャンネルです。そのサーバーに参加しているか確認)'}`);
+    }
+    if (action === 'remove') {
+      return msg.channel.send(observedLog.removeChannel(channelId) ? `監視から削除: ${channelId}` : '登録されていません');
+    }
+    if (action === 'clear') {
+      observedLog.clearLines();
+      return msg.channel.send('溜めた発言を消去しました');
+    }
+    if (action === 'show') {
+      const lines = observedLog.recentLines(10);
+      return msg.channel.send(lines.length ? `\`\`\`\n${lines.join('\n').slice(0, 1800)}\n\`\`\`` : 'まだ何も溜まっていません');
+    }
+    return msg.channel.send(
+      `監視中のチャンネル: ${observedLog.listChannels().join(', ') || '(なし)'} / 溜めた発言 ${observedLog.lineCount()}件\n` +
+        `\`${PREFIX} watch add|remove <チャンネルID>\` / \`show\`(直近10件) / \`clear\``
+    );
+  },
+
   provider: (msg, args, client) => loadCore('provider').execute(msg, args, client),
   report: (msg, args, client) => loadCore('coach').execute(msg, args, client),
 
@@ -118,6 +148,7 @@ const SUBCOMMANDS = {
         `\`${PREFIX} here|leave [対象]\` このチャンネルを担当にする / 外す`,
         `\`${PREFIX} talk\` ここでアカウント同士の雑談を今すぐ始める`,
         `\`${PREFIX} agent [on|off|now|status]\` 自律エージェント`,
+        `\`${PREFIX} watch [add|remove <チャンネルID>|show|clear]\` 他サーバーの発言を口調の手本として溜める`,
         `\`${PREFIX} report [channel|now|off]\` サーバー活性化レポート`,
         `\`${PREFIX} provider [名前]\` AIの切り替え`,
         `その他(アカウント別prefixで従来通り): ${legacy.join(' / ')}`
