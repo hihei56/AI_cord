@@ -134,6 +134,16 @@ function setProvider(name) {
 // あれば自動でGeminiを使う。AI同士の掛け合いはalwaysOnモードで常時大量に呼ばれ、
 // 人間との会話用のGroqトークン枠(1日20万トークン)を食い潰してしまうため、
 // 掛け合い分だけ別プロバイダに逃がせるようにしている
+// APIキーは「そのキーを発行したプロバイダ」にだけ送る。以前はプロバイダ自身のキーが
+// 未設定の時にGROQ_API_KEYへフォールバックしていたため、例えばLOGFARE_API_KEY無しで
+// プロバイダをlogfareにすると、GroqのキーがLogfareのサーバーへ送られていた。
+// AI_API_KEYは自前の接続先(AI_BASE_URL)用のキーなので、AI_BASE_URLがある時はそれを優先し、
+// 無い時はプロバイダ自身のキーを優先する(プロバイダを切り替えても別のキーを送らない)
+function sharedOrOwnKey(providerName) {
+  const own = apiKeyFor(providerName);
+  return process.env.AI_BASE_URL ? process.env.AI_API_KEY || own : own || process.env.AI_API_KEY;
+}
+
 function getConnection(kind = 'chat') {
   if (kind === 'vision') {
     const providerName = resolveProviderName(process.env.VISION_AI_PROVIDER) || currentProvider;
@@ -141,7 +151,7 @@ function getConnection(kind = 'chat') {
     return {
       provider: providerName,
       baseUrl: process.env.VISION_API_BASE_URL || process.env.AI_BASE_URL || p.baseUrl,
-      apiKey: process.env.VISION_API_KEY || process.env.AI_API_KEY || apiKeyFor(providerName) || process.env.GROQ_API_KEY,
+      apiKey: process.env.VISION_API_KEY || sharedOrOwnKey(providerName),
       model: process.env.VISION_MODEL || p.visionModel
     };
   }
@@ -159,7 +169,7 @@ function getConnection(kind = 'chat') {
     return {
       provider: providerName,
       baseUrl: process.env.SEED_API_BASE_URL || p.baseUrl,
-      apiKey: process.env.SEED_API_KEY || apiKeyFor(providerName) || process.env.GROQ_API_KEY,
+      apiKey: process.env.SEED_API_KEY || apiKeyFor(providerName),
       model: process.env.SEED_MODEL || p.model
     };
   }
@@ -168,7 +178,7 @@ function getConnection(kind = 'chat') {
   return {
     provider: currentProvider,
     baseUrl: process.env.AI_BASE_URL || p.baseUrl,
-    apiKey: process.env.AI_API_KEY || apiKeyFor(currentProvider) || process.env.GROQ_API_KEY,
+    apiKey: sharedOrOwnKey(currentProvider),
     model: process.env.AI_MODEL || p.model
   };
 }

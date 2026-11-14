@@ -74,19 +74,25 @@ function grams(s) {
 // 手本にする発言を選ぶ。今の話題に近いもの(文字2-gramの一致が多いもの)を半分まで、
 // 残りは直近の発言からランダムに取る(話題が合うものだけだと内容を引きずりやすいため)
 function examplesFor(query, count = OBS.examples) {
-  if (state.lines.length === 0 || count <= 0) return [];
+  return pickExamples(state.lines, query, count);
+}
+
+const RECENT_POOL = 300;
+
+function pickExamples(lines, query, count) {
+  if (!lines?.length || count <= 0) return [];
   const picked = new Set();
   const q = grams(query || '');
   if (q.size > 0) {
-    state.lines
+    lines
       .map((line) => ({ line, score: [...grams(line)].filter((g) => q.has(g)).length }))
       .filter((x) => x.score >= 2)
       .sort((a, b) => b.score - a.score)
       .slice(0, Math.ceil(count / 2))
       .forEach((x) => picked.add(x.line));
   }
-  const recent = state.lines.slice(-300);
-  for (let tries = 0; picked.size < Math.min(count, state.lines.length) && tries < count * 5; tries++) {
+  const recent = lines.slice(-RECENT_POOL);
+  for (let tries = 0; picked.size < Math.min(count, lines.length) && tries < count * 5; tries++) {
     picked.add(recent[Math.floor(Math.random() * recent.length)]);
   }
   return [...picked];
@@ -99,6 +105,7 @@ function register(clients) {
 module.exports = {
   register,
   examplesFor,
+  pickExamples,
   addChannel(id) {
     watched.add(id);
     saveSoon(0);
