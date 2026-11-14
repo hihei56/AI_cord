@@ -21,7 +21,7 @@
     "knower": {
       "instruction": "グループの物知り役。聞かれたことには知っている範囲でちゃんと答える。ただし説明口調・箇条書き・ですます調にせず雑談のノリで1〜3文。自信がない所は「たしか」「らしい」とぼかす",
       "maxReplyLength": 140,
-      "searchQuestions": true
+      "searchQuestions": false
     },
     "tsukkomi": {
       "instruction": "グループのツッコミ役。人の発言の変な所やズレに軽くツッコむ。冷静め"
@@ -142,7 +142,8 @@
       "maxTokens": 400,
       "historyContextSize": 12,
       "historyFetchLimit": 15,
-      "maxReplyLength": 60
+      "maxReplyLength": 60,
+      "answerMaxLength": 140
     },
     "selfTalk": {
       "temperature": 1.3,

@@ -301,6 +301,8 @@ function registerMessageHandler(client) {
             allowMarkovDirect: !isMention && !isReply,
             // 直接呼ばれていない・会話中の相手でもない時は、言うことが無ければ返さなくてよい
             allowSkip: !isMention && !isReply && !engaged,
+            // 直接話しかけられた時は、質問や知っている話題に数文でちゃんと答える
+            direct: Boolean(isMention || isReply || engaged),
             // 物知り役は、事実を聞く質問なら調べてから答える(それ以外の役割・質問ならnull)
             facts: await factsFor(state, userMsg)
           });
