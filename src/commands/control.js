@@ -104,6 +104,28 @@ const SUBCOMMANDS = {
 
   // 他サーバーの会話の観察(口調の手本用)。監視先のサーバーでコマンドを打たずに済むよう、
   // チャンネルIDを指定して自分のサーバーから登録する
+  // ユーザーごとの人物メモ(その人に合った返事をさせるためのデータベース)
+  async user(msg, args) {
+    const userProfiles = require('../utils/userProfiles');
+    const userId = args[0]?.match(/^<@!?(\d+)>$|^(\d{15,25})$/)?.slice(1).find(Boolean);
+    if (!userId) {
+      return msg.channel.send(`使い方: \`${PREFIX} user @相手 メモ\`(追加) / \`${PREFIX} user @相手\`(表示) / \`${PREFIX} user @相手 clear\``);
+    }
+    const rest = args.slice(1).join(' ').trim();
+    if (!rest) {
+      const notes = userProfiles.get(userId);
+      return msg.channel.send({
+        content: notes.length ? `<@${userId}> のメモ:\n${notes.map((n) => `・${n}`).join('\n')}` : 'メモはありません',
+        allowedMentions: { parse: [] }
+      });
+    }
+    if (rest.toLowerCase() === 'clear') {
+      return msg.channel.send(userProfiles.clear(userId) ? 'メモを消しました' : 'メモはありません');
+    }
+    userProfiles.add(userId, rest);
+    return msg.channel.send('メモを追加しました');
+  },
+
   async watch(msg, args) {
     const observedLog = require('../utils/observedLog');
     const [action, channelId] = [args[0]?.toLowerCase(), args[1]?.replace(/[<#>]/g, '')];
@@ -148,6 +170,7 @@ const SUBCOMMANDS = {
         `\`${PREFIX} here|leave [対象]\` このチャンネルを担当にする / 外す`,
         `\`${PREFIX} talk\` ここでアカウント同士の雑談を今すぐ始める`,
         `\`${PREFIX} agent [on|off|now|status]\` 自律エージェント`,
+        `\`${PREFIX} user @相手 [メモ|clear]\` その人についてのメモ(返事の仕方に反映)`,
         `\`${PREFIX} watch [add|remove <チャンネルID>|show|clear]\` 他サーバーの発言を口調の手本として溜める`,
         `\`${PREFIX} report [channel|now|off]\` サーバー活性化レポート`,
         `\`${PREFIX} provider [名前]\` AIの切り替え`,

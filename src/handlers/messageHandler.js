@@ -8,6 +8,7 @@ const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply')
 const crowd = require('../utils/crowd');
 const humanPresence = require('../utils/humanPresence');
 const { factsFor } = require('../utils/questionFacts');
+const mood = require('../utils/mood');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
 // webhook経由のメッセージも author.bot が true になるが、本物のBotアカウント
@@ -157,7 +158,8 @@ function resolveChance(msg, client, state, presenceLevel) {
   // 下げれば、上のジッターと合わせてごく稀に反応しないこともあり得るようにできる
   if (isReply) return chance;
 
-  return chance * (state.replyChanceMultiplier ?? 1);
+  // 呼ばれていない発言に絡むかどうかは、その時の気分(元気さ)でも変わる
+  return Math.min(1, chance * (state.replyChanceMultiplier ?? 1) * mood.replyChanceFactor(state));
 }
 
 // リアクションは返信と違い後続の会話を生まない(新たなメッセージを発生させない)ため、
@@ -301,6 +303,8 @@ function registerMessageHandler(client) {
             allowMarkovDirect: !isMention && !isReply,
             // 直接呼ばれていない・会話中の相手でもない時は、言うことが無ければ返さなくてよい
             allowSkip: !isMention && !isReply && !engaged,
+            // 直接話しかけられた時は、質問や知っている話題に数文でちゃんと答える
+            direct: Boolean(isMention || isReply || engaged),
             // 物知り役は、事実を聞く質問なら調べてから答える(それ以外の役割・質問ならnull)
             facts: await factsFor(state, userMsg)
           });
@@ -320,6 +324,8 @@ function registerMessageHandler(client) {
         allowedMentions: { repliedUser: false }
       });
       markEngaged(state, msg);
+      // 話しかけられて会話になると少し元気になる
+      if (isMention || isReply || engaged) mood.nudge(state, { energy: 0.08, valence: 0.05 });
       recordReply(state, reply);
       logger.log('REPLY', `[${state.id}] ${reply.slice(0, 50)}`);
 
