@@ -40,7 +40,7 @@
     "dayOffset": 0.35,
     "circadian": 0.35,
     "peakHourJST": 23,
-    "quirkChance": 0.3
+    "quirkChance": 0.15
   },
   "conversationHold": {
     "windowMs": 180000,

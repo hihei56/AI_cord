@@ -61,13 +61,16 @@ const PROVIDER_DEFAULTS = {
     // - 上限は通常アカウントで毎分40・毎時1000・1日5000リクエスト、同時6件。登録後24時間は
     //   毎分10・1日500・同時2件。429にはRetry-Afterが付く(usageLedgerが従う)
     // - DiscordアカウントがLogfareのサーバーに参加している間だけキーが使える
-    // 既定のlogfare/autoは空いているモデルへ自動で振り分けるが、テキスト専用。
+    // logfare/autoは空いているモデルへ自動で振り分けるが、テキスト専用。
     // 画像を読めるのは gemma-4-31b-it / qwen-3.8-27b / economy/deepseek-v4.1-flash(standard)、
     // glm-5.3-flash(premium)など。glm-5.3(premium)はテキスト専用。
     // モデルIDは頻繁に変わるので、動かなくなったら https://logfare.ai/v1/models を確認する
     baseUrl: process.env.LOGFARE_BASE_URL || 'https://logfare.ai/v1',
     apiKeyEnv: 'LOGFARE_API_KEY',
-    model: process.env.LOGFARE_MODEL || 'logfare/auto',
+    // 既定は固定のモデルにする。logfare/auto(=logfare/random)は呼び出しのたびに別のモデルへ
+    // 振り分けるため、同じアカウントの口調や賢さが発言ごとに変わり、キャラが一貫しなくなる。
+    // economy/deepseek-v4.1-flashは同意不要(standard)・画像対応・リクエスト上限の対象外
+    model: process.env.LOGFARE_MODEL || 'economy/deepseek-v4.1-flash',
     // 画像読み取りの既定は、同意不要で画像入力に対応し、推論(reasoning)が既定で切れている
     // モデルにする(推論が入ると短い説明文の生成でもトークンを使い切りやすい)
     visionModel: process.env.LOGFARE_VISION_MODEL || 'gemma-4-31b-it',

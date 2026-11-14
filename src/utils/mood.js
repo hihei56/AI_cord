@@ -18,7 +18,7 @@ const M = {
   dayOffset: 0.35, // 「その日の調子」の幅
   circadian: 0.35, // 時間帯による元気さの振れ幅
   peakHourJST: 23, // 一番元気な時刻
-  quirkChance: 0.3, // 返信ごとに「いつもと違う返し方」を指示する確率
+  quirkChance: 0.15, // 返信ごとに「いつもと違う返し方」を指示する確率
   ...(config.mood || {})
 };
 
@@ -74,14 +74,14 @@ const HIGH = 0.3;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 const LABELS = {
-  upbeat: ['機嫌がよくてテンション高め。口数が増える、ノリがいい', 'なんか調子がいい。冗談が出やすい、絡みにいく'],
-  irritated: ['イライラしてる。言い方がきつくなる、短気', '虫の居所が悪い。そっけない、ちょっと突っかかる'],
-  mellow: ['まったりしてる。穏やかで反応はゆるい', '機嫌はいいけど眠い。ふわっとした返しになる'],
-  tired: ['だるくて眠い。反応が薄い、面倒くさそう', '疲れてる。口数が減る、どうでもよさそう'],
-  energetic: ['元気が余ってる。口数が増える'],
+  upbeat: ['機嫌がよくてテンション高め。口数が少し増える', 'なんか調子がいい。反応が早くて軽い'],
+  irritated: ['少しイライラしてる。返事が短くなる', '虫の居所が悪い。口数が減る'],
+  mellow: ['まったりしてる。反応はゆるい', '機嫌はいいけど眠い。返事がのんびりする'],
+  tired: ['だるくて眠い。反応が薄い', '疲れてる。口数が減る'],
+  energetic: ['元気が余ってる。口数が少し増える'],
   sleepy: ['眠い。返事が短くなる'],
-  good: ['機嫌がいい。言い方がやわらかい'],
-  bad: ['ちょっと不機嫌。言い方がそっけない']
+  good: ['機嫌がいい'],
+  bad: ['ちょっと不機嫌。返事が短くなる']
 };
 
 function labelKey({ energy, valence }) {
@@ -99,14 +99,14 @@ function labelKey({ energy, valence }) {
 }
 
 // たまに入れる「いつもと違う返し方」。気分で出やすいものが変わる
+// 揺らすのは「口数」と「返し方の形」だけにする。以前は「茶化す」「素直に共感する」のように
+// 態度そのものを変える指示も混ぜていたが、人格の口調と衝突して、1つの発言の中で
+// 普通に答えた直後に突き放すような継ぎはぎの文になり、別人のように見えていた。
+// 人の気分で揺れるのは口数やテンションで、喋り方(一人称・語尾)は揺れない
 const QUIRKS = [
   { text: '今回は単語か一言だけで返す(5文字前後)', weight: (m) => 1 + Math.max(0, -m.energy) * 2 },
-  { text: '今回はいつもより少し長めに、思ったことをそのまま喋る', weight: (m) => 0.5 + Math.max(0, m.energy) * 2 },
-  { text: '今回は相手の話から連想した別のことに少し話をそらす', weight: () => 0.7 },
-  { text: '今回は相手に軽く質問を返す', weight: (m) => 0.5 + Math.max(0, m.valence) },
-  { text: '今回は素直に共感・同意する(ひねらない)', weight: (m) => 0.5 + Math.max(0, m.valence) * 1.5 },
-  { text: '今回は少し雑に、打ち間違いや言いかけがあってもそのまま送る感じで', weight: (m) => 0.4 + Math.max(0, -m.energy) },
-  { text: '今回はちょっと言い返す・茶化す', weight: (m) => 0.4 + Math.max(0, -m.valence) * 1.5 }
+  { text: '今回はいつもより少しだけ長めに喋る', weight: (m) => 0.5 + Math.max(0, m.energy) * 2 },
+  { text: '今回は相手に軽く質問を返す', weight: (m) => 0.5 + Math.max(0, m.valence) }
 ];
 
 function pickQuirk(mood) {
@@ -126,7 +126,7 @@ function promptSection(accountState) {
   const key = labelKey(mood);
   const quirk = pickQuirk(mood);
   const lines = [
-    key ? `今の気分: ${pick(LABELS[key])}(発言ににじむ程度でいい。気分を説明・宣言しない)` : null,
+    key ? `今の気分: ${pick(LABELS[key])}(変わるのは口数とテンションだけ。一人称・語尾・性格はいつも通り。気分を説明・宣言しない)` : null,
     quirk
   ].filter(Boolean);
   return lines.length ? `\n【今回の調子】\n- ${lines.join('\n- ')}` : '';
@@ -139,7 +139,8 @@ module.exports = {
   labelKey,
   // 呼ばれていない発言に返信する確率の倍率(元気な時ほど絡む): 0.5〜1.5
   replyChanceFactor: (accountState) => (M.enabled ? 1 + current(accountState).energy * 0.5 : 1),
-  // 生成の温度の上乗せ(元気な時ほど発言が散らかる): -0.15〜+0.15
-  temperatureOffset: (accountState) => (M.enabled ? current(accountState).energy * 0.15 : 0),
+  // 生成の温度の上乗せ(元気な時ほど発言が散らかる): -0.08〜+0.08。大きくすると
+  // 口調が崩れたり言語を取り違えたりしやすいので小さくしている
+  temperatureOffset: (accountState) => (M.enabled ? current(accountState).energy * 0.08 : 0),
   MOOD: M
 };
