@@ -280,12 +280,8 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
         messages,
         temperature,
         max_tokens: maxTokens,
-        // reasoning_effortはGroqのreasoningモデル(gpt-oss等)専用パラメータ。Gemini等の
-        // 他プロバイダや、Groqでもllama-3.1-8b-instantのような非reasoningモデルに送ると
-        // エラーになりうるため、プロバイダがgroqかつモデル名に'gpt-oss'を含む時だけ付与する
-        ...(conn.provider === 'groq' && conn.model?.includes('gpt-oss') && config.ai.reasoningEffort
-          ? { reasoning_effort: config.ai.reasoningEffort }
-          : {})
+        // 推論つきモデル向けのreasoning_effortと、推論分のmax_tokensの上乗せ(aiProvider.requestExtras)
+        ...aiProvider.requestExtras(conn.extrasProvider || conn.provider, conn.model, maxTokens, config.ai.reasoningEffort)
       })
     });
     data = await res.json();
@@ -333,7 +329,7 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
 
 async function callChatCompletion(
   messages,
-  { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat', skipGarbledCheck = false } = {}
+  { temperature, maxTokens, baseUrl, apiKey, model, logTag = 'AI', kind = 'chat', skipGarbledCheck = false, extrasProvider = null } = {}
 ) {
   // baseUrl/apiKey/modelが明示指定されていなければ、aiProviderで現在選択中の
   // プロバイダ(!providerコマンドでランタイムに切り替え可能)から接続情報を取る。
@@ -354,7 +350,7 @@ async function callChatCompletion(
   // アカウント単位のCHAT_MODEL上書きは人間向けプロバイダのモデル名なので、
   // 別プロバイダ(seed)に回した時は使わない(存在しないモデル名で404になるため)
   const conn = baseUrl
-    ? { provider: null, baseUrl, apiKey, model }
+    ? { provider: null, baseUrl, apiKey, model, extrasProvider }
     : { ...connBase, ...(model && connBase.provider === aiProvider.getProvider() ? { model } : {}) };
 
   const content = await requestChatCompletion(conn, messages, { temperature, maxTokens, logTag, skipGarbledCheck });
@@ -413,6 +409,8 @@ async function describeImage(imageUrls) {
     baseUrl: conn.baseUrl,
     apiKey: conn.apiKey,
     model: conn.model,
+    // 接続先は明示指定(フォールバックしない)だが、推論つきモデル向けの調整は効かせる
+    extrasProvider: conn.provider,
     logTag: 'VISION'
   });
 }
