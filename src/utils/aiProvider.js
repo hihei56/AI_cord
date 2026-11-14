@@ -76,7 +76,10 @@ const PROVIDER_DEFAULTS = {
     // 推論を弱め、本文の分とは別に推論用の余裕をmax_tokensに足す
     reasoningModels: /glm|qwen|deepseek|kimi/i,
     reasoningEffort: process.env.LOGFARE_REASONING_EFFORT || 'low',
-    reasoningTokenHeadroom: 1200
+    reasoningTokenHeadroom: 1200,
+    // 上限がリクエスト回数で数えられ(トークン量では数えない)、文脈も20万トークン以上あるので、
+    // 口調の手本を大量に見せられる(many-shot)。トークンに日次上限があるGroq等では使わない
+    manyShotExamples: 100
   },
   openrouter: {
     label: 'OpenRouter',
@@ -182,6 +185,17 @@ function getConnection(kind = 'chat') {
     };
   }
 
+  // 'think': 返信の中身(何を言うか)だけを決める役。THINK_AI_PROVIDER / THINK_MODELで、
+  // 口調に直して書く役(chat)とは別の、考えるのが得意なモデルを割り当てられる。
+  // 未指定なら会話用と同じ接続を使う
+  if (kind === 'think') {
+    const explicit = resolveProviderName(process.env.THINK_AI_PROVIDER);
+    const base = explicit
+      ? { provider: explicit, baseUrl: PROVIDER_DEFAULTS[explicit].baseUrl, apiKey: apiKeyFor(explicit), model: PROVIDER_DEFAULTS[explicit].model }
+      : getConnection('chat');
+    return { ...base, model: process.env.THINK_MODEL || base.model };
+  }
+
   if (kind === 'seed') {
     // AI同士の掛け合いは大量に呼ばれるため、人間向け会話(currentProvider)とは
     // 別の余力があるプロバイダに逃がしたい。SEED_AI_PROVIDERで明示指定できるほか、
@@ -229,4 +243,9 @@ function getFallbackChain(kind = 'chat') {
     });
 }
 
-module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, requestExtras };
+// そのプロバイダで口調の手本を何件まで見せるか(0なら少数の既定件数を使う)
+function manyShotCount(providerName) {
+  return PROVIDER_DEFAULTS[providerName]?.manyShotExamples || 0;
+}
+
+module.exports = { getProvider, setProvider, availableProviders, getConnection, getFallbackChain, requestExtras, manyShotCount };
