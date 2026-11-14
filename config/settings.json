@@ -140,8 +140,8 @@
     "reply": {
       "temperature": 0.85,
       "maxTokens": 400,
-      "historyContextSize": 5,
-      "historyFetchLimit": 10,
+      "historyContextSize": 12,
+      "historyFetchLimit": 15,
       "maxReplyLength": 60
     },
     "selfTalk": {

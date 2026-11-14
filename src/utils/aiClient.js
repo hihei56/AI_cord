@@ -28,8 +28,21 @@ function languageSection(accountState) {
 function toSingleLine(text, { maxLength = config.ai?.reply?.maxReplyLength || 60, answerMode = false } = {}) {
   const line = answerMode
     ? text.replace(/^\s*[-・*]\s*/gm, '').replace(/\s*\n+\s*/g, ' ').trim()
-    : text.split('\n')[0].replace(/[、。]/g, '').trim();
-  return line.length > maxLength ? line.slice(0, maxLength) : line;
+    : text.split('\n')[0].replace(/。/g, ' ').replace(/、/g, '').replace(/\s+/g, ' ').trim();
+  return cutAtBoundary(line, maxLength);
+}
+
+// 上限を超えた文を、文字数ちょうどで機械的に切ると「〜だったんだよね今思うとよく続」のように
+// 文の途中で切れた、人間ならまず送らない文になる。上限より前にある区切り(空白・句読点・
+// 「!?」・「w」「草」等の文末によくある文字)で切る。区切りが前半にしか無ければ諦めて上限で切る
+const BOUNDARY_RE = /[\s。、!?！？…ｗw草笑]/g;
+
+function cutAtBoundary(line, maxLength) {
+  if (line.length <= maxLength) return line;
+  const head = line.slice(0, maxLength);
+  let cut = -1;
+  for (const m of head.matchAll(BOUNDARY_RE)) cut = m.index + 1;
+  return (cut >= maxLength / 2 ? head.slice(0, cut) : head).trim();
 }
 
 // アカウントの会話上の役割(settings.jsonのroles)
@@ -100,11 +113,24 @@ const ANTI_FILLER_SPAM_CONSTRAINT =
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 // 手本の発言とこれ以上似ていたら「ほぼ転載」とみなして投稿しない
 const EXAMPLE_COPY_THRESHOLD = 0.8;
+const EXAMPLE_MAX_LENGTH = 80;
+// 「今は返さない」を表すモデルの出力
+const SKIP_TOKEN = 'SKIP';
 
 // 他サーバーで観察した実際の発言を、口調の手本としてプロンプトに入れる。
 // 言語固定アカウントは日本語の手本が出力言語の固定を崩すので使わない
+const CORPUS_EXAMPLES = 5;
+const OBSERVED_EXAMPLES = 3;
+
+// 手本にする実際の発言。そのアカウントのコーパス(config/corpus/、実際の発言を1行1件で
+// 集めたもの)と、他サーバーで観察した発言から、今の話題に近いものとランダムなものを混ぜて選ぶ。
+// コーパスは以前はマルコフ連鎖(単語を継ぎはぎした文)の材料にしか使っていなかったが、
+// 継ぎはぎの文より本物の発言をそのまま見せる方が、口調の手本としてずっと強い
 function exampleLines(accountState, query) {
-  return accountState?.replyLanguage ? [] : observedLog.examplesFor(query);
+  if (accountState?.replyLanguage) return { all: [], observed: [] };
+  const corpus = observedLog.pickExamples(accountState?.corpusLines, query, CORPUS_EXAMPLES);
+  const observed = observedLog.examplesFor(query, corpus.length ? OBSERVED_EXAMPLES : undefined);
+  return { all: [...new Set([...corpus, ...observed])], observed };
 }
 
 function examplesSection(examples) {
@@ -202,6 +228,8 @@ async function initMarkov(accountState) {
   }
 
   const lines = loadCorpus(accountState.corpusPath);
+  // 口調の手本(exampleLines)用。長文は手本に向かないので短い発言だけ使う
+  accountState.corpusLines = lines.filter((l) => l.length >= 2 && l.length <= EXAMPLE_MAX_LENGTH);
   if (lines.length === 0) {
     logger.log('MARKOV', `[${accountState.id}] コーパスファイルの中身が空(または改行のみ)のため無効化: ${accountState.corpusPath}`);
     return;
@@ -449,7 +477,7 @@ async function getAIResponseOnce(
   userMsg,
   history = [],
   speakerMsg = null,
-  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null, role = null, rejected = [], facts = null, partnerUserId = null } = {}
+  { allowMarkovDirect = true, partnerIsAi = false, speakerLabelOverride = null, topicHint = null, role = null, rejected = [], facts = null, partnerUserId = null, allowSkip = false } = {}
 ) {
   if (accountState.aiMode === 'finetune') {
     if (!accountState.finetuneBaseUrl) {
@@ -530,7 +558,7 @@ async function getAIResponseOnce(
     : '';
   // 物知り役が質問・知識の要る話題に答える時だけ、1行60文字の制限を緩めて数文で答えさせる
   const answerMode = Boolean(charRole?.maxReplyLength && (facts || knowledge.length));
-  const examples = exampleLines(accountState, userMsg);
+  const { all: examples, observed: observedExamples } = exampleLines(accountState, userMsg);
 
   // 以前はここまでの各項目(相手がAIである旨・役割・1行厳守・計算の遅さ・
   // 相槌の単調さ禁止・ペルソナ無し時のフォールバック)を、それぞれ独立した
@@ -541,7 +569,14 @@ async function getAIResponseOnce(
   const behaviorRules = [
     answerMode ? '改行せず、雑談の調子で1〜3文に収める' : '返信は必ず1行に収める(改行や長い説明はしない)',
     charRole?.instruction ? `グループでのあなたのキャラ: ${charRole.instruction}` : null,
-    '計算問題や込み入った処理を人間離れした速さ・正確さで解かない(わざと間違えるか「合ってるか自信ない」くらいの態度で答える)',
+    // 「無理して人間の真似をしている感」の主因は、人格設定に書いた特徴を毎回の発言で全部
+    // 演じようとすること。人間は性格を毎回見せない。中身(相手の話の理解)を先、口調を後にする
+    'まず相手が何を言いたいのか・会話がどういう流れなのかを読み取り、それに対して中身のある反応をする。口調はその次',
+    '人格設定はあなたの背景であって、毎回の発言で見せるものではない。特徴を全部盛りにせず、大半は発言例のような普通の一言でいい',
+    allowSkip
+      ? `特に言うことが無い・自分が口を挟む流れではないと思ったら、無理に返さず「${SKIP_TOKEN}」とだけ出力する`
+      : null,
+    '計算や調べ物を機械のように即答・列挙しない(面倒がる、だいたいで答える、分からない所は分からないと言う)',
     '「そう」「知らん」「へえ」「まあ」のような同じ単語だけの中身の無い相槌を連発しない。話題に応じて違う言葉を選ぶ',
     partnerIsAi
       ? `相手の${speakerLabel}は人間ではなく同じ仕組みで動く別のAIだが、毎回律儀に指摘せずいつも通り自分のキャラクターとして会話する`
@@ -564,8 +599,13 @@ async function getAIResponseOnce(
   // 必要最低限にしてコーパスの口調そのものを主役にしたいケース)は逆に、
   // 下書きの言い回しをできるだけ活かし、人格は下書きと矛盾しない範囲で軽く
   // 添える程度に留めるよう指示する
-  const draftSection =
-    draft && accountState.persona
+  // 人格ありの通常アカウントは、コーパスの本物の発言を手本として渡せている時はマルコフの
+  // 下書きを渡さない(継ぎはぎで意味の通らない文が混ざると、それに引っ張られて返信の
+  // 中身まで支離滅裂になりやすい)。下書きを主役にするmarkovPriority・人格なしは従来通り
+  const useDraft = draft && !(accountState.persona && !accountState.markovPriority && accountState.corpusLines?.length);
+  const draftSection = !useDraft
+    ? ''
+    : draft && accountState.persona
       ? accountState.markovPriority
         ? `\n【下書き(マルコフ連鎖生成)】\n${draft}\nこの下書きの言い回し・単語をできるだけそのまま活かして返信を組み立てること。人格設定の口調は、下書きと矛盾しない範囲で軽く滲ませる程度に留め、下書きの雰囲気を上書きしないこと。`
         : `\n【下書き(マルコフ連鎖生成、話題やニュアンスの軽い参考程度)】\n${draft}\nこの下書きはあくまで軽い参考であり、単語をそのまま使う必要は無い。会話の流れに自然に応じつつ、必ず自分の人格設定の口調・キャラクターで喋ること。`
@@ -602,8 +642,12 @@ async function getAIResponseOnce(
       }
     );
     if (reply) {
+      if (allowSkip && reply.trim().toUpperCase().startsWith(SKIP_TOKEN)) {
+        logger.log('AI', `[${accountState.id}] 言うことが無いと判断して見送り`);
+        return null;
+      }
       const line = toSingleLine(reply, answerMode ? { maxLength: charRole.maxReplyLength, answerMode } : {});
-      if (isCopyOfExample(line, examples)) {
+      if (isCopyOfExample(line, observedExamples)) {
         logger.log('AI', `[${accountState.id}] 手本の発言とほぼ同じ文になったため投稿を見送り`);
         return null;
       }
@@ -654,7 +698,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     const charRole = charRoleOf(accountState);
     const charRoleLine = charRole?.instruction ? `\nグループでのあなたのキャラ: ${charRole.instruction}` : '';
 
-    const examples = exampleLines(accountState, topicHint || '');
+    const { all: examples, observed: observedExamples } = exampleLines(accountState, topicHint || '');
     const avoidLine = `${examplesSection(examples)}${rejectedSection(rejected)}`;
     const systemPrompt = accountState?.persona
       ? `${accountState.persona}${dateLine}${newsLine}${roleLine}${charRoleLine}${avoidLine}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、深く考えずに短い独り言・雑談を1つ投稿する。${languageSection(accountState)}`
@@ -678,7 +722,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     // 超えて送信自体がエラーになることが実際にあったため、他の返信経路と同じく
     // ここでも必ず1行・上限文字数以内に切り詰める
     const line = toSingleLine(text.replace(/\n/g, ' ').replace(/^["「]|["」]$/g, ''));
-    return isCopyOfExample(line, examples) ? null : line;
+    return isCopyOfExample(line, observedExamples) ? null : line;
   } catch (err) {
     logger.error('SELF-TALK AI', err);
     return null;
