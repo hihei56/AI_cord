@@ -127,6 +127,16 @@ const EXAMPLE_COPY_THRESHOLD = 0.8;
 const EXAMPLE_MAX_LENGTH = 80;
 // 「今は返さない」を表すモデルの出力
 const SKIP_TOKEN = 'SKIP';
+
+// モデルが発言の頭に付けてしまう「名前:」「返信:」「Reaction:」のような見出しを消す。
+// 会話履歴を「名前: 発言」の形で渡しているため、それを真似て自分の名前を付けることがある
+const LEAKED_LABELS = ['返信', '発言', '回答', 'reply', 'response', 'reaction', 'assistant', 'ai'];
+
+function stripLeakedPrefix(text, accountState) {
+  const labels = [...LEAKED_LABELS, ...(accountState?.selfNames || [])].map((l) => l.toLowerCase());
+  const m = text.match(/^\s*[【\[(（]?([^\s:：】\])）]{1,24})[】\])）]?\s*[:：]\s*/);
+  return m && labels.includes(m[1].toLowerCase()) ? text.slice(m[0].length) : text;
+}
 const DEFAULT_ANSWER_MAX_LENGTH = 140;
 const KNOWLEDGE_HISTORY_DEPTH = 3;
 
@@ -733,6 +743,9 @@ async function getAIResponseOnce(
     // 「無理して人間の真似をしている感」の主因は、人格設定に書いた特徴を毎回の発言で全部
     // 演じようとすること。人間は性格を毎回見せない。中身(相手の話の理解)を先、口調を後にする
     'まず相手が何を言いたいのか・会話がどういう流れなのかを読み取り、それに対して中身のある反応をする。口調はその次',
+    // 「聞いてた感」: 相手の言葉をなぞると、ちゃんと読んで返している感じが出る
+    '相手の発言の中の言葉やネタを拾って返す(相手が何の話をしたか分かる返しにする。どの話にも使える汎用の返しにしない)',
+    accountState.selfNames?.length ? `自分の名前(${accountState.selfNames.join('・')})を発言の中に書かない` : null,
     '人格設定はあなたの背景であって、毎回の発言で見せるものではない。特徴を全部盛りにせず、大半は普通の一言でいい',
     '人格設定の中で「」に入っている言い回しは雰囲気の例であって、決まり文句ではない。その言葉そのものを口癖のように何度も使わない',
     '1つの発言の中で態度や口調を切り替えない(普通に答えた直後に突き放す・急に煽る、のような継ぎはぎにしない)。発言全体を1つの気持ちで言い切る',
@@ -808,7 +821,7 @@ async function getAIResponseOnce(
   const userPrompt = `${conversation}${languageSection(accountState)}\n【返信】`;
 
   try {
-    const reply = await callChatCompletion(
+    let reply = await callChatCompletion(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -825,6 +838,7 @@ async function getAIResponseOnce(
       }
     );
     if (reply) {
+      reply = stripLeakedPrefix(reply, accountState);
       if (allowSkip && reply.trim().toUpperCase().startsWith(SKIP_TOKEN)) {
         logger.log('AI', `[${accountState.id}] 言うことが無いと判断して見送り`);
         return null;

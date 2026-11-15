@@ -42,6 +42,11 @@
     "peakHourJST": 23,
     "quirkChance": 0.15
   },
+  "splitSend": {
+    "chance": 0.25,
+    "minLength": 20,
+    "minPartLength": 6
+  },
   "conversationHold": {
     "windowMs": 180000,
     "cooldownSeconds": 15,

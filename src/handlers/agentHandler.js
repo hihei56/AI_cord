@@ -12,6 +12,7 @@ const { createEngagementStats } = require('../utils/engagementStats');
 const { callChatCompletion, getAIResponse, generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { seedConversation, isSeedActive } = require('./conversationSeedHandler');
 const { recentContext } = require('./selfTalkHandler');
+const { sendMaybeSplit } = require('../utils/splitSend');
 const { isHuman } = require('../utils/humanPresence');
 
 // 自律エージェント: 一定間隔で「観察 → 判断 → 行動 → 効果測定」を回す。
@@ -208,10 +209,10 @@ async function sendLikeHuman(channel, content, replyTo = null) {
   const { minMs, perCharMs, capMs, jitterMs } = config.replyDelay;
   await channel.sendTyping().catch(() => {});
   await new Promise((r) => setTimeout(r, Math.max(minMs, Math.min(content.length * perCharMs, capMs)) + Math.random() * jitterMs));
-  return channel.send(
-    replyTo
-      ? { content, reply: { messageReference: replyTo.id, failIfNotExists: false }, allowedMentions: { repliedUser: false } }
-      : content
+  return sendMaybeSplit(
+    channel,
+    content,
+    replyTo ? { reply: { messageReference: replyTo.id, failIfNotExists: false }, allowedMentions: { repliedUser: false } } : null
   );
 }
 
