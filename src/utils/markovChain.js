@@ -110,13 +110,34 @@ class MarkovChain {
   }
 }
 
-function loadCorpus(corpusPath) {
-  if (!fs.existsSync(corpusPath)) return [];
+// !train で集めた発言の保存先。config/corpus/ はgit管理下で、デプロイ(git reset --hard)のたびに
+// リポジトリの状態に戻されるため、実行中に追加した分は data/ 側に別ファイルで持つ。
+// コーパスファイルごとに1つ(同じコーパスを使うアカウント同士は学習結果も共有する)
+function trainedPathFor(corpusPath) {
+  return path.join(__dirname, '..', '..', 'data', 'corpus-trained', path.basename(corpusPath));
+}
+
+function readLines(filePath) {
+  if (!fs.existsSync(filePath)) return [];
   return fs
-    .readFileSync(corpusPath, 'utf-8')
+    .readFileSync(filePath, 'utf-8')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
 }
 
-module.exports = { MarkovChain, loadCorpus, buildTokenizer };
+// config/corpus/ の元のコーパスと、!train で追加した分を合わせて返す
+function loadCorpus(corpusPath) {
+  return [...new Set([...readLines(corpusPath), ...readLines(trainedPathFor(corpusPath))])];
+}
+
+// !train で集めた発言を追加保存する。戻り値は追加後の学習分の行数
+function appendTrained(corpusPath, lines) {
+  const file = trainedPathFor(corpusPath);
+  const merged = [...new Set([...readLines(file), ...lines])];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${merged.join('\n')}\n`);
+  return merged.length;
+}
+
+module.exports = { MarkovChain, loadCorpus, appendTrained, buildTokenizer };

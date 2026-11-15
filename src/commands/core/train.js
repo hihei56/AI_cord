@@ -1,6 +1,5 @@
-const fs = require('fs');
 const logger = require('../../utils/logger');
-const { loadCorpus } = require('../../utils/markovChain');
+const { loadCorpus, appendTrained } = require('../../utils/markovChain');
 const { initMarkov } = require('../../utils/aiClient');
 
 const MAX_FETCH = 1000;
@@ -34,12 +33,11 @@ module.exports = {
       return;
     }
 
-    const existing = loadCorpus(state.corpusPath);
-    const merged = [...new Set([...existing, ...collected])];
-    fs.writeFileSync(state.corpusPath, `${merged.join('\n')}\n`);
+    appendTrained(state.corpusPath, collected);
+    const total = loadCorpus(state.corpusPath).length;
 
     await initMarkov(state);
-    logger.log('TRAIN', `[${state.id}] ${targetUser.username}: ${collected.length}件追加 (計${merged.length}行)`);
-    await msg.channel.send(`✅ ${collected.length}件追加(重複除去後 計${merged.length}行) → 再学習完了`);
+    logger.log('TRAIN', `[${state.id}] ${targetUser.username}: ${collected.length}件追加 (計${total}行)`);
+    await msg.channel.send(`✅ ${collected.length}件追加(重複除去後 計${total}行) → 再学習完了`);
   }
 };

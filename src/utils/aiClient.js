@@ -818,7 +818,17 @@ async function getAIResponseOnce(
   }
 
   const systemPrompt = `${accountState.persona}${memorySection}${profileSection}${knowledgeSection}${factsSection}${examplesSection(examples)}${antiRepeatSection}${openerSection}${rejectedSection(rejected)}${rulesSection}${moodSection}${dateSection()}${topicSection}${draftSection}${planSection}`;
-  const userPrompt = `${conversation}${languageSection(accountState)}\n【返信】`;
+  // 履歴の後ろ(=生成の直前)に置いた指示は、履歴の前のシステムプロンプトより強く効く
+  // (SillyTavernのPost-History Instructionsと同じ考え方)。会話履歴が長いと前の指示は薄れるので、
+  // 破られると一番目立つものだけをここで短く念押しする
+  const finalReminders = [
+    answerMode ? '1〜3文・改行なし' : '1行の短い一言',
+    replyLanguageOf(accountState) ? null : '日本語',
+    'いつもの自分の口調',
+    bannedOpeners.length ? `${bannedOpeners.map((o) => `「${o}」`).join('')}で始めない` : null,
+    allowSkip ? `言うことが無ければ${SKIP_TOKEN}` : null
+  ].filter(Boolean);
+  const userPrompt = `${conversation}${languageSection(accountState)}\n(${finalReminders.join(' / ')})\n【返信】`;
 
   try {
     let reply = await callChatCompletion(

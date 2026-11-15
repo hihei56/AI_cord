@@ -42,6 +42,10 @@ function createEngagementStats(accountId) {
       .filter(([type]) => type !== 'wait')
       .reduce((acc, [, a]) => ({ n: acc.n + a.n, sum: acc.sum + a.sum, sumSq: acc.sumSq + a.sumSq }), { n: 0, sum: 0, sumSq: 0 });
     if (!wait || wait.n < MIN_N_WAIT || acted.n < MIN_N_ACTED) return;
+    // 1回動かしたら、新しい結果がADAPT_EVERY件溜まるまで次は動かさない。以前は有意差が出たとたん、
+    // 結果が1件届くたびに×1.5を重ねて、新しい証拠がほとんど無いまま数件で上限まで振り切れていた
+    const totalN = wait.n + acted.n;
+    if (totalN - (state.lastAdaptN || 0) < ADAPT_EVERY) return;
 
     const w = meanSe(wait);
     const a = meanSe(acted);
@@ -51,6 +55,7 @@ function createEngagementStats(accountId) {
     if (diff + 1.96 * se < 0) state.intervalMultiplier = Math.min(MAX_INTERVAL_MULTIPLIER, before * 1.5);
     else if (diff - 1.96 * se > 0) state.intervalMultiplier = Math.max(1, before / 1.5);
     if (state.intervalMultiplier !== before) {
+      state.lastAdaptN = totalN;
       logger.log(
         'AGENT',
         `[${accountId}] 行動間隔の倍率を${before.toFixed(2)}→${state.intervalMultiplier.toFixed(2)}に調整 (行動時${a.mean.toFixed(2)} vs wait${w.mean.toFixed(2)}, 差${diff.toFixed(2)}±${(1.96 * se).toFixed(2)})`
@@ -120,6 +125,7 @@ function createEngagementStats(accountId) {
 const MIN_N_WAIT = 10;
 const MIN_N_ACTED = 20;
 const MAX_INTERVAL_MULTIPLIER = 4;
+const ADAPT_EVERY = 10;
 // データが無い/1件しかない行動の事前分布の幅。報酬は「10分間の人間の発言数」で
 // 普通は0〜数件なので、2あれば未知の行動が十分試される程度の不確かさになる
 const PRIOR_SD = 2;

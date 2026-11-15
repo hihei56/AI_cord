@@ -2,8 +2,23 @@ name: Deploy to VPS
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 jobs:
+  # 本番に出す前にテストを走らせる。失敗したらdeployは実行されない
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
   deploy:
+    needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
