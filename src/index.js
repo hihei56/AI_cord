@@ -44,6 +44,8 @@ async function start() {
     registerDiscordGuard(client);
     client.once('ready', () => {
       logger.log('READY', `[${client.accountState.id}] ${client.user.tag}`);
+      // 自分の名前(返信の中に書かせない・文頭に漏れた名前を消すため)
+      client.accountState.selfNames = [client.user.username, client.user.globalName, client.user.displayName].filter(Boolean);
       registerOwnAccount(client.user.id);
       registerPresenceHandler(client);
       registerReminderScheduler(client);

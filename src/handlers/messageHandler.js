@@ -9,6 +9,7 @@ const crowd = require('../utils/crowd');
 const humanPresence = require('../utils/humanPresence');
 const { factsFor } = require('../utils/questionFacts');
 const mood = require('../utils/mood');
+const { sendMaybeSplit } = require('../utils/splitSend');
 const userRules = require('../utils/userRules');
 
 // Tupperbox等のプロキシBotは、本人の発言を削除してwebhookで再送する仕組み。
@@ -325,8 +326,8 @@ function registerMessageHandler(client) {
       // falseにしてメンション通知は飛ばさない「サイレントリプライ」にする。
       // 普通のmsg.reply()だと毎回通知が飛んでbotっぽく見えるが、通知無しなら
       // 会話の繋がりを見せつつ不自然さも出ない
-      sentMsg = await msg.channel.send({
-        content: reply,
+      // 2つ以上のことを言う返信は、一定確率で2通に分けて送る(人間の送り方に寄せる)
+      sentMsg = await sendMaybeSplit(msg.channel, reply, {
         reply: { messageReference: replyTarget.id, failIfNotExists: false },
         allowedMentions: { repliedUser: false }
       });
