@@ -7,10 +7,8 @@ function storePath(accountId) {
   return path.join(__dirname, '..', '..', 'data', `memory-${accountId}.json`);
 }
 
-// アカウントごとの長期記憶(ユーザーごとの特徴メモ、最近の話題)を
+// アカウントごとの長期記憶(ユーザーごとの記憶、直近の自分の発言)を
 // data/memory-<accountId>.json に永続化する。
-// 各ユーザーのnotesは「生のやり取りの断片」を溜めておき、一定件数溜まったら
-// aiClient.js側で要約させて短い特徴メモに圧縮する(compressUserMemory)。
 function createMemoryStore(accountId) {
   const filePath = storePath(accountId);
 
@@ -22,8 +20,13 @@ function createMemoryStore(accountId) {
   state.users = state.users || {};
   state.recentReplies = state.recentReplies || [];
 
+  // 人ごとの記憶は「分かったこと(facts)」と「まだまとめていないやり取り(raw)」の2つで持つ。
+  // rawがMAX_RAW_NOTES件溜まったら、既存のfactsと合わせて書き直す(aiClientのcompressUserMemoryIfNeeded)。
+  // 以前は要約した後、次のやり取りが1件来た時点で要約を捨てて溜め直していたため、
+  // 覚えていられるのは常に直近8回分だけで、記憶が積み上がらなかった
   const MAX_RAW_NOTES = 8;
-  const MAX_SUMMARY_NOTES = 6;
+  const MAX_FACTS = 15;
+  const RAW_IN_PROMPT = 3;
   const MAX_RECENT_REPLIES = 4;
 
   // 返信のたびに(addUserNote/addRecentReply経由で)呼ばれるため、同期的な
@@ -51,41 +54,58 @@ function createMemoryStore(accountId) {
     }, 2000);
   }
 
+  // 旧形式({ notes, summarized })から移行する。要約済みならそれを分かったこととして引き継ぐ
+  for (const [id, u] of Object.entries(state.users)) {
+    if (Array.isArray(u.facts)) continue;
+    state.users[id] = { facts: u.summarized ? u.notes || [] : [], raw: u.summarized ? [] : u.notes || [], updatedAt: null };
+  }
+
   function ensureUser(userId) {
-    if (!state.users[userId]) state.users[userId] = { notes: [], summarized: false };
+    if (!state.users[userId]) state.users[userId] = { facts: [], raw: [], updatedAt: null };
     return state.users[userId];
   }
 
   return {
+    // プロンプトに入れる記憶: 分かったことと、まだまとめていない直近のやり取り数件
     getUserNotes(userId) {
-      return state.users[userId]?.notes || [];
+      const u = state.users[userId];
+      return u ? [...u.facts, ...u.raw.slice(-RAW_IN_PROMPT)] : [];
     },
 
-    // 生のやり取りの断片を追記する。要約済み(summarized)の状態で追記されると
-    // 生ログと要約が混ざってしまうので、その場合は一旦リセットしてから積み直す
+    getFacts(userId) {
+      return state.users[userId]?.facts || [];
+    },
+
+    getRaw(userId) {
+      return state.users[userId]?.raw || [];
+    },
+
     addUserNote(userId, note) {
       const user = ensureUser(userId);
-      if (user.summarized) {
-        user.notes = [];
-        user.summarized = false;
-      }
-      user.notes.push(note);
-      if (user.notes.length > MAX_RAW_NOTES) user.notes.shift();
+      user.raw.push(note);
+      // まとめに失敗し続けても無限に溜まらないよう、上限の2倍で古いものから捨てる
+      if (user.raw.length > MAX_RAW_NOTES * 2) user.raw.shift();
       save();
     },
 
-    // 生ログが十分溜まっているか(要約すべきタイミングか)
     shouldCompress(userId) {
-      const user = state.users[userId];
-      return Boolean(user && !user.summarized && user.notes.length >= MAX_RAW_NOTES);
+      return (state.users[userId]?.raw.length || 0) >= MAX_RAW_NOTES;
     },
 
-    // 要約結果で置き換える
-    setSummarizedNotes(userId, notes) {
+    // まとめ直した「分かったこと」で置き換え、まとめに使ったやり取りを消す
+    setFacts(userId, facts, consumedRawCount) {
       const user = ensureUser(userId);
-      user.notes = notes.slice(-MAX_SUMMARY_NOTES);
-      user.summarized = true;
+      user.facts = facts.slice(0, MAX_FACTS);
+      user.raw = user.raw.slice(consumedRawCount);
+      user.updatedAt = Date.now();
       save();
+    },
+
+    forget(userId) {
+      const had = Boolean(state.users[userId]);
+      delete state.users[userId];
+      save();
+      return had;
     },
 
     // 直近の自分の発言(bot臭さ対策の「同じ言い回し・絵文字を繰り返さない」チェック用)。
