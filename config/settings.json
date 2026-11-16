@@ -121,6 +121,7 @@
     "botReplyCooldownMs": 600000
   },
   "gif": {
+    "enabled": false,
     "chance": 0.35,
     "chanceJitter": 0.4,
     "turnChance": 0.2,

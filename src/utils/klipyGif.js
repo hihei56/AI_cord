@@ -1,3 +1,4 @@
+const config = require('./config');
 // Klipy(https://klipy.com)のGIF検索APIからキーワードに合うGIFをランダムに1つ取得する。
 // 元々はTenor(Google)を使っていたが、Tenor APIは2026年6月30日付で完全に終了した
 // (2026年1月13日以降は新規APIキー発行も停止)。KlipyはTenor社の元社員が立ち上げた
@@ -92,11 +93,17 @@ function resolveChance(base, jitterRatio) {
 // 設定されているアカウントだけ対象。確率(base±jitterRatio)に当たったら、複数
 // キーワードからランダムに1つ選んでGIFを取得する。未設定/ハズレ/取得失敗ならnullを
 // 返し、呼び出し側は従来通りテキスト生成にフォールバックする
+// GIFをテキストの代わりに貼る機能の全体スイッチ(config/settings.jsonのgif.enabled)。
+// falseなら、自発投稿・AI同士の会話・定期のGIF投稿のどれでもGIFを貼らない
+function gifEnabled() {
+  return config.gif?.enabled !== false;
+}
+
 async function tryFetchGenreGif(accountState, base, jitterRatio = 0.4) {
-  if (!base || !accountState?.gifGenres?.length) return null;
+  if (!gifEnabled() || !base || !accountState?.gifGenres?.length) return null;
   if (Math.random() > resolveChance(base, jitterRatio)) return null;
   const genre = accountState.gifGenres[Math.floor(Math.random() * accountState.gifGenres.length)];
   return fetchRandomGif(genre);
 }
 
-module.exports = { fetchRandomGif, tryFetchGenreGif };
+module.exports = { fetchRandomGif, tryFetchGenreGif, gifEnabled };
