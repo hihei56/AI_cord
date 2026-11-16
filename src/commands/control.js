@@ -105,6 +105,37 @@ const SUBCOMMANDS = {
   // 他サーバーの会話の観察(口調の手本用)。監視先のサーバーでコマンドを打たずに済むよう、
   // チャンネルIDを指定して自分のサーバーから登録する
   // ユーザーごとの人物メモ(その人に合った返事をさせるためのデータベース)
+  // 記憶の確認と消去。ai! memory @相手 / ai! memory server / ai! forget @相手 / ai! forget server
+  async memory(msg, args) {
+    const serverMemory = require('../utils/serverMemory');
+    if ((args[0] || '').toLowerCase() === 'server') {
+      const lines = serverMemory.recent(10, msg.guild?.id);
+      return msg.channel.send({ content: lines.length ? `このサーバーの記録(新しい10件):\n${lines.join('\n')}`.slice(0, 1900) : 'まだ記録はありません', allowedMentions: { parse: [] } });
+    }
+    const userId = args[0]?.match(/^<@!?(\d+)>$|^(\d{15,25})$/)?.slice(1).find(Boolean);
+    if (!userId) return msg.channel.send(`使い方: \`${PREFIX} memory @相手\` / \`${PREFIX} memory server\``);
+    const parts = getAllClients()
+      .filter((c) => c.user)
+      .map((c) => {
+        const facts = c.accountState.memoryStore?.getFacts(userId) || [];
+        const pending = c.accountState.memoryStore?.getRaw(userId)?.length || 0;
+        return facts.length || pending ? `**${c.user.username}**${pending ? `(まとめ待ち${pending}件)` : ''}\n${facts.map((f) => `・${f}`).join('\n')}` : null;
+      })
+      .filter(Boolean);
+    return msg.channel.send({ content: parts.length ? `<@${userId}> について覚えていること:\n${parts.join('\n')}`.slice(0, 1900) : 'まだ何も覚えていません', allowedMentions: { parse: [] } });
+  },
+
+  async forget(msg, args) {
+    const serverMemory = require('../utils/serverMemory');
+    if ((args[0] || '').toLowerCase() === 'server') {
+      return msg.channel.send(`このサーバーの記録を${serverMemory.clear(msg.guild?.id)}件消しました`);
+    }
+    const userId = args[0]?.match(/^<@!?(\d+)>$|^(\d{15,25})$/)?.slice(1).find(Boolean);
+    if (!userId) return msg.channel.send(`使い方: \`${PREFIX} forget @相手\` / \`${PREFIX} forget server\``);
+    const n = getAllClients().filter((c) => c.accountState.memoryStore?.forget(userId)).length;
+    return msg.channel.send(n ? `${n}アカウント分の記憶を消しました` : '記憶はありませんでした');
+  },
+
   async user(msg, args) {
     const userProfiles = require('../utils/userProfiles');
     const userId = args[0]?.match(/^<@!?(\d+)>$|^(\d{15,25})$/)?.slice(1).find(Boolean);
@@ -171,6 +202,7 @@ const SUBCOMMANDS = {
         `\`${PREFIX} talk\` ここでアカウント同士の雑談を今すぐ始める`,
         `\`${PREFIX} agent [on|off|now|status]\` 自律エージェント`,
         `\`${PREFIX} user @相手 [メモ|clear]\` その人についてのメモ(返事の仕方に反映)`,
+        `\`${PREFIX} memory @相手|server\` / \`${PREFIX} forget @相手|server\` 覚えていることの確認・消去`,
         `\`${PREFIX} watch [add|remove <チャンネルID>|show|clear]\` 他サーバーの発言を口調の手本として溜める`,
         `\`${PREFIX} report [channel|now|off]\` サーバー活性化レポート`,
         `\`${PREFIX} provider [名前]\` AIの切り替え`,
