@@ -1,6 +1,6 @@
 const config = require('../utils/config');
 const logger = require('../utils/logger');
-const { fetchRandomGif } = require('../utils/klipyGif');
+const { fetchRandomGif, gifEnabled } = require('../utils/klipyGif');
 const { scheduleWithJitter } = require('../utils/scheduler');
 
 // ai_cordの会話用アカウントは複数の応答チャンネルを持つため、そこからランダムに
@@ -48,7 +48,7 @@ async function gifPost(client) {
 // 追加した時に再起動なしで拾えるようにするため。実際に投稿するかどうかは
 // gifPost側でその都度gifGenresの中身を見て判断する)
 function registerGifPostHandler(client) {
-  if (!config.gif?.postIntervalMs) return;
+  if (!gifEnabled() || !config.gif?.postIntervalMs) return;
 
   const { postIntervalMs, postIntervalJitter = 0.4 } = config.gif;
   scheduleWithJitter(postIntervalMs, postIntervalJitter, () => gifPost(client));

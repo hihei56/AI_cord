@@ -491,6 +491,8 @@ Logfareが落ちた・上限に達した時は他のプロバイダにフォー�
 
 ### GIF投稿(`gif`)
 
+既定でオフ(`config/settings.json`の`gif.enabled: false`)。オフの間は、自発投稿・AI同士の会話・定期のGIF投稿のどれでもGIFを貼らない。使うなら`true`にする。
+
 自発投稿・AI同士の掛け合いは、LLM生成のテキストが続くとどうしてもぎこちなくなりがちなので、アカウントに`.env`の`GIF_GENRE[_N]`(カンマ区切りで検索キーワードを複数指定可)を設定すると、一部の投稿をKlipyのGIF検索APIで見つけたGIFをキャプション無しでそのまま貼るだけの投稿に置き換える(LLM呼び出しをしないのでAPIコストもかからない)。要`KLIPY_API_KEY`(無料、[klipy.com/developers](https://klipy.com/developers)で取得)。
 
 > **注:** 以前はTenor(Google)のAPIを使っていたが、Tenor APIは2026年6月30日付で完全に終了した(1月13日以降は新規APIキー発行も停止)ため、Tenorの元社員が立ち上げた後継サービスKlipyに移行した。

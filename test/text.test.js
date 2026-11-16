@@ -37,3 +37,27 @@ test('分割送信: 確率を外れたら分けない', () => {
     restore();
   }
 });
+
+test('GIFの全体スイッチ: オフならどの経路でもGIFを取りに行かない', async () => {
+  const config = require('../src/utils/config');
+  const { tryFetchGenreGif, gifEnabled } = require('../src/utils/klipyGif');
+  let fetched = 0;
+  global.fetch = async () => {
+    fetched++;
+    return { ok: true, json: async () => ({ data: { data: [] } }) };
+  };
+  const before = config.gif.enabled;
+  try {
+    config.gif.enabled = false;
+    assert.equal(gifEnabled(), false);
+    assert.equal(await tryFetchGenreGif({ gifGenres: ['cat'] }, 1, 0), null);
+    assert.equal(fetched, 0);
+  } finally {
+    config.gif.enabled = before;
+  }
+});
+
+test('GIFは既定でオフ', () => {
+  const config = require('../src/utils/config');
+  assert.equal(config.gif.enabled, false);
+});
