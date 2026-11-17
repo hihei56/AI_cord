@@ -1,0 +1,37 @@
+name: Collect bug reports from VPS
+# VPS上の監視役(src/utils/selfMonitor.js)が見つけた不具合を回収してissueにする。
+# issueはClaude Codeの定期タスクが読んで修正する
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+permissions:
+  issues: write
+  contents: read
+concurrency: bug-reports
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch reports from VPS
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new ubuntu@217.142.252.151 \
+            'cd /home/ubuntu/AI_cord && node scripts/export-bug-reports.js' > reports.json
+          node -e "const r=require('./reports.json');console.log('reports:',r.reports.length,'offset:',r.offset)"
+      - name: File issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/file-bug-issues.js reports.json
+      - name: Mark reports as collected
+        run: |
+          OFFSET=$(node -p "require('./reports.json').offset")
+          ssh -i ~/.ssh/deploy_key ubuntu@217.142.252.151 "cd /home/ubuntu/AI_cord && node scripts/export-bug-reports.js --ack $OFFSET"

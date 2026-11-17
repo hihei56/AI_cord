@@ -4,7 +4,7 @@ const logger = require('../utils/logger');
 const { generateSelfTalk, recordReply } = require('../utils/aiClient');
 const { getAnimalImage } = require('../utils/animalImage');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
-const { scheduleWithJitter } = require('../utils/scheduler');
+const humanTiming = require('../utils/humanTiming');
 const { resolveDisplayName } = require('../utils/nicknames');
 const { isEmojiGifOnlyMode, pickEmojiOrGif } = require('../utils/emojiGifReply');
 
@@ -87,16 +87,14 @@ function registerSelfTalkHandler(client) {
   if (!config.selfTalk.enabled || config.aiPosting?.enabled === false) return;
 
   const state = client.accountState;
-  const { intervalMs, intervalJitter = 0.4 } = config.selfTalk;
-
-  // setIntervalの完全固定周期だと投稿タイミングが機械的なパターンになりbotバレしやすい
-  // ため、毎回ランダムな待機時間で次回をスケジュールする(基準値の±intervalJitter)
-  scheduleWithJitter(intervalMs, intervalJitter, async () => {
+  // 一様乱数の間隔(±40%)だとほぼ等間隔に見えるので、指数分布の間隔+時間帯と反応の有無での間引きにする
+  humanTiming.scheduleHumanLike(config.selfTalk.intervalMs, async () => {
     if (state.lockedDown) return;
     const ids = state.channelStore.listChannels();
     if (ids.length === 0) return;
     const channelId = ids[Math.floor(Math.random() * ids.length)];
     const channel = client.channels.cache.get(channelId);
+    if (!channel || !humanTiming.activeNow(channel.guild?.id) || humanTiming.waitingForReply(channel)) return;
     await selfPost(channel, state);
   });
 }

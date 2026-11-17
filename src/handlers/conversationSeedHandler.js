@@ -2,6 +2,7 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const { generateSelfTalk, getAIResponse, planConversationTopic, recordReply, recordMemory, compressUserMemoryIfNeeded } = require('../utils/aiClient');
 const { scheduleWithJitter } = require('../utils/scheduler');
+const humanTiming = require('../utils/humanTiming');
 const { isOwnAccount } = require('../utils/ownAccounts');
 const { resolveDisplayName, textMentionsName } = require('../utils/nicknames');
 const { tryFetchGenreGif } = require('../utils/klipyGif');
@@ -495,7 +496,8 @@ function registerConversationSeedHandler(clients) {
 
   // setIntervalの完全固定周期だとチェックタイミングが規則的になるため、
   // ここも毎回ランダムな待機時間で次回をスケジュールする
-  scheduleWithJitter(intervalMs, CHECK_INTERVAL_JITTER, async () => {
+  const schedule = ALWAYS_ON ? (fn) => scheduleWithJitter(intervalMs, CHECK_INTERVAL_JITTER, fn) : (fn) => humanTiming.scheduleHumanLike(intervalMs, fn);
+  schedule(async () => {
     if (!ALWAYS_ON && Math.random() > TRIGGER_CHANCE) return;
     // 上限到達後に過疎チェック(履歴fetch)だけ空回りさせない
     if (!usageLedger.canStartBackground()) return;
@@ -508,6 +510,9 @@ function registerConversationSeedHandler(clients) {
     for (const channelId of channels) {
       const channel = clientA.channels.cache.get(channelId);
       if (!channel) continue;
+      // 人がいない時間帯に延々AI同士で話していると機械的に見えるので、時間帯の活動量で間引く。
+      // 自分たちの最後の発言に誰も反応していない所でも、新しい会話を始めない
+      if (!ALWAYS_ON && (!humanTiming.activeNow(channel.guild?.id) || humanTiming.waitingForReply(channel))) continue;
       if (await isChannelQuiet(channel)) {
         // awaitせずファイア&フォーゲットにする: ここでawaitすると1つの掛け合いが
         // 終わるまで次のスケジュールが始まらず直列になってしまい、alwaysOnで
