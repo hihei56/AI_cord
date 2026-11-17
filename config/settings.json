@@ -165,7 +165,8 @@
       "maxTokens": 400
     },
     "twoStage": {
-      "enabled": true
+      "enabled": true,
+      "search": true
     },
     "manyShot": {
       "enabled": true,
