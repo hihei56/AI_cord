@@ -47,11 +47,18 @@ function toSingleLine(text, { maxLength = config.ai?.reply?.maxReplyLength || 60
 // 「!?」・「w」「草」等の文末によくある文字)で切る。区切りが前半にしか無ければ諦めて上限で切る
 const BOUNDARY_RE = /[\s。、!?！？…ｗw草笑]/g;
 
+// 句読点も空白も無い長文(「〜になってたんだけどこれって円安で仕入れコスト上がって」)は区切りが見つからず
+// 文字数で切れていた。話し言葉で言い切りとして通る語尾(「〜けど」「〜んだよね」等)の直後も区切りにする
+const SOFT_BOUNDARY_RE = /(けど|けれど|のに|から|んだよね|だよね|よね|じゃん|かな|だな|だわ|でしょ|らしい|みたい)/g;
+
 function cutAtBoundary(line, maxLength) {
   if (line.length <= maxLength) return line;
   const head = line.slice(0, maxLength);
   let cut = -1;
   for (const m of head.matchAll(BOUNDARY_RE)) cut = m.index + 1;
+  if (cut < maxLength / 2) {
+    for (const m of head.matchAll(SOFT_BOUNDARY_RE)) cut = Math.max(cut, m.index + m[0].length);
+  }
   return (cut >= maxLength / 2 ? head.slice(0, cut) : head).trim();
 }
 
@@ -930,9 +937,12 @@ const SELF_TALK_KINDS = [
 ];
 const SELF_TALK_FROM_CONTEXT = '直近の会話に出ていた話題を拾って、自分の体験か感想を足す';
 const SELF_TALK_CONTEXT_CHANCE = 0.6;
+const SELF_TALK_VOICE_LINES = 6;
 
 function pickSelfTalkKind(topicHint, contextText) {
-  if (topicHint) return 'お題について、自分の体験か意見を具体的に言う';
+  // 以前は「自分の体験か意見を具体的に」としていたため、経済のお題に「チョコが溶けたのは円安のせい」の
+  // ような作り話の体験談を無理に結びつけ、キャラの口調も消えた長い説明文になっていた
+  if (topicHint) return 'お題について、そのキャラらしい一言の感想・ツッコミ・意見を言う(体験談は作らない)';
   if (contextText && Math.random() < SELF_TALK_CONTEXT_CHANCE) return SELF_TALK_FROM_CONTEXT;
   return SELF_TALK_KINDS[Math.floor(Math.random() * SELF_TALK_KINDS.length)];
 }
@@ -965,7 +975,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     // 「話題を広げる中心役」を割り振られている場合、その後の相手の相槌を
     // 引き出しやすいよう、最初から具体的な話題・エピソードを振らせる
     const roleLine =
-      role === 'center' ? '\n具体的な話題や自分のエピソードを振って、相手が反応しやすい話しかけ方をすること。' : '';
+      role === 'center' ? '\n相手が反応しやすいように、話題を振る言い方にする(長い説明や作った体験談はいらない)。' : '';
     const charRole = charRoleOf(accountState);
     const charRoleLine = charRole?.instruction ? `\nグループでのあなたのキャラ: ${charRole.instruction}` : '';
 
@@ -980,7 +990,13 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
       ? `\n【このサーバーで前にあったこと(覚えていること。話の種にしてもいい)】\n${episodeLines.join('\n')}`
       : '';
     const kind = pickSelfTalkKind(topicHint, contextText);
-    const avoidLine = `${examplesSection(examples)}${rejectedSection(rejected)}`;
+    // 返信(getAIResponseOnce)と同じく、自分の直近の発言を「自分の喋り方」として見せる。
+    // 自発投稿にはこれが無かったため、お題やニュースの中身に引っ張られて元の口調が消えていた
+    const recent = accountState?.recentReplies || [];
+    const voiceLine = recent.length
+      ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・絵文字・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文を繰り返さない)】\n${recent.slice(-SELF_TALK_VOICE_LINES).join('\n')}`
+      : '';
+    const avoidLine = `${examplesSection(examples)}${voiceLine}${rejectedSection(rejected)}`;
     const systemPrompt = accountState?.persona
       ? `${accountState.persona}${dateLine}${newsLine}${contextLine}${episodeLine}${roleLine}${charRoleLine}${avoidLine}${mood.promptSection(accountState)}${ANTI_FILLER_SPAM_CONSTRAINT}\n上記の口調のまま、自分から雑談を1つ投稿する。${languageSection(accountState)}`
       : `あなたはDiscordで雑談している人間です。${dateLine}${newsLine}${contextLine}${roleLine}${charRoleLine}${avoidLine}${ANTI_FILLER_SPAM_CONSTRAINT}${languageSection(accountState)}`;
@@ -988,7 +1004,8 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     const text = await callChatCompletion(
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: selfTalkUserPrompt(kind) }
+        // 生成の直前に、破られると一番目立つ口調だけを念押しする(返信のfinalRemindersと同じ考え方)
+        { role: 'user', content: `${selfTalkUserPrompt(kind)}\n(人格設定のいつもの口調・絵文字の癖のまま / 1文の短い発言 / 説明調にしない)` }
       ],
       {
         temperature: config.ai.selfTalk.temperature + mood.temperatureOffset(accountState),
@@ -1134,5 +1151,6 @@ module.exports = {
   recordReply,
   recordMemory,
   compressUserMemoryIfNeeded,
-  callChatCompletion
+  callChatCompletion,
+  toSingleLine
 };
