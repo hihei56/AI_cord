@@ -729,7 +729,7 @@ async function getAIResponseOnce(
   // 「これは避けて」を明示的に渡す(こちらは自分自身の過去の発言なのでmemorySectionほど
   // injectionリスクは高くないが、念のため同様に参考データである旨を明記する)
   const antiRepeatSection = accountState.recentReplies?.length
-    ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文や同じ締め方をそのまま繰り返さない)】\n${accountState.recentReplies.join('\n')}`
+    ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文や同じ締め方をそのまま繰り返さない。この中に人格設定と食い違う発言があれば、それは失敗作なので真似せず人格設定を優先する)】\n${accountState.recentReplies.join('\n')}`
     : '';
   const bannedOpeners = overusedOpeners(accountState.recentReplies);
   const openerSection = bannedOpeners.length
@@ -994,7 +994,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
     // 自発投稿にはこれが無かったため、お題やニュースの中身に引っ張られて元の口調が消えていた
     const recent = accountState?.recentReplies || [];
     const voiceLine = recent.length
-      ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・絵文字・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文を繰り返さない)】\n${recent.slice(-SELF_TALK_VOICE_LINES).join('\n')}`
+      ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・絵文字・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文を繰り返さない。この中に人格設定と食い違う発言があれば、それは失敗作なので真似せず人格設定を優先する)】\n${recent.slice(-SELF_TALK_VOICE_LINES).join('\n')}`
       : '';
     const avoidLine = `${examplesSection(examples)}${voiceLine}${rejectedSection(rejected)}`;
     const systemPrompt = accountState?.persona
