@@ -4,6 +4,7 @@ const config = require('../utils/config');
 const logger = require('../utils/logger');
 const aiProvider = require('../utils/aiProvider');
 const usageLedger = require('../utils/usageLedger');
+const webSearch = require('../utils/webSearch');
 const { canRunCommands } = require('./handler');
 const { getAllClients } = require('../utils/accountRegistry');
 
@@ -48,7 +49,8 @@ const SUBCOMMANDS = {
     return msg.channel.send(
       `${lines.join('\n')}\n` +
         `AI投稿: ${config.aiPosting?.enabled === false ? '停止中(settings.json)' : '有効'} / 会話プロバイダ: ${aiProvider.getProvider()}(使用可: ${aiProvider.availableProviders().join(', ')})\n` +
-        `今日のトークン: 人間への返信 ${usage.human} / バックグラウンド ${usage.background}`
+        `今日のトークン: 人間への返信 ${usage.human} / バックグラウンド ${usage.background}\n` +
+        `Web検索: ${process.env.TAVILY_API_KEY ? `今日${webSearch.usage().usedToday}/${webSearch.usage().max}回` : '未設定(TAVILY_API_KEY)'}`
     );
   },
 

@@ -21,10 +21,30 @@ function isAvailable() {
   return usedToday < MAX_PER_DAY;
 }
 
+// 同じ話題で何人もが同じことを聞いたり、複数アカウントが同じ発言を見て同じ検索をしたりするので、
+// 同じクエリの結果はしばらく使い回す(無料枠の節約。結果が変わりやすい話題でも数時間なら十分新しい)
+const CACHE_TTL_MS = 6 * 3600000;
+const CACHE_MAX = 200;
+const cache = new Map();
+const normalize = (q) => q.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+
 // 戻り値: { answer, results: [{ title, url, content }] } または null
 async function search(query, { maxResults = 3 } = {}) {
-  if (!isAvailable() || !query) return null;
+  if (!query) return null;
+  const key = normalize(query);
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.result;
+  if (!isAvailable()) return null;
   usedToday++;
+  const result = await fetchSearch(query, maxResults);
+  if (result) {
+    cache.set(key, { at: Date.now(), result });
+    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+  }
+  return result;
+}
+
+async function fetchSearch(query, maxResults) {
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
@@ -62,4 +82,9 @@ function summarize(result, maxLength = 400) {
   return text ? text.slice(0, maxLength) : null;
 }
 
-module.exports = { isAvailable, search, summarize };
+function usage() {
+  isAvailable();
+  return { usedToday, max: MAX_PER_DAY, cached: cache.size };
+}
+
+module.exports = { isAvailable, search, summarize, usage, _cache: cache };
