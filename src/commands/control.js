@@ -138,6 +138,33 @@ const SUBCOMMANDS = {
     return msg.channel.send(n ? `${n}アカウント分の記憶を消しました` : '記憶はありませんでした');
   },
 
+  // 不具合の監視役(selfMonitor)。here=このチャンネルに見つけた不具合を流す / off=流さない / now=溜まった分を今すぐ出す
+  async monitor(msg, args) {
+    const selfMonitor = require('../utils/selfMonitor');
+    const sub = (args[0] || 'status').toLowerCase();
+    if (sub === 'here') {
+      selfMonitor.setNotifyChannel(msg.channel.id);
+      return msg.channel.send('このチャンネルに不具合の報告を流します');
+    }
+    if (sub === 'off') {
+      selfMonitor.setNotifyChannel(null);
+      return msg.channel.send('不具合の報告をDiscordに流すのをやめました(GitHubへの報告は続けます)');
+    }
+    if (sub === 'now') {
+      const ready = selfMonitor.flush();
+      return msg.channel.send(ready.length ? `${ready.length}件を報告しました` : '報告するほど溜まった不具合はありません');
+    }
+    if (sub === 'persona') {
+      await selfMonitor.checkPersonaDrift();
+      const ready = selfMonitor.flush();
+      return msg.channel.send(ready.length ? `人格のブレ等を${ready.length}件報告しました` : '人格のブレは見つかりませんでした');
+    }
+    return msg.channel.send(
+      `監視中。未報告の候補 ${selfMonitor.pendingCount()}件 / Discordへの報告先: ${selfMonitor.notifyChannelId() ? `<#${selfMonitor.notifyChannelId()}>` : 'なし'}\n` +
+        `\`${PREFIX} monitor here|off|now|persona\``
+    );
+  },
+
   async user(msg, args) {
     const userProfiles = require('../utils/userProfiles');
     const userId = args[0]?.match(/^<@!?(\d+)>$|^(\d{15,25})$/)?.slice(1).find(Boolean);
@@ -199,6 +226,7 @@ const SUBCOMMANDS = {
       [
         `**${PREFIX}** — 全アカウントまとめて操作(対象は 名前/番号/@メンション で絞れる。省略で全員)`,
         `\`${PREFIX} status\` 全アカウントの状態`,
+        `\`${PREFIX} monitor [here|off|now|persona]\` 不具合の監視(見つけた不具合はGitHubのissueになり自動で修正される)`,
         `\`${PREFIX} on|off [対象]\` 動かす / 止める`,
         `\`${PREFIX} here|leave [対象]\` このチャンネルを担当にする / 外す`,
         `\`${PREFIX} talk\` ここでアカウント同士の雑談を今すぐ始める`,

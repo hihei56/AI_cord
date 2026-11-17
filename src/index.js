@@ -21,6 +21,7 @@ const { registerServerCoachHandler } = require('./handlers/serverCoachHandler');
 const { registerOwnAccount } = require('./utils/ownAccounts');
 const observedLog = require('./utils/observedLog');
 const serverMemory = require('./utils/serverMemory');
+const selfMonitor = require('./utils/selfMonitor');
 const { registerDiscordGuard } = require('./utils/discordGuard');
 const { initMarkov } = require('./utils/aiClient');
 
@@ -64,6 +65,7 @@ async function start() {
   registerServerCoachHandler(clients);
   observedLog.register(clients);
   serverMemory.register(clients);
+  selfMonitor.register(clients);
 
   const results = await loginStaggered(clients);
 

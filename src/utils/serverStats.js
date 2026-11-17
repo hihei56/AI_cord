@@ -186,4 +186,10 @@ function computeMetrics(guildId) {
   };
 }
 
-module.exports = { recordMessage, computeMetrics, flushAll };
+// 直近days日の、人間の発言の時間帯別の件数(日本時間0〜23時)。自発投稿のタイミングを
+// そのサーバーの人の生活リズムに合わせるのに使う(humanTiming)
+function hourlyHumanCounts(guildId, days = 14) {
+  return aggregate(loadStore(guildId), datesBack(0, days)).hours;
+}
+
+module.exports = { recordMessage, computeMetrics, flushAll, hourlyHumanCounts };
