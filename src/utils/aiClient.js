@@ -131,6 +131,7 @@ const ANTI_FILLER_SPAM_CONSTRAINT =
   '\n【重要】素っ気ない性格でも、相手の発言の中身を無視した「そう」「知らん」「へえ」「まあ」のような同じ単語だけの相槌を連発しないこと。反応が薄いキャラクターでも、その時々の話題に応じた違う言葉を選ぶこと。';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
+const MODEL_MISSING_COOLDOWN_MS = 6 * 3600000;
 // 手本の発言とこれ以上似ていたら「ほぼ転載」とみなして投稿しない
 const EXAMPLE_COPY_THRESHOLD = 0.8;
 const EXAMPLE_MAX_LENGTH = 80;
@@ -390,6 +391,8 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   // 別々の接続先が1つのキーにまとめられないようURLで区別する
   const ledgerKey = conn.provider || conn.baseUrl;
   if (usageLedger.isCoolingDown(ledgerKey)) return null;
+  // 接続先が分からない(必要な設定が無い)なら送らない。送っても「Failed to parse URL」で必ず失敗する
+  if (!conn.baseUrl) return null;
 
   let res, data;
   try {
@@ -420,7 +423,17 @@ async function requestChatCompletion(conn, messages, { temperature, maxTokens, l
   }
 
   if (!res.ok) {
-    if (res.status === 429) usageLedger.coolDown(ledgerKey, res.headers?.get?.('retry-after'));
+    // 429(レート制限)は想定内の出来事で、一時停止して他のプロバイダに回せば済むのでエラーにしない(issue #41)
+    if (res.status === 429) {
+      usageLedger.coolDown(ledgerKey, res.headers?.get?.('retry-after'));
+      logger.log(logTag, `HTTP 429 (${conn.provider}): レート制限。一時停止して他のプロバイダに回す`);
+      return null;
+    }
+    // 404/410(モデルが無い・廃止された)は設定の問題で、何度呼んでも直らない。毎回呼んでエラーを
+    // 出し続けないよう長めに止める(issue #39, #40)。直すには.envのモデル名を変える
+    if (res.status === 404 || res.status === 410) {
+      usageLedger.coolDown(ledgerKey, null, MODEL_MISSING_COOLDOWN_MS, `モデル${conn.model}が使えない(HTTP ${res.status})`);
+    }
     logger.error(logTag, `HTTP ${res.status} ${res.statusText} (${conn.provider}): ${JSON.stringify(data)}`);
     return null;
   }

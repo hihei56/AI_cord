@@ -160,8 +160,14 @@ function checkHumanMessage(msg, client) {
 
 // ── エラーの監視 ──
 const origError = logger.error;
+// エラー文の「: 」より後ろが日本語・絵文字を含む時は、スレタイや発言などの中身なので捨てる
+// (公開issueに載せない。また中身ごとに別issueに分かれて同じ不具合がまとまらなかった: issue #38, #43)。
+// 英数字だけの後ろ(Missing Access、HTTP 404等)はエラーの種類なので残す
 function sanitizeError(text) {
-  return String(text)
+  const [head, ...rest] = String(text).split(': ');
+  const tail = rest.join(': ');
+  const kept = tail && /^[\x20-\x7E]+$/.test(tail) ? `${head}: ${tail}` : head;
+  return kept
     .replace(/#[^\s)]+/g, '#ch')
     .replace(/「[^」]*」/g, '「…」')
     .replace(/\d{5,}/g, 'N')
@@ -230,6 +236,7 @@ module.exports = {
   register,
   report,
   noteAiPost,
+  sanitizeError,
   flush,
   checkOwnMessage,
   checkHumanMessage,

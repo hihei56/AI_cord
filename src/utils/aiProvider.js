@@ -49,8 +49,10 @@ const PROVIDER_DEFAULTS = {
     // meta/llama-3.2-11b-vision-instructはreasoning無しで安定して動作確認できている
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     apiKeyEnv: 'NVIDIA_API_KEY',
-    model: 'meta/llama-3.2-11b-vision-instruct',
-    visionModel: 'meta/llama-3.2-11b-vision-instruct'
+    // 廃止されたモデルは410 Goneになる(issue #39: llama-3.2-11b-vision-instructが廃止された)。
+    // 新しいモデルIDは.envのNVIDIA_MODEL / NVIDIA_VISION_MODELで差し替えられる
+    model: process.env.NVIDIA_MODEL || 'meta/llama-3.2-11b-vision-instruct',
+    visionModel: process.env.NVIDIA_VISION_MODEL || process.env.NVIDIA_MODEL || 'meta/llama-3.2-11b-vision-instruct'
   },
   logfare: {
     label: 'Logfare',
@@ -107,7 +109,8 @@ const PROVIDER_DEFAULTS = {
       ? `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/v1`
       : '',
     apiKeyEnv: 'CLOUDFLARE_API_KEY',
-    model: '@cf/openai/gpt-oss-120b',
+    // アカウントによっては404になる(issue #40)。.envのCLOUDFLARE_MODELで差し替えられる
+    model: process.env.CLOUDFLARE_MODEL || '@cf/openai/gpt-oss-120b',
     visionModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
   }
 };
@@ -115,6 +118,21 @@ const PROVIDER_DEFAULTS = {
 function resolveProviderName(name) {
   const key = (name || '').toLowerCase();
   return PROVIDER_DEFAULTS[key] ? key : null;
+}
+
+// THINK_/SEED_/VISION_AI_PROVIDERで明示されたプロバイダが、キーや接続先が無くて使えない時は無視する。
+// 以前はそのまま使い、接続先URLが空のまま「/chat/completions」に送って毎回失敗していた
+// (issue #42: CLOUDFLARE_ACCOUNT_IDが無いのにcloudflareが指定されていた)
+const warnedUnusable = new Set();
+function usableExplicit(envName) {
+  const name = resolveProviderName(process.env[envName]);
+  if (!name) return null;
+  if (availableProviders().includes(name)) return name;
+  if (!warnedUnusable.has(envName)) {
+    warnedUnusable.add(envName);
+    console.error(`[AI-PROVIDER] ${envName}=${name} はAPIキーか接続先(${name === 'cloudflare' ? 'CLOUDFLARE_ACCOUNT_ID' : '必要な設定'})が無くて使えないので無視する`);
+  }
+  return null;
 }
 
 function apiKeyFor(providerName) {
@@ -178,7 +196,7 @@ function requestExtras(providerName, model, maxTokens, groqEffort) {
 
 function getConnection(kind = 'chat') {
   if (kind === 'vision') {
-    const providerName = resolveProviderName(process.env.VISION_AI_PROVIDER) || currentProvider;
+    const providerName = usableExplicit('VISION_AI_PROVIDER') || currentProvider;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,
@@ -192,7 +210,7 @@ function getConnection(kind = 'chat') {
   // 口調に直して書く役(chat)とは別の、考えるのが得意なモデルを割り当てられる。
   // 未指定なら会話用と同じ接続を使う
   if (kind === 'think') {
-    const explicit = resolveProviderName(process.env.THINK_AI_PROVIDER);
+    const explicit = usableExplicit('THINK_AI_PROVIDER');
     const base = explicit
       ? { provider: explicit, baseUrl: PROVIDER_DEFAULTS[explicit].baseUrl, apiKey: apiKeyFor(explicit), model: PROVIDER_DEFAULTS[explicit].model }
       : getConnection('chat');
@@ -207,7 +225,7 @@ function getConnection(kind = 'chat') {
     // LOGFARE_API_KEYがあれば、レート制限の無いLogfareを最優先の逃がし先にする
     const otherAvailable = availableProviders().find((name) => name !== currentProvider);
     const preferred = apiKeyFor('logfare') && currentProvider !== 'logfare' ? 'logfare' : otherAvailable;
-    const providerName = resolveProviderName(process.env.SEED_AI_PROVIDER) || preferred || currentProvider;
+    const providerName = usableExplicit('SEED_AI_PROVIDER') || preferred || currentProvider;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,
