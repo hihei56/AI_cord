@@ -124,3 +124,19 @@ test('分割送信された発言の一部も、AIの発言として検査する
   selfMonitor.checkOwnMessage({ ...msg('s1', 'bot1', '【言う内容】知らない', Date.now()), channel: channelWith([]) }, client);
   assert.deepEqual(selfMonitor.flush().map((r) => r.kind), ['prompt-leak']);
 });
+
+test('オウム返しと、同じ発言への二重返信を記録する(人間の発言は報告に入れない)', () => {
+  const now = Date.now();
+  const human = msg('h', 'human', '近平の白髪増えたなぁ', now - 3600000);
+  const first = msg('r1', 'bot1', '白髪増えてんのか😦', now - 1800000, { reference: { messageId: 'h' } });
+  const ch = channelWith([human, first]);
+  selfMonitor.noteAiPost('白髪増えてんのか😦');
+  selfMonitor.noteAiPost('白髪増えてんのか😭');
+  selfMonitor.checkOwnMessage({ ...first, channel: ch }, client);
+  const second = msg('r2', 'bot1', '白髪増えてんのか😭', now, { reference: { messageId: 'h' } });
+  ch.messages.cache.set('r2', second);
+  selfMonitor.checkOwnMessage({ ...second, channel: ch }, client);
+  const kinds = selfMonitor.flush().map((r) => r.kind).sort();
+  assert.ok(kinds.includes('parrot') && kinds.includes('duplicate-reply'), kinds.join(','));
+  assert.doesNotMatch(fs.readFileSync(selfMonitor.REPORT_FILE, 'utf8'), /近平/);
+});
