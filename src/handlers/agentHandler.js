@@ -191,16 +191,27 @@ async function propose(client, obs, actions) {
   const targetMsg = Number.isInteger(parsed.target) ? shown[parsed.target] : undefined;
   const suitable = parsed.suitable.filter((a) => {
     if (!actions.includes(a)) return false;
-    if (a === 'reply') return Boolean(targetMsg) && !isOwnAccount(targetMsg.author.id);
+    if (a === 'reply') return isReplyable(targetMsg, obs.messages);
     if (a === 'search') return Boolean(parsed.query);
     return true;
   });
   return { suitable, targetMsg, topic: parsed.topic || null, query: parsed.query || null };
 }
 
+// 返信してよい人間の発言か。自分たち(どのアカウントでも)が既に返信した発言と、古すぎる発言には返信しない。
+// 以前は「最後の人間の発言」をそのまま返信先にしていたため、その後誰も喋らないと、45分の沈黙ルールが
+// 明けるたびに同じ発言へ何度も返信していた(アザラシがmireiの1つの発言に14:56と15:47で2回返信)
+const REPLY_TARGET_MAX_MINUTES = 60;
+function isReplyable(msg, messages) {
+  if (!msg || !isHuman(msg)) return false;
+  if (minutesSince(msg.createdTimestamp) > REPLY_TARGET_MAX_MINUTES) return false;
+  return !messages.some((m) => isOwnAccount(m.author.id) && m.reference?.messageId === msg.id);
+}
+
 // LLMが失敗・応答不能でもループを止めないための、LLM無しで中身を決められる候補
 function fallbackProposal(actions, obs) {
-  const targetMsg = obs.messages.filter(isHuman).at(-1);
+  const lastHuman = obs.messages.filter(isHuman).at(-1);
+  const targetMsg = isReplyable(lastHuman, obs.messages) ? lastHuman : undefined;
   const suitable = actions.filter((a) => a !== 'search' && (a !== 'reply' || targetMsg));
   return { suitable, targetMsg, topic: null, query: null };
 }
@@ -372,4 +383,5 @@ function registerAgentHandler(clients) {
   }
 }
 
-module.exports = { registerAgentHandler, runOnce, AGENT };
+module.exports = {
+  isReplyable, registerAgentHandler, runOnce, AGENT };

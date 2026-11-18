@@ -17,6 +17,8 @@ const humanPresence = require('./humanPresence');
 //   truncated      : 自分の発言が文の途中で切れている(上限で切られた)
 //   foreign-script : 日本語以外の文字(ハングル・キリル・タミル等)が混ざった
 //   prompt-leak    : プロンプトの見出し・指示(【…】や「検索:」等)が発言に漏れた
+//   parrot         : 相手の言葉をなぞっただけの返信
+//   duplicate-reply: 同じ人間の発言に、同じアカウントが2回以上返信した
 //   talking-to-void: 誰も反応していないのに、同じアカウントが続けて投稿した
 //   suspected-bot  : 人間がbotの発言に「bot」「AI」等と反応した(bot臭さを見抜かれた)
 //   persona-drift  : 直近の発言が人格設定と食い違う(LLMで定期的に判定)
@@ -26,7 +28,7 @@ const M = {
   flushMinutes: 30,
   personaCheckHours: 6,
   // 同じ種類・アカウントの報告を何件溜まったら出すか(1回きりの偶然は報告しない)
-  thresholds: { truncated: 2, 'talking-to-void': 2, 'error-repeat': 5, 'suspected-bot': 1, 'foreign-script': 1, 'prompt-leak': 1, 'persona-drift': 1 },
+  thresholds: { parrot: 2, 'duplicate-reply': 1, truncated: 2, 'talking-to-void': 2, 'error-repeat': 5, 'suspected-bot': 1, 'foreign-script': 1, 'prompt-leak': 1, 'persona-drift': 1 },
   ...(config.selfMonitor || {})
 };
 
@@ -120,6 +122,16 @@ function checkOwnMessage(msg, client) {
   }
   if (!client.accountState?.replyLanguage && FOREIGN_SCRIPT_RE.test(text)) report('foreign-script', account, '日本語以外の文字が混ざった', text);
   if (PROMPT_LEAK_RE.test(text)) report('prompt-leak', account, 'プロンプトの見出しや指示が発言に漏れた', text);
+
+  // 返信先の人間の発言をなぞっただけ(返信先の文は公開issueに載せない)/同じ発言に2回返信した
+  const refId = msg.reference?.messageId;
+  if (refId) {
+    const cache = msg.channel.messages.cache;
+    const target = cache.get(refId);
+    if (target && require('./aiClient').isParrot(text, target.content)) report('parrot', account, '相手の言葉をなぞっただけの返信', text);
+    const twice = [...cache.values()].some((m) => m.id !== msg.id && m.author.id === msg.author.id && m.reference?.messageId === refId);
+    if (twice) report('duplicate-reply', account, '同じ発言に2回以上返信した', text);
+  }
 
   // 同じチャンネルで、この発言の直前の発言も自分で、間に誰の発言も無い(=反応ゼロのまま重ねた)
   const prev = [...msg.channel.messages.cache.values()]

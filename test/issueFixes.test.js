@@ -37,3 +37,24 @@ test('同じ絵文字で終わる発言が続いていたら、次は別の締�
   const prompt = calls.map((c) => c.body.messages.map((m) => m.content).join('\n')).join('\n');
   assert.match(prompt, /使いすぎている締めの絵文字[^\n]*😏/);
 });
+
+test('相手の言葉をなぞっただけの返信は作り直させる', async () => {
+  let n = 0;
+  mockLLM(() => (++n === 1 ? '白髪増えてんのか😦' : '老けたの自分のせいじゃないのに責められそう🥹'));
+  require('../src/utils/config').ai.twoStage.enabled = false;
+  const reply = await ai.getAIResponse({ id: 'parrot', persona: 'p', recentReplies: [] }, '近平の白髪増えたなぁ', [], { author: { id: 'u', username: 'u' }, member: null }, {});
+  assert.equal(reply, '老けたの自分のせいじゃないのに責められそう🥹');
+  assert.equal(ai.isParrot('白髪増えてんだろ 老いと権力の象徴か', '近平の白髪増えたなぁ'), false, '中身を足していればなぞりではない');
+});
+
+test('自律エージェントは、自分たちが既に返信した発言や古い発言には返信しない', () => {
+  const { registerOwnAccount } = require('../src/utils/ownAccounts');
+  registerOwnAccount('bot-a');
+  const { isReplyable } = require('../src/handlers/agentHandler');
+  const now = Date.now();
+  const human = { id: 'h', author: { id: 'mirei', bot: false }, content: '近平の白髪増えたなぁ', createdTimestamp: now - 20 * 60000 };
+  const answered = { id: 'r', author: { id: 'bot-a', bot: false }, reference: { messageId: 'h' }, createdTimestamp: now - 10 * 60000 };
+  assert.equal(isReplyable(human, [human]), true);
+  assert.equal(isReplyable(human, [human, answered]), false);
+  assert.equal(isReplyable({ ...human, createdTimestamp: now - 90 * 60000 }, [human]), false);
+});

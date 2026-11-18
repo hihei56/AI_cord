@@ -295,11 +295,31 @@ function isTooSimilarToRecent(text, recentReplies) {
 // スパム状態になってしまう実例が確認された。似すぎたまま無理に投稿するより
 // 黙る方がマシなので、最終リトライでも似すぎている場合はnullを返して今回は
 // 見送る(完全な無反応になるのは他の対策で軽減する方針は他の箇所と同じ)
-async function withSimilarityRetry(accountState, logTag, generate) {
+// 相手の言葉をなぞっただけの短い返し(「近平の白髪増えたなぁ」→「白髪増えてんのか😦」)。
+// 中身が何も足されていないので、返さないのと変わらない。返信の大半が相手の言葉の2文字の並びで
+// できていて、かつ短いものをオウム返しとみなす
+const PARROT_MAX_LENGTH = 12;
+const PARROT_CONTAINMENT = 0.4;
+function isParrot(reply, userMsg) {
+  const core = (reply || '').replace(/[\p{Extended_Pictographic}\uFE0F\u200D\s?？!！…ー〜w笑草]/gu, '');
+  if (!core || core.length > PARROT_MAX_LENGTH || !userMsg) return false;
+  const grams = [];
+  for (let i = 0; i < core.length - 1; i++) grams.push(core.slice(i, i + 2));
+  if (grams.length === 0) return false;
+  const hit = grams.filter((g) => userMsg.includes(g)).length;
+  return hit / grams.length >= PARROT_CONTAINMENT;
+}
+
+async function withSimilarityRetry(accountState, logTag, generate, echoSource = null) {
   const rejected = [];
   for (let attempt = 0; attempt <= SIMILARITY_MAX_RETRY; attempt++) {
     const result = await generate(rejected);
     if (!result) return result;
+    if (echoSource && isParrot(result, echoSource)) {
+      rejected.push(result);
+      logger.log(logTag, `[${accountState?.id}] 相手の言葉をなぞっただけなので再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY}): ${result}`);
+      continue;
+    }
     if (!isTooSimilarToRecent(result, accountState?.recentReplies)) return result;
     rejected.push(result);
     logger.log(logTag, `[${accountState?.id}] 直近の発言と似すぎているため再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY})`);
@@ -945,8 +965,11 @@ async function getAIResponseOnce(
 
 // 直近の自分の発言と似すぎていたら再生成する(規則的な連投に見えないようにするため)
 async function getAIResponse(accountState, userMsg, history = [], speakerMsg = null, options = {}) {
-  return withSimilarityRetry(accountState, 'AI', (rejected) =>
-    getAIResponseOnce(accountState, userMsg, history, speakerMsg, { ...options, rejected })
+  return withSimilarityRetry(
+    accountState,
+    'AI',
+    (rejected) => getAIResponseOnce(accountState, userMsg, history, speakerMsg, { ...options, rejected }),
+    userMsg
   );
 }
 
@@ -1178,5 +1201,6 @@ module.exports = {
   compressUserMemoryIfNeeded,
   callChatCompletion,
   toSingleLine,
-  isTooSimilarToRecent
+  isTooSimilarToRecent,
+  isParrot
 };
