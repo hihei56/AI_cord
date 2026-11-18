@@ -95,8 +95,23 @@ const PROMPT_LEAK_RE = /【[^】]{2,20}】|^\s*(検索|言う中身|返信|発�
 // 文が続いているはずの終わり方(助詞・連用形の「て」「で」等)で、上限近くまで長い
 const DANGLING_END_RE = /(て|で|が|を|に|は|と|の|も|や|へ|から|けれど|ので|って|たり|ながら)$/;
 
+// AIが生成した会話の発言(aiClient.recordReplyが知らせる)。価格アラート・市況まとめ・転送などの
+// 定型の投稿は「反応ゼロの連投」等の検査対象にしない(issue #32: 価格アラートを誤検知した)
+const AI_POSTS_MAX = 300;
+const aiPosts = [];
+function noteAiPost(text) {
+  if (!text) return;
+  aiPosts.push(text);
+  if (aiPosts.length > AI_POSTS_MAX) aiPosts.shift();
+}
+// 分割送信(splitSend)で1つの発言が複数の投稿に分かれることがあるので、部分一致も含める
+const isAiPost = (text) => aiPosts.some((p) => p === text || p.includes(text));
+// 送信の完了(recordReplyが呼ばれる)より先にmessageCreateが届くことがあるので、少し待ってから検査する
+const AI_POST_WAIT_MS = 15000;
+
 function checkOwnMessage(msg, client) {
   const text = msg.content || '';
+  if (!isAiPost(text)) return;
   const account = client.accountState?.id;
   if (!text || text.startsWith(config.controlPrefix || 'ai!')) return;
   const limit = config.ai?.reply?.maxReplyLength || 60;
@@ -160,7 +175,7 @@ async function checkPersonaDrift() {
     if (!st?.persona || recent.length < 4 || st.replyLanguage) continue;
     const prompt =
       `次の【人格設定】のキャラが、Discordで実際に投稿した【発言】がある。人格設定(口調・語尾・一人称・スタンス・絵文字の有無・長さ)と明らかに食い違う発言だけを選ぶ。\n` +
-      `少しのブレや、人格設定に書かれていない話題は問題にしない。別人が書いたように見えるものだけを選ぶ。\n` +
+      `少しのブレや、人格設定に書かれていない話題は問題にしない。人格設定の絵文字・言葉の一覧は「例」なので、一覧に無い絵文字や言葉を使っただけでは食い違いとしない。別人が書いたように見えるものだけを選ぶ。\n` +
       `出力: 食い違う発言の番号と短い理由を「番号|理由」で1行ずつ。無ければ「なし」とだけ。\n\n` +
       `【人格設定】\n${st.persona.slice(0, 1500)}\n\n【発言】\n${recent.map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
     try {
@@ -187,7 +202,7 @@ function register(clients) {
     client.on('messageCreate', (msg) => {
       try {
         if (!msg.guild) return;
-        if (msg.author.id === client.user?.id) checkOwnMessage(msg, client);
+        if (msg.author.id === client.user?.id) setTimeout(() => checkOwnMessage(msg, client), AI_POST_WAIT_MS).unref?.();
         // 人間の発言のチェックは1アカウント分だけで足りる(全アカウントが同じ発言を受信するため)
         else if (client === clients.find((c) => c.user && c.guilds.cache.has(msg.guild.id))) checkHumanMessage(msg, client);
       } catch (err) {
@@ -202,6 +217,7 @@ function register(clients) {
 module.exports = {
   register,
   report,
+  noteAiPost,
   flush,
   checkOwnMessage,
   checkHumanMessage,

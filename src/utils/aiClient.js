@@ -236,6 +236,8 @@ function recordReply(accountState, text) {
   // 喋るたびに少し疲れる(同じアカウントが延々喋り続けず、口数に波ができる)
   mood.nudge(accountState, { energy: -0.04 });
   accountState.memoryStore?.addRecentReply(text);
+  // 監視役が「AIが生成した会話の発言」だけを検査できるよう知らせる(価格アラート等の定型通知は対象外)
+  require('./selfMonitor').noteAiPost(text);
 }
 
 // 発言の「出だし」(「は？」「えぇ…」のような短い感嘆、または最初の2文字)。
@@ -262,8 +264,27 @@ function overusedOpeners(recentReplies) {
   return [...counts].filter(([, n]) => n >= OPENER_REPEAT_LIMIT).map(([o]) => o);
 }
 
+// 発言の最後の絵文字(「〜わかる 😏」の😏)。直近の自分の発言を口調の手本として見せているため、
+// 一度ついた締めの絵文字が次の発言に引き継がれ、毎回同じ絵文字で終わる癖に固まることがある
+// (suisuiが😏で終わる発言を続けた: issue #31)。出だしと同じく、使いすぎた締めは次で使わせない
+const CLOSER_REPEAT_LIMIT = 3;
+function closerOf(text) {
+  const m = (text || '').trim().match(/(\p{Extended_Pictographic}[\uFE0F\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}]*)$/u);
+  return m ? m[1].replace(/\uFE0F/g, '') : null;
+}
+
+function overusedClosers(recentReplies) {
+  const counts = new Map();
+  for (const r of recentReplies || []) {
+    const c = closerOf(r);
+    if (c) counts.set(c, (counts.get(c) || 0) + 1);
+  }
+  return [...counts].filter(([, n]) => n >= CLOSER_REPEAT_LIMIT).map(([c]) => c);
+}
+
 function isTooSimilarToRecent(text, recentReplies) {
   if ((recentReplies || []).some((prev) => textSimilarity(text, prev) >= SIMILARITY_THRESHOLD)) return true;
+  if (overusedClosers(recentReplies).includes(closerOf(text))) return true;
   return overusedOpeners(recentReplies).includes(openerOf(text));
 }
 
@@ -732,9 +753,12 @@ async function getAIResponseOnce(
     ? `\n【あなたの直近の発言(これがあなたの喋り方。一人称・語尾・くだけ方・テンションはこれと揃え、別人のような口調にしない。ただし同じ文や同じ締め方をそのまま繰り返さない。この中に人格設定と食い違う発言があれば、それは失敗作なので真似せず人格設定を優先する)】\n${accountState.recentReplies.join('\n')}`
     : '';
   const bannedOpeners = overusedOpeners(accountState.recentReplies);
-  const openerSection = bannedOpeners.length
-    ? `\n【最近使いすぎている出だし(今回の発言はこれで始めない。発言の途中にも入れない)】${bannedOpeners.map((o) => `「${o}」`).join(' ')}`
-    : '';
+  const bannedClosers = overusedClosers(accountState.recentReplies);
+  const openerSection =
+    (bannedOpeners.length
+      ? `\n【最近使いすぎている出だし(今回の発言はこれで始めない。発言の途中にも入れない)】${bannedOpeners.map((o) => `「${o}」`).join(' ')}`
+      : '') +
+    (bannedClosers.length ? `\n【最近使いすぎている締めの絵文字(今回は使わない。別の絵文字か絵文字無しにする)】${bannedClosers.join(' ')}` : '');
 
   const roleInstructionPool = ROLE_INSTRUCTIONS[role];
   const charRole = charRoleOf(accountState);
@@ -871,6 +895,7 @@ async function getAIResponseOnce(
     replyLanguageOf(accountState) ? null : '日本語',
     'いつもの自分の口調',
     bannedOpeners.length ? `${bannedOpeners.map((o) => `「${o}」`).join('')}で始めない` : null,
+    bannedClosers.length ? `${bannedClosers.join('')}を使わない` : null,
     allowSkip ? `言うことが無ければ${SKIP_TOKEN}` : null
   ].filter(Boolean);
   const userPrompt = `${conversation}${languageSection(accountState)}\n(${finalReminders.join(' / ')})\n【返信】`;
@@ -1152,5 +1177,6 @@ module.exports = {
   recordMemory,
   compressUserMemoryIfNeeded,
   callChatCompletion,
-  toSingleLine
+  toSingleLine,
+  isTooSimilarToRecent
 };
