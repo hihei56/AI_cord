@@ -46,7 +46,10 @@ const client = { user: { id: 'bot1' }, accountState: { id: 'acc1' } };
 test('自分の発言の不具合(途中で切れた・外国語・プロンプト漏れ)を記録し、閾値を超えたらファイルに出す', () => {
   const now = Date.now();
   const ch = channelWith([]);
-  const own = (id, content) => msg(id, 'bot1', content, now, { channel: ch });
+  const own = (id, content) => {
+    selfMonitor.noteAiPost(content);
+    return msg(id, 'bot1', content, now, { channel: ch });
+  };
   selfMonitor.checkOwnMessage(own('a', '先週のコンビニで買ったチョコレート急に溶けてパッケージがべちゃべちゃになってたんだけどこれって円安で仕入れが'), client);
   selfMonitor.checkOwnMessage(own('b', 'それな 안녕'), client);
   selfMonitor.checkOwnMessage(own('c', '【言う内容】知らないと言う'), client);
@@ -63,6 +66,7 @@ test('誰も反応していないのに同じアカウントが続けて投稿�
   const now = Date.now();
   const prev = msg('p', 'bot1', 'RTX4090の話', now - 49 * 60000);
   const ch = channelWith([prev]);
+  selfMonitor.noteAiPost('チョコの話');
   for (let i = 0; i < 2; i++) selfMonitor.checkOwnMessage(msg(`n${i}`, 'bot1', 'チョコの話', now, { channel: ch }), client);
   assert.deepEqual(selfMonitor.flush().map((r) => r.kind), ['talking-to-void']);
 });
@@ -104,4 +108,19 @@ test('回収スクリプト: 未回収分だけ出し、ackするまで同じ分
   run('--ack', String(first.offset));
   fs.appendFileSync(selfMonitor.REPORT_FILE, '}\n');
   assert.deepEqual(JSON.parse(run()).reports.map((r) => r.kind), ['c']);
+});
+
+test('価格アラート等の定型の投稿(AIが生成していない発言)は検査しない (issue #32)', () => {
+  const now = Date.now();
+  const alert = (id, at) => msg(id, 'bot1', '💰 価格アラート\n📉 **NEAR** 3.3 → 3.13 (-5.2%)', at);
+  const prev = alert('a1', now - 60 * 60000);
+  const ch = channelWith([prev]);
+  for (let i = 0; i < 3; i++) selfMonitor.checkOwnMessage({ ...alert(`a${i + 2}`, now), channel: ch }, client);
+  assert.equal(selfMonitor.flush().length, 0);
+});
+
+test('分割送信された発言の一部も、AIの発言として検査する', () => {
+  selfMonitor.noteAiPost('それはそう 【言う内容】知らない');
+  selfMonitor.checkOwnMessage({ ...msg('s1', 'bot1', '【言う内容】知らない', Date.now()), channel: channelWith([]) }, client);
+  assert.deepEqual(selfMonitor.flush().map((r) => r.kind), ['prompt-leak']);
 });

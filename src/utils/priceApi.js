@@ -7,6 +7,9 @@ const KNOWN_COINGECKO_IDS = {
 };
 
 const resolvedCache = new Map();
+const failedResolves = new Map();
+const RESOLVE_BACKOFF_BASE_MS = 30 * 60000;
+const RESOLVE_BACKOFF_MAX_MS = 24 * 3600000;
 
 // CoinGeckoはUser-Agent無し・キー無しのリクエストをクラウドのIP(Oracle Cloud等)から
 // 送ると403で弾くことがある(本番で全リクエストが403になっていた)。無料のDemo APIキー
@@ -73,6 +76,10 @@ async function resolveSymbol(symbol, manualOverride) {
   }
 
   if (resolvedCache.has(s)) return resolvedCache.get(s);
+  // 解決できなかった銘柄は、間隔を倍々に空けて再試行する(issue #30: 存在しない銘柄を15分ごとに
+  // 永久に検索し直し、そのたびにエラーを出していた)。一時的な障害なら次の再試行で解決される
+  const failed = failedResolves.get(s);
+  if (failed && Date.now() < failed.retryAt) return null;
 
   let resolved = KNOWN_COINGECKO_IDS[s] ? { source: 'coingecko', id: KNOWN_COINGECKO_IDS[s] } : null;
   if (!resolved) resolved = await searchCoinGecko(s);
@@ -83,10 +90,17 @@ async function resolveSymbol(symbol, manualOverride) {
   // チェックで自動的に再試行されず、プロセスを再起動するか!pricealert setidで
   // 手動指定するまで永久に「取得失敗」のまま固定されてしまうため
   if (!resolved) {
-    logger.error('PRICE', `銘柄"${symbol}"を自動解決できませんでした(CoinGecko/DexScreenerとも該当なし)`);
+    const failures = (failed?.failures || 0) + 1;
+    const backoff = Math.min(RESOLVE_BACKOFF_MAX_MS, RESOLVE_BACKOFF_BASE_MS * 2 ** (failures - 1));
+    failedResolves.set(s, { failures, retryAt: Date.now() + backoff });
+    const msg = `銘柄"${symbol}"を自動解決できませんでした(CoinGecko/DexScreenerとも該当なし)。${Math.round(backoff / 60000)}分後に再試行。!pricealert setid で手動指定するか、監視から外すこと`;
+    // エラーとして出すのは初回だけ(以降は同じ内容の繰り返しなので普通のログにする)
+    if (failures === 1) logger.error('PRICE', msg);
+    else logger.log('PRICE', msg);
     return null;
   }
 
+  failedResolves.delete(s);
   resolvedCache.set(s, resolved);
   return resolved;
 }
@@ -180,4 +194,4 @@ async function fetchDailyCloses(symbol, overrides = {}) {
   }
 }
 
-module.exports = { resolveSymbol, fetchPrices, fetchDailyCloses };
+module.exports = { resolveSymbol, fetchPrices, fetchDailyCloses, _failedResolves: failedResolves };
