@@ -32,10 +32,25 @@ function posterCandidates(channelId) {
     ? order.map((id) => all.find((c) => c.accountState?.id === String(id))).filter(Boolean)
     : all;
   return ordered
-    .filter((c) => c.isReady?.() && !c.accountState?.lockedDown)
+    .filter((c) => c.isReady?.() && !c.accountState?.lockedDown && !isBlocked(c, channelId))
     .map((c) => ({ client: c, channel: c.channels?.cache.get(channelId) }))
     .filter((p) => p.channel);
 }
+
+// 権限が無くて送れないアカウント(Missing Access / Missing Permissions)は、しばらく候補から外す。
+// 以前は通知先チャンネルの権限を失ったアカウントでも2分ごとに送信を試み、全アカウントで失敗した
+// スレを次回また送り直していたため、同じエラーが1時間に数十回出続けていた(issue #36〜#38, #43)
+const NO_ACCESS_CODES = new Set([50001, 50013]);
+const NO_ACCESS_BLOCK_MS = 6 * 3600000;
+const blockedUntil = new Map();
+const blockKey = (client, channelId) => `${client.accountState?.id}:${channelId}`;
+function isBlocked(client, channelId) {
+  return (blockedUntil.get(blockKey(client, channelId)) || 0) > Date.now();
+}
+
+// 全アカウントで送れなかったスレは、この回数で諦めて通知済みにする(送れないまま永久に再送しない)
+const MAX_SEND_ATTEMPTS = 3;
+const sendFailures = new Map();
 
 // 候補の先頭から送信を試み、失敗したら次のアカウントで送り直す
 async function sendWithFallback(channelId, content, t) {
@@ -43,12 +58,26 @@ async function sendWithFallback(channelId, content, t) {
     try {
       await channel.send(content);
       logger.log('HOUSE', `[${client.accountState.id}] ${t.key} ${t.title}`);
+      sendFailures.delete(t.key);
       return true;
     } catch (err) {
-      logger.error('HOUSE', `[${client.accountState.id}] 送信失敗、次のアカウントで再試行: ${err.message}`);
+      if (NO_ACCESS_CODES.has(err.code)) {
+        blockedUntil.set(blockKey(client, channelId), Date.now() + NO_ACCESS_BLOCK_MS);
+        logger.error('HOUSE', `[${client.accountState.id}] 通知先チャンネルへの送信権限が無い(${err.message})。6時間このアカウントでは送らない`);
+      } else {
+        logger.error('HOUSE', `[${client.accountState.id}] 送信失敗、次のアカウントで再試行: ${err.message}`);
+      }
     }
   }
-  logger.error('HOUSE', `全アカウントで送信失敗: ${t.key} ${t.title}`);
+  const failures = (sendFailures.get(t.key) || 0) + 1;
+  sendFailures.set(t.key, failures);
+  if (failures >= MAX_SEND_ATTEMPTS) {
+    sendFailures.delete(t.key);
+    store.markSeen([t.key]);
+    logger.error('HOUSE', `全アカウントで${MAX_SEND_ATTEMPTS}回送信に失敗したので通知を諦めた(スレ${t.key})`);
+  } else {
+    logger.log('HOUSE', `全アカウントで送信失敗(${failures}/${MAX_SEND_ATTEMPTS}回目、次回再送): スレ${t.key}`);
+  }
   return false;
 }
 
@@ -139,4 +168,6 @@ function registerHouseWatchHandler(clients) {
   scheduleWithJitter(checkIntervalMs, checkIntervalJitter, () => checkOnce());
 }
 
-module.exports = { registerHouseWatchHandler, checkOnce, isThreadIdHidden };
+module.exports = {
+  sendWithFallback,
+  _blockedUntil: blockedUntil, registerHouseWatchHandler, checkOnce, isThreadIdHidden };
