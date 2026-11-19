@@ -183,6 +183,19 @@ function hookErrors() {
 }
 
 // ── 人格のブレの定期判定 ──
+// 「一覧に無い絵文字を使った」だけの指摘は報告しない。判定役のLLMは、プロンプトで「一覧は例」と
+// 伝えても絵文字一覧を厳密なリストとして扱い、口調は合っているのに絵文字だけで食い違いと判定し続けた
+// (issue #31, #49。理由に「他は設定と合致している」と自分で書いていた)。同じ絵文字で終わり続ける
+// 癖は、返信生成側の締めの絵文字の繰り返し防止で別に抑えている
+function isEmojiOnlyReason(reason) {
+  const r = reason || '';
+  if (!/絵文字/.test(r)) return false;
+  const aboutListOnly = /(設定|一覧|リスト|例)に(ない|無い|含まれ)/.test(r);
+  const restIsFine = /他は.*(合致|一致|問題な|沿って)/.test(r);
+  const otherProblem = /(口調|語尾|一人称|句読点|敬語|長さ|長い|説明|スタンス|別人)/.test(r.replace(/他は[^。]*/, ''));
+  return (aboutListOnly || restIsFine) && !otherProblem;
+}
+
 const DRIFT_SAMPLE = 8;
 async function checkPersonaDrift() {
   const { callChatCompletion } = require('./aiClient');
@@ -204,7 +217,8 @@ async function checkPersonaDrift() {
       for (const line of out.split('\n')) {
         const m = line.match(/^\s*(\d+)\s*[|｜:：.]\s*(.+)$/);
         const post = m && recent[Number(m[1]) - 1];
-        if (post) report('persona-drift', st.id, `人格設定(${st.personaName || '不明'})と食い違う発言: ${m[2].trim().slice(0, 60)}`, post);
+        if (!post || isEmojiOnlyReason(m[2])) continue;
+        report('persona-drift', st.id, `人格設定(${st.personaName || '不明'})と食い違う発言: ${m[2].trim().slice(0, 60)}`, post);
       }
     } catch (err) {
       origError('MONITOR', err);
@@ -233,6 +247,7 @@ function register(clients) {
 }
 
 module.exports = {
+  isEmojiOnlyReason,
   register,
   report,
   noteAiPost,
