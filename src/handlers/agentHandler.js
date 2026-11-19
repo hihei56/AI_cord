@@ -243,7 +243,9 @@ async function execute(client, channel, decision, obs) {
     case 'reply': {
       const target = decision.targetMsg;
       const history = obs.messages.filter((m) => m.createdTimestamp <= target.createdTimestamp).slice(-config.ai.reply.historyContextSize);
-      const text = await getAIResponse(state, target.content, history, target, { allowMarkovDirect: false });
+      // わざわざ拾いに行く返信なので、直接話しかけられた時と同じく「何を言うか」を考えてから書く
+      // (考える役を通さない1回の生成だと「うんざりだ」のような中身の無い一言になっていた)
+      const text = await getAIResponse(state, target.content, history, target, { allowMarkovDirect: false, direct: true });
       if (!text) return false;
       await sendLikeHuman(channel, text, target);
       recordReply(state, text);
