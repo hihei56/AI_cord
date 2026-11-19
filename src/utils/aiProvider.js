@@ -196,7 +196,14 @@ function requestExtras(providerName, model, maxTokens, groqEffort) {
 
 function getConnection(kind = 'chat') {
   if (kind === 'vision') {
-    const providerName = usableExplicit('VISION_AI_PROVIDER') || currentProvider;
+    // 画像を読めないプロバイダ(Cloudflare等。visionModelがテキスト専用)が選ばれていたら、画像を読める
+    // プロバイダに替える。以前はVISION_AI_PROVIDER/会話用プロバイダをそのまま使い、毎回cloudflareで
+    // 失敗してから他を試していた(issue #53)。VISION_API_BASE_URLで接続先を明示した時は替えない
+    const chosen = usableExplicit('VISION_AI_PROVIDER') || currentProvider;
+    const providerName =
+      VISION_CAPABLE.has(chosen) || process.env.VISION_API_BASE_URL
+        ? chosen
+        : availableProviders().find((name) => VISION_CAPABLE.has(name)) || chosen;
     const p = PROVIDER_DEFAULTS[providerName];
     return {
       provider: providerName,

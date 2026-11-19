@@ -1254,5 +1254,6 @@ module.exports = {
   isTooSimilarToRecent,
   isParrot,
   isSelfVoice,
-  cleanExampleLine
+  cleanExampleLine,
+  isGarbledOutput
 };
