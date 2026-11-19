@@ -172,6 +172,9 @@
       "enabled": true,
       "count": 100
     },
+    "selfVoice": {
+      "corpora": ["suisui.txt"]
+    },
     "vision": {
       "enabled": true,
       "model": "meta-llama/llama-4-scout-17b-16e-instruct",
