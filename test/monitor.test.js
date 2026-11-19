@@ -140,3 +140,15 @@ test('オウム返しと、同じ発言への二重返信を記録する(人間�
   assert.ok(kinds.includes('parrot') && kinds.includes('duplicate-reply'), kinds.join(','));
   assert.doesNotMatch(fs.readFileSync(selfMonitor.REPORT_FILE, 'utf8'), /近平/);
 });
+
+test('人格判定で「一覧に無い絵文字」だけの指摘は報告しない (issue #49)', async () => {
+  assert.equal(selfMonitor.isEmojiOnlyReason('使用している絵文字が設定にない 😏。他は設定と合致している。'), true);
+  assert.equal(selfMonitor.isEmojiOnlyReason('絵文字が一覧に無い'), true);
+  assert.equal(selfMonitor.isEmojiOnlyReason('絵文字が設定にない上に、句読点を使っている'), false);
+  assert.equal(selfMonitor.isEmojiOnlyReason('シニカルなキャラなのに素直に長い体験談を語っている'), false);
+  mockLLM(() => '1|使用している絵文字が設定にない 😏。他は設定と合致している。');
+  const st = { id: 'acc2', personaName: 'suisui', persona: '気分屋', recentReplies: ['原神の新イベント甘すぎて笑える 😏', 'a', 'b', 'c'] };
+  selfMonitor.register([{ on() {}, user: null, accountState: st }]);
+  await selfMonitor.checkPersonaDrift();
+  assert.equal(selfMonitor.flush().length, 0);
+});
