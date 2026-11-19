@@ -5,6 +5,16 @@ const { createReminderStore } = require('./utils/reminderStore');
 const { createMemoryStore } = require('./utils/memoryStore');
 const gifGenreStore = require('./utils/gifGenreStore');
 
+// 保存されている直近の自分の発言から、今の返信言語と違う文字の発言を外す。返信言語の既定が
+// タミル語だった時期(〜2026-11-14)の発言が、めったに喋らないアカウントの記録に残ったままになり、
+// 「直近の発言」として毎回プロンプトに入って日本語の返信を引っ張り、人格判定でも誤報告されていた
+// (issue #54)。言語を固定しているアカウントは対象外
+function usableRecentReplies(replies, replyLanguage) {
+  if (replyLanguage) return [...replies];
+  const { isGarbledOutput } = require('./utils/aiClient');
+  return replies.filter((r) => !isGarbledOutput(r));
+}
+
 // アカウント1つ分の実行時状態(ペルソナ・コーパス・応答チャンネル・
 // クールダウン・ロックダウン・マルコフ連鎖・リマインダー)をひとまとめにする。
 // これをclientに紐付けることで、複数アカウントを同一プロセスで
@@ -68,8 +78,9 @@ function buildAccountState(account) {
     // 直近の自分の発言を数件保持し、同じ感嘆詞・絵文字の組み合わせを連発しないよう
     // プロンプトに「これは避けて」として渡す(bot臭さ対策)。memoryStoreの永続化ファイルから
     // 読み込むことで、pm2再起動を挟んでも直近の言い回しを覚えたままにする
-    recentReplies: [...memoryStore.getRecentReplies()]
+    recentReplies: usableRecentReplies(memoryStore.getRecentReplies(), account.replyLanguage)
   };
 }
 
-module.exports = { buildAccountState };
+module.exports = {
+  usableRecentReplies, buildAccountState };

@@ -80,3 +80,28 @@ test('災害・事故・事件のニュースは雑談のネタにしない', ()
   assert.equal(isSafe({ title: '日経平均が反落、円安一服' }), true);
   assert.equal(isSafe({ title: '首都高で多重事故' }), false);
 });
+
+test('保存された直近の発言から、返信言語と違う文字(昔のタミル語)の発言を外す (issue #54)', () => {
+  const { usableRecentReplies } = require('../src/account');
+  const saved = ['நேரம் வேகமா ஓடுது, பீட்சா சாப்பிடலாமா?', 'それはない', 'அப்படியா'];
+  assert.deepEqual(usableRecentReplies(saved, null), ['それはない']);
+  assert.deepEqual(usableRecentReplies(saved, 'タミル語'), saved, '言語を固定しているアカウントはそのまま');
+});
+
+test('画像を読めないプロバイダが選ばれていたら、画像を読めるプロバイダで読む (issue #53)', () => {
+  const keys = { CLOUDFLARE_API_KEY: 'k', CLOUDFLARE_ACCOUNT_ID: 'acc', VISION_AI_PROVIDER: 'cloudflare' };
+  const saved = Object.fromEntries(Object.keys(keys).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, keys);
+  // baseUrlはモジュール読み込み時に決まるので読み直す
+  delete require.cache[require.resolve('../src/utils/aiProvider')];
+  try {
+    const aiProvider = require('../src/utils/aiProvider');
+    assert.equal(aiProvider.getConnection('vision').provider, 'groq');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    delete require.cache[require.resolve('../src/utils/aiProvider')];
+  }
+});
