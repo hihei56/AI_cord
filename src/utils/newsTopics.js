@@ -71,18 +71,26 @@ function shuffled(arr) {
 }
 
 // 見出しだけをランダムに1つ(総合ニュースから。無ければ他のカテゴリから)
+// 災害・事故・事件・訃報のニュースは雑談のネタにしない。軽い一言にすると不謹慎で、それ自体がbot臭い
+// (「熊本で震度5弱って聞いたら朝のコーヒーが飛び散りそうだね」と地震を冗談にしていた)。
+// 以前はAI同士の会話のお題選びでだけLLMに「訃報や事件事故は選ばない」と頼んでいて、
+// ニュースのつぶやき(getRandomHeadline)は素通しだった
+const SENSITIVE_RE = /(地震|震度|津波|噴火|台風|豪雨|大雨|洪水|土砂|竜巻|大雪|災害|避難|被災|死亡|死去|死者|遺体|訃報|逝去|亡くな|殺|刺さ|事故|火災|火事|爆発|墜落|衝突|脱線|逮捕|容疑|事件|不明者|行方不明|被害|負傷|重体|けが|テロ|銃|自殺|虐待|性的)/;
+const isSafe = (item) => !SENSITIVE_RE.test(`${item.title || ''}${item.description || ''}`);
+
 async function getRandomHeadline() {
   await ensureFresh();
-  const pool = cache.general?.length ? cache.general : Object.values(cache).flat();
+  const all = cache.general?.length ? cache.general : Object.values(cache).flat();
+  const pool = all.filter(isSafe);
   return pool.length ? pool[Math.floor(Math.random() * pool.length)].title : null;
 }
 
 // 会話のお題用に { title, description } をcount件。categoryを優先し、足りなければ他から補う
 async function getNewsItems(count, category = 'economy') {
   await ensureFresh();
-  const preferred = shuffled(cache[category] || []);
-  const others = shuffled(Object.entries(cache).filter(([c]) => c !== category).flatMap(([, items]) => items));
+  const preferred = shuffled((cache[category] || []).filter(isSafe));
+  const others = shuffled(Object.entries(cache).filter(([c]) => c !== category).flatMap(([, items]) => items).filter(isSafe));
   return [...preferred, ...others].slice(0, count);
 }
 
-module.exports = { getRandomHeadline, getNewsItems };
+module.exports = { getRandomHeadline, getNewsItems, isSafe };

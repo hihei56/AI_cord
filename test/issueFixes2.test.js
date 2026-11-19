@@ -73,3 +73,10 @@ test('監視役のエラー報告から、スレタイ等の中身を落とす (
   assert.equal(selfMonitor.sanitizeError('全アカウントで送信失敗: 1763456789 Jガイルきたよ👊😅👊🏡'), '全アカウントで送信失敗');
   assert.equal(selfMonitor.sanitizeError('[2] 送信失敗、次のアカウントで再試行: Missing Access'), '[2] 送信失敗、次のアカウントで再試行: Missing Access');
 });
+
+test('災害・事故・事件のニュースは雑談のネタにしない', () => {
+  const { isSafe } = require('../src/utils/newsTopics');
+  assert.equal(isSafe({ title: '熊本で震度5弱の地震' }), false);
+  assert.equal(isSafe({ title: '日経平均が反落、円安一服' }), true);
+  assert.equal(isSafe({ title: '首都高で多重事故' }), false);
+});
