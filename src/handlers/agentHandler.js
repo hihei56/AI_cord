@@ -7,6 +7,7 @@ const { hourOfDayJST } = require('../utils/datetime');
 const { getAllClients } = require('../utils/accountRegistry');
 const { getRandomHeadline } = require('../utils/newsTopics');
 const webSearch = require('../utils/webSearch');
+const replyRegistry = require('../utils/replyRegistry');
 const usageLedger = require('../utils/usageLedger');
 const { createEngagementStats } = require('../utils/engagementStats');
 const { callChatCompletion, getAIResponse, generateSelfTalk, recordReply } = require('../utils/aiClient');
@@ -205,6 +206,7 @@ const REPLY_TARGET_MAX_MINUTES = 60;
 function isReplyable(msg, messages) {
   if (!msg || !isHuman(msg)) return false;
   if (minutesSince(msg.createdTimestamp) > REPLY_TARGET_MAX_MINUTES) return false;
+  if (replyRegistry.anyReplied(msg.id)) return false;
   return !messages.some((m) => isOwnAccount(m.author.id) && m.reference?.messageId === msg.id);
 }
 

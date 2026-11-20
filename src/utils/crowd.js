@@ -8,6 +8,7 @@ const humanPresence = require('./humanPresence');
 const { pickReactionEmoji } = require('./reactionEmoji');
 const { factsFor, isFactQuestion } = require('./questionFacts');
 const userRules = require('./userRules');
+const replyRegistry = require('./replyRegistry');
 
 // 複数アカウントが「同じ場に同時にいる」感じを出すための調整役。
 //
@@ -153,6 +154,7 @@ async function follow(client, humanMsg) {
   if (!text) return;
 
   const target = toHuman ? humanMsg : leadMsg;
+  if (replyRegistry.hasReplied(client.user.id, target.id)) return;
   await channel.send({
     content: text,
     reply: { messageReference: target.id, failIfNotExists: false },
