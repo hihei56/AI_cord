@@ -105,3 +105,18 @@ test('画像を読めないプロバイダが選ばれていたら、画像を�
     delete require.cache[require.resolve('../src/utils/aiProvider')];
   }
 });
+
+test('一度返信した発言には、見える範囲から外れても同じアカウントは返信しない (issue #56)', () => {
+  const { registerOwnAccount } = require('../src/utils/ownAccounts');
+  registerOwnAccount('bot-reg');
+  const registry = require('../src/utils/replyRegistry');
+  registry.record({ author: { id: 'bot-reg' }, reference: { messageId: 'human-1' } });
+  registry.record({ author: { id: 'stranger' }, reference: { messageId: 'human-2' } });
+  assert.equal(registry.hasReplied('bot-reg', 'human-1'), true);
+  assert.equal(registry.hasReplied('bot-other', 'human-1'), false);
+  assert.equal(registry.anyReplied('human-2'), false, '人間のリプライは数えない');
+  // エージェントは直近の発言一覧に自分の返信が無くても、台帳を見て返信しない
+  const { isReplyable } = require('../src/handlers/agentHandler');
+  const human = { id: 'human-1', author: { id: 'mirei', bot: false }, content: 'x', createdTimestamp: Date.now() - 30 * 60000 };
+  assert.equal(isReplyable(human, [human]), false);
+});
