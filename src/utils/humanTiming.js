@@ -72,11 +72,37 @@ function scheduleHumanLike(meanMs, fn) {
 // チャンネルの最後の発言が自分たち(運用中のどれかのアカウント)の発言で、その後に人間が
 // 何も書いていなければtrue。誰も反応していない所に重ねて書かないための判定。
 // 受信済みのメッセージキャッシュだけを見る(Discord APIは呼ばない)。キャッシュが空なら判定しない
-function waitingForReply(channel, now = Date.now()) {
-  const msgs = [...(channel?.messages?.cache?.values() || [])].sort((a, b) => b.createdTimestamp - a.createdTimestamp);
-  const last = msgs[0];
-  if (!last || !isOwnAccount(last.author.id)) return false;
-  return now - last.createdTimestamp < UNANSWERED_RETRY_MS;
+//
+// 誰も反応しないまま自分たちの投稿が2回続いたら、人間が何か書くまで黙る。以前は4時間ごとに何度でも
+// 書き足していた上、自律エージェントだけは45分で次を書いていたので(独自の基準)、無人のチャンネルに
+// 同じアカウントが数時間おきに独り言を積んでいた(issue #58)。投稿系の機能はすべてここで判定する
+const MAX_UNANSWERED_POSTS = 2;
+
+// 発言一覧の末尾から、最後の人間の発言より後にある自分たちの投稿の数と、最後の投稿の時刻
+function unansweredRun(messages) {
+  const sorted = [...messages].sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+  let count = 0;
+  let own = 0;
+  let lastAt = null;
+  for (const m of sorted) {
+    if (!isOwnAccount(m.author.id)) break;
+    own++;
+    // AI同士の掛け合い(リプライでつながった一連の発言)は、口火の1通(リプライでない発言)だけを数える
+    if (!m.reference?.messageId) count++;
+    lastAt = lastAt ?? m.createdTimestamp;
+  }
+  return { count: own > 0 ? Math.max(count, 1) : 0, lastAt };
 }
 
-module.exports = { scheduleHumanLike, activeNow, waitingForReply, hourWeights, exponentialDelay, DEFAULT_CURVE };
+function shouldHoldOff(messages, now = Date.now()) {
+  const { count, lastAt } = unansweredRun(messages);
+  if (count === 0) return false;
+  if (count >= MAX_UNANSWERED_POSTS) return true;
+  return now - lastAt < UNANSWERED_RETRY_MS;
+}
+
+function waitingForReply(channel, now = Date.now()) {
+  return shouldHoldOff([...(channel?.messages?.cache?.values() || [])], now);
+}
+
+module.exports = { scheduleHumanLike, activeNow, waitingForReply, shouldHoldOff, unansweredRun, hourWeights, exponentialDelay, DEFAULT_CURVE, UNANSWERED_RETRY_MS, MAX_UNANSWERED_POSTS };

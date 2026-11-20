@@ -152,3 +152,17 @@ test('人格判定で「一覧に無い絵文字」だけの指摘は報告し�
   await selfMonitor.checkPersonaDrift();
   assert.equal(selfMonitor.flush().length, 0);
 });
+
+test('反応の無い投稿が2回続いたら、人間が書くまで黙る。4時間空けた2回目までは許す (issue #58)', () => {
+  const now = Date.now();
+  const h = 3600000;
+  const human = msg('h', 'human', 'x', now - 10 * h);
+  const own1 = msg('o1', 'bot1', '呪術廻戦の話', now - 5 * h);
+  const own2 = msg('o2', 'bot1', '金価格の話', now - 30 * 60000);
+  assert.equal(humanTiming.shouldHoldOff([human, own1], now), false, '1回目から4時間経てば2回目はよい');
+  assert.equal(humanTiming.shouldHoldOff([human, own1, own2], now), true, '2回続いたら黙る');
+  assert.equal(humanTiming.shouldHoldOff([human, own1, own2, msg('h2', 'human', 'へえ', now - 60000)], now), false);
+  // AI同士の掛け合い(リプライの連なり)は1回の投稿として数える
+  const seed = [msg('s1', 'bot1', 'a', now - 5 * h), msg('s2', 'bot1', 'b', now - 5 * h + 1000, { reference: { messageId: 's1' } })];
+  assert.equal(humanTiming.unansweredRun(seed).count, 1);
+});
