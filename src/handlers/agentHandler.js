@@ -8,6 +8,7 @@ const { getAllClients } = require('../utils/accountRegistry');
 const { getRandomHeadline } = require('../utils/newsTopics');
 const webSearch = require('../utils/webSearch');
 const replyRegistry = require('../utils/replyRegistry');
+const humanTiming = require('../utils/humanTiming');
 const usageLedger = require('../utils/usageLedger');
 const { createEngagementStats } = require('../utils/engagementStats');
 const { callChatCompletion, getAIResponse, generateSelfTalk, recordReply } = require('../utils/aiClient');
@@ -108,7 +109,10 @@ function gate(obs, channelId) {
   if (minutesSince(lastChannelActionAt.get(channelId)) < AGENT.channelCooldownMinutes) return 'このチャンネルでは最近行動済み';
   if (obs.activeHumanChat) return '人間同士で盛り上がっている最中(邪魔しない)';
   if (obs.unansweredQuestion) return null;
-  if (obs.lastIsOwn && obs.minutesSinceAny < AGENT.ownSilenceMinutes) return '直前が自分たちの発言(独り相撲を避ける)';
+  // 他の投稿系の機能と同じ基準(humanTiming)で、誰も反応していない所に重ねて書かない(issue #58)
+  if (obs.lastIsOwn && (humanTiming.shouldHoldOff(obs.messages) || obs.minutesSinceAny < AGENT.ownSilenceMinutes)) {
+    return '直前が自分たちの発言で、まだ誰も反応していない(独り相撲を避ける)';
+  }
   if (obs.minutesSinceAny < AGENT.quietMinMinutes) return 'まだ会話が続いている';
   if (obs.minutesSinceHuman > AGENT.maxQuietHours * 60) return '人間が長時間いない(誰もいない所に投げても無駄)';
   return null;

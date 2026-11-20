@@ -137,7 +137,13 @@ function checkOwnMessage(msg, client) {
   const prev = [...msg.channel.messages.cache.values()]
     .filter((m) => m.id !== msg.id && m.createdTimestamp <= msg.createdTimestamp)
     .sort((a, b) => b.createdTimestamp - a.createdTimestamp)[0];
-  if (prev && prev.author.id === msg.author.id && msg.createdTimestamp - prev.createdTimestamp > 10 * 60000 && !msg.reference) {
+  // 投稿系の機能が守るべき基準(humanTiming)を破った時だけ報告する。4時間空けた2回目までは基準内
+  const humanTiming = require('./humanTiming');
+  const before = [...msg.channel.messages.cache.values()].filter((m) => m.id !== msg.id && m.createdTimestamp <= msg.createdTimestamp);
+  if (
+    prev && prev.author.id === msg.author.id && msg.createdTimestamp - prev.createdTimestamp > 10 * 60000 && !msg.reference &&
+    humanTiming.shouldHoldOff(before, msg.createdTimestamp)
+  ) {
     report('talking-to-void', account, '誰も反応していないのに同じアカウントが続けて投稿した', text);
   }
 }
