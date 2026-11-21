@@ -22,3 +22,9 @@ test('自発投稿でも人格の口調(絵文字)を消さず、自分の直近
   assert.match(user, /人格設定のいつもの口調/);
   assert.doesNotMatch(sys, /自分のエピソードを振って/);
 });
+
+test('自発投稿で、ニュースを自分の持ち物にこじつけた冗談やダジャレを書かせない (issue #61)', async () => {
+  const calls = mockLLM(() => 'また値上げかよ');
+  await ai.generateSelfTalk({ id: 'pun', persona: 'p', recentReplies: [] }, 'アイスの値上げ', null);
+  assert.match(calls[0].body.messages[1].content, /こじつけた仮定の冗談や、ダジャレ/);
+});
