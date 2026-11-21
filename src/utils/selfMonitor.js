@@ -202,6 +202,14 @@ function isEmojiOnlyReason(reason) {
   return (aboutListOnly || restIsFine) && !otherProblem;
 }
 
+// 「一人称を使った」だけの指摘も報告しない。人格設定は「一人称は基本使わず省略する」(=傾向)なのに、
+// 判定役はプロンプトで伝えても1回使っただけで食い違いと判定し続けた(issue #61, #63)
+function isFirstPersonOnlyReason(reason) {
+  const r = (reason || '').replace(/他は[^。]*/, '');
+  if (!/一人称/.test(r)) return false;
+  return !/(口調|語尾|句読点|敬語|長さ|長い|説明|スタンス|別人|絵文字|こじつけ|冗談|ダジャレ)/.test(r.replace(/一人称[^。、]*/g, ''));
+}
+
 const DRIFT_SAMPLE = 8;
 async function checkPersonaDrift() {
   const { callChatCompletion } = require('./aiClient');
@@ -223,7 +231,7 @@ async function checkPersonaDrift() {
       for (const line of out.split('\n')) {
         const m = line.match(/^\s*(\d+)\s*[|｜:：.]\s*(.+)$/);
         const post = m && recent[Number(m[1]) - 1];
-        if (!post || isEmojiOnlyReason(m[2])) continue;
+        if (!post || isEmojiOnlyReason(m[2]) || isFirstPersonOnlyReason(m[2])) continue;
         report('persona-drift', st.id, `人格設定(${st.personaName || '不明'})と食い違う発言: ${m[2].trim().slice(0, 60)}`, post);
       }
     } catch (err) {
@@ -254,6 +262,7 @@ function register(clients) {
 
 module.exports = {
   isEmojiOnlyReason,
+  isFirstPersonOnlyReason,
   register,
   report,
   noteAiPost,

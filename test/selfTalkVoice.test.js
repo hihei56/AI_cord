@@ -28,3 +28,12 @@ test('自発投稿で、ニュースを自分の持ち物にこじつけた冗�
   await ai.generateSelfTalk({ id: 'pun', persona: 'p', recentReplies: [] }, 'アイスの値上げ', null);
   assert.match(calls[0].body.messages[1].content, /こじつけた仮定の冗談や、ダジャレ/);
 });
+
+test('お題を自分の持ち物にこじつけた冗談は、生成後に弾いて作り直させる (issue #63)', async () => {
+  let n = 0;
+  mockLLM(() => (++n === 1 ? '金利上がるたびに俺のクレジットカード止まるんだよね' : '利上げしたところで景気が戻る気しねえ'));
+  const text = await ai.generateSelfTalk({ id: 'pj', persona: 'p', recentReplies: [] }, '日銀が利上げ', null);
+  assert.equal(text, '利上げしたところで景気が戻る気しねえ');
+  assert.equal(ai.isPossessionJoke('値上げで財布が氷結したら凍えるんじゃねーか'), true);
+  assert.equal(ai.isPossessionJoke('円安で輸入品がまた上がるのか'), false);
+});
