@@ -166,3 +166,8 @@ test('反応の無い投稿が2回続いたら、人間が書くまで黙る。4
   const seed = [msg('s1', 'bot1', 'a', now - 5 * h), msg('s2', 'bot1', 'b', now - 5 * h + 1000, { reference: { messageId: 's1' } })];
   assert.equal(humanTiming.unansweredRun(seed).count, 1);
 });
+
+test('人格判定で「一人称を使った」だけの指摘は報告しない (issue #63)', () => {
+  assert.equal(selfMonitor.isFirstPersonOnlyReason('一人称「俺」を使用しているため、設定の「一人称は基本使わず省略する」と食い違う。'), true);
+  assert.equal(selfMonitor.isFirstPersonOnlyReason('一人称「俺」を使い、語尾も丁寧すぎる'), false);
+});

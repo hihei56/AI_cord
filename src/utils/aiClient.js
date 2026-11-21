@@ -342,11 +342,17 @@ function isParrot(reply, userMsg) {
   return hit / grams.length >= PARROT_CONTAINMENT;
 }
 
-async function withSimilarityRetry(accountState, logTag, generate, echoSource = null) {
+async function withSimilarityRetry(accountState, logTag, generate, echoSource = null, rejectIf = null) {
   const rejected = [];
   for (let attempt = 0; attempt <= SIMILARITY_MAX_RETRY; attempt++) {
     const result = await generate(rejected);
     if (!result) return result;
+    const reason = rejectIf?.(result);
+    if (reason) {
+      rejected.push(result);
+      logger.log(logTag, `[${accountState?.id}] ${reason}なので再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY}): ${result}`);
+      continue;
+    }
     if (echoSource && isParrot(result, echoSource)) {
       rejected.push(result);
       logger.log(logTag, `[${accountState?.id}] 相手の言葉をなぞっただけなので再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY}): ${result}`);
@@ -1126,9 +1132,21 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
 }
 
 // 自発投稿も直近の自分の発言と似すぎていたら再生成する
+// ニュース・お題を自分の持ち物や懐具合にこじつけた冗談(「金利上がるたびに俺のクレジットカード止まる」
+// 「株価が上がったら俺のGPUが借金に」「値上げで財布が氷結」)。プロンプトで禁止しても同じ型が出続けた
+// (issue #61, #63)ので、生成後に機械的に弾いて作り直させる
+const POSSESSION_JOKE_RE = /((俺|おれ|オレ|自分|僕|ぼく|わい|ワイ)の(財布|クレ|カード|GPU|ゲーム|PC|パソコン|貯金|給料|口座|預金|家計|生活|スマホ)|財布が|口座が|GPUが)/;
+function isPossessionJoke(text) {
+  return POSSESSION_JOKE_RE.test(text || '');
+}
+
 async function generateSelfTalk(accountState = null, topicHint = null, role = null, contextText = '') {
-  return withSimilarityRetry(accountState, 'SELF-TALK', (rejected) =>
-    generateSelfTalkOnce(accountState, topicHint, role, rejected, contextText)
+  return withSimilarityRetry(
+    accountState,
+    'SELF-TALK',
+    (rejected) => generateSelfTalkOnce(accountState, topicHint, role, rejected, contextText),
+    null,
+    topicHint ? (text) => (isPossessionJoke(text) ? 'お題を自分の持ち物にこじつけた冗談' : null) : null
   );
 }
 
@@ -1255,5 +1273,6 @@ module.exports = {
   isParrot,
   isSelfVoice,
   cleanExampleLine,
-  isGarbledOutput
+  isGarbledOutput,
+  isPossessionJoke
 };
