@@ -588,8 +588,16 @@ async function toImagePart(url) {
   return { type: 'image_url', image_url: { url } };
 }
 
+// 画像読み取りが続けて失敗する時(画像を読めるプロバイダの設定が無い・モデルが廃止された等)は、
+// しばらく試さない。以前は画像つきの発言のたびに、読めないと分かっている接続先を全部試して返信を遅らせ、
+// 毎回エラーを出していた(issue #53, #60, #65)。直すには.envの設定(VISION_AI_PROVIDER等)が要る
+const VISION_FAIL_LIMIT = 3;
+const VISION_PAUSE_MS = 6 * 3600000;
+const visionHealth = { failures: 0, pausedUntil: 0 };
+
 async function describeImage(imageUrls) {
   if (!config.ai.vision?.enabled) return null;
+  if (Date.now() < visionHealth.pausedUntil) return null;
 
   const urls = (Array.isArray(imageUrls) ? imageUrls : [imageUrls]).filter(Boolean);
   if (urls.length === 0) return null;
@@ -626,10 +634,19 @@ async function describeImage(imageUrls) {
     });
     if (description) {
       logger.log('VISION', `読み取り成功(${conn.provider || conn.baseUrl}): ${description.slice(0, 60)}`);
+      visionHealth.failures = 0;
       return description;
     }
   }
-  logger.error('VISION', `画像を読み取れませんでした(試した接続: ${connections.map((c) => c.provider || c.baseUrl).join(', ')})`);
+  const tried = connections.map((c) => c.provider || c.baseUrl).join(', ');
+  visionHealth.failures++;
+  if (visionHealth.failures >= VISION_FAIL_LIMIT) {
+    visionHealth.failures = 0;
+    visionHealth.pausedUntil = Date.now() + VISION_PAUSE_MS;
+    logger.error('VISION', `画像を${VISION_FAIL_LIMIT}回続けて読み取れなかったので6時間止める(試した接続: ${tried})。画像を読めるプロバイダを.envのVISION_AI_PROVIDERに設定すること`);
+  } else {
+    logger.log('VISION', `画像を読み取れませんでした(試した接続: ${tried})`);
+  }
   return null;
 }
 
@@ -1274,5 +1291,6 @@ module.exports = {
   isSelfVoice,
   cleanExampleLine,
   isGarbledOutput,
-  isPossessionJoke
+  isPossessionJoke,
+  _visionHealth: visionHealth
 };
