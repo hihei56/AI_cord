@@ -120,3 +120,21 @@ test('一度返信した発言には、見える範囲から外れても同じ�
   const human = { id: 'human-1', author: { id: 'mirei', bot: false }, content: 'x', createdTimestamp: Date.now() - 30 * 60000 };
   assert.equal(isReplyable(human, [human]), false);
 });
+
+test('画像読み取りが3回続けて失敗したら、しばらく試さない (issue #65)', async () => {
+  const config = require('../src/utils/config');
+  config.ai.vision = { ...(config.ai.vision || {}), enabled: true };
+  let calls = 0;
+  global.fetch = async () => {
+    calls++;
+    return { ok: false, status: 503, statusText: '', headers: { get: () => null }, json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
+  };
+  ai._visionHealth.failures = 0;
+  ai._visionHealth.pausedUntil = 0;
+  for (let i = 0; i < 3; i++) await ai.describeImage('https://example.com/a.png');
+  assert.ok(ai._visionHealth.pausedUntil > Date.now());
+  const before = calls;
+  assert.equal(await ai.describeImage('https://example.com/b.png'), null);
+  assert.equal(calls, before, '止めている間は接続先に問い合わせない');
+  ai._visionHealth.pausedUntil = 0;
+});
