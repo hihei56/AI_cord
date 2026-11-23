@@ -138,3 +138,25 @@ test('画像読み取りが3回続けて失敗したら、しばらく試さな�
   assert.equal(calls, before, '止めている間は接続先に問い合わせない');
   ai._visionHealth.pausedUntil = 0;
 });
+
+test('5chの一時的な障害(HTTP 5xx)は、続いた時だけエラーにする (issue #68)', () => {
+  const logger = require('../src/utils/logger');
+  const errors = [];
+  const orig = logger.error;
+  logger.error = (tag, e) => errors.push(String(e));
+  try {
+    const { reportFetchFailure } = require('../src/handlers/houseWatchHandler');
+    for (let i = 0; i < 5; i++) reportFetchFailure(new Error('https://example/subject.txt -> HTTP 522'));
+    assert.equal(errors.length, 0);
+    for (let i = 0; i < 10; i++) reportFetchFailure(new Error('https://example/subject.txt -> HTTP 522'));
+    assert.equal(errors.length, 1, '15回続いたら1回だけエラー');
+  } finally {
+    logger.error = orig;
+  }
+});
+
+test('suisuiの人格設定は、本物の喋り方どおり、ふざけた丁寧語を許す (issue #67)', () => {
+  const persona = require('fs').readFileSync(require('path').join(__dirname, '..', 'config', 'personas', 'suisui.txt'), 'utf8');
+  assert.doesNotMatch(persona, /敬語は使わない/);
+  assert.match(persona, /ふざけてわざと丁寧語/);
+});
