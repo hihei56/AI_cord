@@ -88,6 +88,20 @@ async function sendWithFallback(channelId, content, t) {
 // 重なると同じスレを二重に取得・通知してしまうため、同時に1つしか走らせない
 let running = false;
 
+// 5ch側の一時的な障害(HTTP 5xx・タイムアウト)は、2分ごとのチェックのたびにエラーを出さない
+// (issue #68: HTTP 522が11分で5回エラーになっていた)。30分近く続いた時だけエラーにする
+const FETCH_FAILURE_ERROR_AFTER = 15;
+let fetchFailures = 0;
+function reportFetchFailure(err) {
+  fetchFailures++;
+  const transient = /HTTP 5\d\d|timeout|aborted|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed/i.test(err.message || '');
+  if (!transient || fetchFailures === FETCH_FAILURE_ERROR_AFTER) {
+    logger.error('HOUSE', `スレ一覧の取得に失敗(${fetchFailures}回連続): ${err.message}`);
+  } else {
+    logger.log('HOUSE', `スレ一覧の取得に失敗(${fetchFailures}回連続、一時的な障害とみて次回再試行): ${err.message}`);
+  }
+}
+
 async function checkOnce(opts = {}) {
   if (running) return { found: [], error: '前回のチェックがまだ実行中(初回は全スレ判定で数分かかる)' };
   running = true;
@@ -117,8 +131,9 @@ async function checkOnceInner({ manual = false } = {}) {
   let threads;
   try {
     threads = await fetchSubjects(boardUrl);
+    fetchFailures = 0;
   } catch (err) {
-    logger.error('HOUSE', err);
+    reportFetchFailure(err);
     return { found: [], error: err.message };
   }
 
@@ -137,7 +152,7 @@ async function checkOnceInner({ manual = false } = {}) {
     try {
       hidden = isThreadIdHidden((await fetchThreadHead(boardUrl, t.key)).posts);
     } catch (err) {
-      logger.error('HOUSE', err);
+      logger.log('HOUSE', `スレ${t.key}の取得に失敗(次回再チェック): ${err.message}`);
     }
     // 取得失敗・判定不能は保留。judgedは該当しなかったスレ
     if (hidden === true) found.push(t);
@@ -170,4 +185,5 @@ function registerHouseWatchHandler(clients) {
 
 module.exports = {
   sendWithFallback,
+  reportFetchFailure,
   _blockedUntil: blockedUntil, registerHouseWatchHandler, checkOnce, isThreadIdHidden };
