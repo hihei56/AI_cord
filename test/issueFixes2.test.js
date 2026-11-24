@@ -160,3 +160,17 @@ test('suisuiの人格設定は、本物の喋り方どおり、ふざけた丁�
   assert.doesNotMatch(persona, /敬語は使わない/);
   assert.match(persona, /ふざけてわざと丁寧語/);
 });
+
+test('見送りの合図(SKIP)が文中・文末にあっても投稿しない。見送りを許さない時は合図だけ取り除く (issue #70)', async () => {
+  const config = require('../src/utils/config');
+  config.markov.enabled = false;
+  config.ai.twoStage.enabled = false;
+  const st = () => ({ id: 'skip', persona: 'p', recentReplies: [] });
+  const sp = { author: { id: 'u', username: 'u' }, member: null };
+  mockLLM(() => 'は？ SKIP');
+  assert.equal(await ai.getAIResponse(st(), 'おはよう', [], sp, { allowSkip: true }), null);
+  mockLLM(() => 'は？ SKIP');
+  assert.equal(await ai.getAIResponse(st(), 'おはよう', [], sp, {}), 'は？');
+  mockLLM(() => 'SKIPPEDって何');
+  assert.equal(await ai.getAIResponse(st(), 'おはよう', [], sp, { allowSkip: true }), 'SKIPPEDって何', '単語の一部は合図ではない');
+});
