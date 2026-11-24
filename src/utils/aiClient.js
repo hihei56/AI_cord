@@ -147,6 +147,8 @@ function cleanExampleLine(line) {
 }
 // 「今は返さない」を表すモデルの出力
 const SKIP_TOKEN = 'SKIP';
+const SKIP_WORD_RE = /(^|[^A-Za-z])SKIP(?![A-Za-z])/gi;
+const SKIP_WORD_TEST_RE = /(^|[^A-Za-z])SKIP(?![A-Za-z])/i;
 
 // モデルが発言の頭に付けてしまう「名前:」「返信:」「Reaction:」のような見出しを消す。
 // 会話履歴を「名前: 発言」の形で渡しているため、それを真似て自分の名前を付けることがある
@@ -1009,9 +1011,16 @@ async function getAIResponseOnce(
     );
     if (reply) {
       reply = stripLeakedPrefix(reply, accountState);
-      if (allowSkip && reply.trim().toUpperCase().startsWith(SKIP_TOKEN)) {
-        logger.log('AI', `[${accountState.id}] 言うことが無いと判断して見送り`);
-        return null;
+      // 見送りの合図(SKIP)は、文頭だけでなく文中・文末に付いてくることもある(「は？ SKIP」がそのまま
+      // 投稿されていた: issue #70)。どこにあっても、言うことが無いという判断として扱う。
+      // 見送りを許していない呼び出しで出てきた場合も、合図の語だけは取り除く
+      if (SKIP_WORD_TEST_RE.test(reply)) {
+        if (allowSkip) {
+          logger.log('AI', `[${accountState.id}] 言うことが無いと判断して見送り`);
+          return null;
+        }
+        reply = reply.replace(SKIP_WORD_RE, '$1').replace(/\s+/g, ' ').trim();
+        if (!reply) return null;
       }
       // 特定の相手への接し方(通訳の形など)がある時も、1行60文字では収まらないので長めに許す
       const longForm = answerMode || speakerRules.length > 0;
