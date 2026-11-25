@@ -211,6 +211,7 @@ function isFirstPersonOnlyReason(reason) {
 }
 
 const DRIFT_SAMPLE = 8;
+const DRIFT_CORPUS_SAMPLE = 30;
 async function checkPersonaDrift() {
   const { callChatCompletion } = require('./aiClient');
   const usageLedger = require('./usageLedger');
@@ -218,11 +219,18 @@ async function checkPersonaDrift() {
     const st = client.accountState;
     const recent = (st?.recentReplies || []).slice(-DRIFT_SAMPLE);
     if (!st?.persona || recent.length < 4 || st.replyLanguage) continue;
+    // 本人の声のコーパスがあるアカウントは、手書きの人格設定より本物の発言の方が正解なので、それを基準に見せる。
+    // 判定役は発言の前後の会話を見られないので、内容の意味(深刻そう等)ではなく口調で判断させる
+    // (issue #73: 誰かの話への反応「誰か守ってくんないの？」を、本気で助けを求めていると誤読した)
+    const { isSelfVoice } = require('./aiClient');
+    const own = isSelfVoice(st) ? st.corpusLines.slice().sort(() => Math.random() - 0.5).slice(0, DRIFT_CORPUS_SAMPLE) : [];
+    const ownSection = own.length ? `\n\n【本人の実際の過去の発言(これが正解の口調。人格設定より優先して比べる)】\n${own.join('\n')}` : '';
     const prompt =
       `次の【人格設定】のキャラが、Discordで実際に投稿した【発言】がある。人格設定(口調・語尾・一人称・スタンス・絵文字の有無・長さ)と明らかに食い違う発言だけを選ぶ。\n` +
+      `発言の前後の会話は見えない。他の人の話への反応かもしれないので、内容の意味(深刻そう・事実の報告だけ等)を推測して判定せず、口調・言い回し・テンションが本人らしいかで判断する。\n` +
       `少しのブレや、人格設定に書かれていない話題は問題にしない。人格設定の絵文字・言葉の一覧は「例」なので、一覧に無い絵文字や言葉を使っただけでは食い違いとしない。「基本〜」「〜が多い」「たまに」のような幅のある書き方は傾向であって禁止ではないので、たまに外れただけ(一人称を1回使った等)では食い違いとしない。別人が書いたように見えるものだけを選ぶ。\n` +
       `出力: 食い違う発言の番号と短い理由を「番号|理由」で1行ずつ。無ければ「なし」とだけ。\n\n` +
-      `【人格設定】\n${st.persona.slice(0, 1500)}\n\n【発言】\n${recent.map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
+      `【人格設定】\n${st.persona.slice(0, 1500)}${ownSection}\n\n【発言】\n${recent.map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
     try {
       const out = await usageLedger.runBackground(() =>
         callChatCompletion([{ role: 'user', content: prompt }], { temperature: 0.2, maxTokens: 400, kind: 'think', logTag: 'MONITOR' })
