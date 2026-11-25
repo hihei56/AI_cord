@@ -171,3 +171,22 @@ test('人格判定で「一人称を使った」だけの指摘は報告しな�
   assert.equal(selfMonitor.isFirstPersonOnlyReason('一人称「俺」を使用しているため、設定の「一人称は基本使わず省略する」と食い違う。'), true);
   assert.equal(selfMonitor.isFirstPersonOnlyReason('一人称「俺」を使い、語尾も丁寧すぎる'), false);
 });
+
+test('人格判定に、本人の実際の発言を正解の口調として渡し、前後の会話が見えないことを伝える (issue #73)', async () => {
+  const path = require('path');
+  const calls = mockLLM(() => 'なし');
+  require('../src/utils/config').ai.selfVoice = { corpora: ['suisui.txt'] };
+  const st = {
+    id: 'acc2',
+    personaName: 'suisui',
+    persona: 'ノリの軽い男',
+    corpusPath: path.join(__dirname, '..', 'config', 'corpus', 'suisui.txt'),
+    corpusLines: ['やばい', '嫌すぎる', 'え！'],
+    recentReplies: ['マジでそれヤバすぎ誰か守ってくんないの？', 'a', 'b', 'c']
+  };
+  selfMonitor.register([{ on() {}, user: null, accountState: st }]);
+  await selfMonitor.checkPersonaDrift();
+  const prompt = calls.at(-1).body.messages[0].content;
+  assert.match(prompt, /本人の実際の過去の発言[\s\S]*嫌すぎる/);
+  assert.match(prompt, /前後の会話は見えない/);
+});

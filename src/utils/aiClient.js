@@ -1135,7 +1135,7 @@ async function generateSelfTalkOnce(accountState = null, topicHint = null, role 
       [
         { role: 'system', content: systemPrompt },
         // 生成の直前に、破られると一番目立つ口調だけを念押しする(返信のfinalRemindersと同じ考え方)
-        { role: 'user', content: `${selfTalkUserPrompt(kind)}\n(人格設定のいつもの口調・絵文字の癖のまま / 1文の短い発言 / 説明調にしない)` }
+        { role: 'user', content: `${selfTalkUserPrompt(kind)}\n(人格設定のいつもの口調・絵文字の癖のまま / 出来事をただ報告して終わらず、その人らしい見方や一言を入れる / 1文の短い発言 / 説明調にしない)` }
       ],
       {
         temperature: config.ai.selfTalk.temperature + mood.temperatureOffset(accountState),
