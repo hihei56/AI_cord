@@ -262,8 +262,23 @@ const RECENT_REPLIES_MAX = 8;
 // 送信した発言をaccountState.recentRepliesに記録する。messageHandler/selfTalkHandler/
 // conversationSeedHandlerのどこから送っても同じ「直近の自分の発言」として扱うことで、
 // 経路をまたいだ連投・似た言い回しの繰り返しもチェック対象にする
+// 運用中の全アカウントの最近の発言。別人のはずのアカウント同士が同じ言い回しをすると、それ自体が
+// bot臭い(アカウント1と2が数時間の間に「〜頭パンクしそうだわ」をほぼ同じ形で投稿した: issue #75〜#77)。
+// 返信の繰り返し防止は自分の発言としか比べていなかったので、他のアカウントの発言とも比べる
+const CROSS_ACCOUNT_RECENT_MAX = 40;
+const CROSS_ACCOUNT_WINDOW_MS = 12 * 3600000;
+const CROSS_ACCOUNT_SIMILARITY = 0.5;
+const crossAccountRecent = [];
+
+function similarToOtherAccount(text, accountId) {
+  const since = Date.now() - CROSS_ACCOUNT_WINDOW_MS;
+  return crossAccountRecent.some((r) => r.accountId !== accountId && r.at >= since && textSimilarity(text, r.text) >= CROSS_ACCOUNT_SIMILARITY);
+}
+
 function recordReply(accountState, text) {
   if (!accountState || !text) return;
+  crossAccountRecent.push({ accountId: accountState.id, text, at: Date.now() });
+  if (crossAccountRecent.length > CROSS_ACCOUNT_RECENT_MAX) crossAccountRecent.shift();
   accountState.recentReplies = accountState.recentReplies || [];
   accountState.recentReplies.push(text);
   if (accountState.recentReplies.length > RECENT_REPLIES_MAX) accountState.recentReplies.shift();
@@ -358,6 +373,11 @@ async function withSimilarityRetry(accountState, logTag, generate, echoSource = 
     if (echoSource && isParrot(result, echoSource)) {
       rejected.push(result);
       logger.log(logTag, `[${accountState?.id}] 相手の言葉をなぞっただけなので再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY}): ${result}`);
+      continue;
+    }
+    if (accountState?.id && similarToOtherAccount(result, accountState.id)) {
+      rejected.push(result);
+      logger.log(logTag, `[${accountState.id}] 他のアカウントの最近の発言と似すぎているため再生成 (${attempt + 1}/${SIMILARITY_MAX_RETRY})`);
       continue;
     }
     if (!isTooSimilarToRecent(result, accountState?.recentReplies)) return result;
@@ -1301,5 +1321,6 @@ module.exports = {
   cleanExampleLine,
   isGarbledOutput,
   isPossessionJoke,
-  _visionHealth: visionHealth
+  _visionHealth: visionHealth,
+  _crossAccountRecent: crossAccountRecent
 };
