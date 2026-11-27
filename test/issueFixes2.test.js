@@ -174,3 +174,16 @@ test('見送りの合図(SKIP)が文中・文末にあっても投稿しない�
   mockLLM(() => 'SKIPPEDって何');
   assert.equal(await ai.getAIResponse(st(), 'おはよう', [], sp, { allowSkip: true }), 'SKIPPEDって何', '単語の一部は合図ではない');
 });
+
+test('別のアカウントが最近言ったのとほぼ同じ発言は作り直させる (issue #75〜#77)', async () => {
+  const config = require('../src/utils/config');
+  config.markov.enabled = false;
+  config.ai.twoStage.enabled = false;
+  ai._crossAccountRecent.length = 0;
+  ai.recordReply({ id: 'acc1', recentReplies: [] }, '情報が意味不明すぎて頭パンクしそうだわ');
+  let n = 0;
+  mockLLM(() => (++n === 1 ? '情報過多すぎて頭パンクしそうだわ' : 'ニュース多すぎて追いきれん'));
+  const reply = await ai.getAIResponse({ id: 'acc2', persona: 'p', recentReplies: [] }, 'ニュース多いな', [], { author: { id: 'u', username: 'u' }, member: null }, {});
+  assert.equal(reply, 'ニュース多すぎて追いきれん');
+  ai._crossAccountRecent.length = 0;
+});
